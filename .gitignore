@@ -1,0 +1,22 @@
+plans/
+
+# Backend
+bin/
+obj/
+
+# Frontend
+node_modules/
+dist/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
