@@ -2,7 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RoomManagement.Domain\RoomManagement.Domain.csproj" />
-    <ProjectReference Include="..\RoomManagement.Data\RoomManagement.Data.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

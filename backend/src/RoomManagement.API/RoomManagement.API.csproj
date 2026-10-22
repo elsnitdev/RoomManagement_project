@@ -3,6 +3,9 @@
   <ItemGroup>
     <ProjectReference Include="..\RoomManagement.Business\RoomManagement.Business.csproj" />
     <ProjectReference Include="..\RoomManagement.Data\RoomManagement.Data.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
   </ItemGroup>
 
   <PropertyGroup>
