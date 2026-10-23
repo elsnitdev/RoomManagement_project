@@ -17,6 +17,16 @@ public static class ServiceCollectionExtensions
     }
 
     services.AddDbContext<RoomManagementDbContext>(options => options.UseSqlServer(connectionString));
+
+    // Lấy thông tin admin từ appsettings
+    services.Configure<Seeders.InitialAdminOptions>(configuration.GetSection(Seeders.InitialAdminOptions.SectionName));
+
+    // Đăng ký IPasswordHasher để xử lý mật khẩu
+    services.AddScoped<Microsoft.AspNetCore.Identity.IPasswordHasher<Domain.Entities.AppUser>, Microsoft.AspNetCore.Identity.PasswordHasher<Domain.Entities.AppUser>>();
+
+    // Đăng ký AdminUserSeeder
+    services.AddScoped<Seeders.AdminUserSeeder>();
+
     return services;
   }
 }
