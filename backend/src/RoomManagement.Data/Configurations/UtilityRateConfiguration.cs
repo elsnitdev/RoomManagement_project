@@ -17,7 +17,7 @@ public sealed class UtilityRateConfiguration : IEntityTypeConfiguration<UtilityR
         builder.HasKey(e => e.Id).HasName("PK_UtilityRates");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.PropertyId).HasColumnType("uniqueidentifier").IsRequired();
-        builder.Property(e => e.UtilityType).HasColumnType("nvarchar(20)").IsRequired();
+        builder.Property(e => e.UtilityType).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.UnitPrice).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(e => e.Unit).HasColumnType("nvarchar(50)").IsRequired();
         builder.Property(e => e.EffectiveFrom).HasColumnType("date").IsRequired();

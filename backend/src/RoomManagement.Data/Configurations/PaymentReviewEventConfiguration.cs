@@ -17,8 +17,8 @@ public sealed class PaymentReviewEventConfiguration : IEntityTypeConfiguration<P
         builder.HasKey(e => e.Id).HasName("PK_PaymentReviewEvents");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.PaymentId).HasColumnType("uniqueidentifier").IsRequired();
-        builder.Property(e => e.PreviousStatus).HasColumnType("nvarchar(20)").IsRequired();
-        builder.Property(e => e.NewStatus).HasColumnType("nvarchar(20)").IsRequired();
+        builder.Property(e => e.PreviousStatus).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
+        builder.Property(e => e.NewStatus).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.PreviousVerifiedAmount).HasColumnType("decimal(18,2)");
         builder.Property(e => e.NewVerifiedAmount).HasColumnType("decimal(18,2)");
         builder.Property(e => e.Reason).HasColumnType("nvarchar(500)").IsRequired();

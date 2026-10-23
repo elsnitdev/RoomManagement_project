@@ -1,10 +1,12 @@
+using RoomManagement.Domain.Enums;
+
 namespace RoomManagement.Domain.Entities;
 
 public sealed class MeterReading
 {
     public Guid Id { get; set; }
     public Guid RoomId { get; set; }
-    public string MeterType { get; set; } = null!;
+    public UtilityType MeterType { get; set; }
     public short Year { get; set; }
     public byte Month { get; set; }
     public decimal PreviousValue { get; set; }

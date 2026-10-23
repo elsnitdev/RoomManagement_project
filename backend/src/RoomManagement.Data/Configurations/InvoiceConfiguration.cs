@@ -22,13 +22,13 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         builder.Property(e => e.ContractId).HasColumnType("uniqueidentifier").IsRequired();
         builder.Property(e => e.RoomId).HasColumnType("uniqueidentifier").IsRequired();
         builder.Property(e => e.InvoiceCode).HasColumnType("varchar(50)").IsRequired();
-        builder.Property(e => e.InvoiceType).HasColumnType("nvarchar(20)").IsRequired();
+        builder.Property(e => e.InvoiceType).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.BillingYear).HasColumnType("smallint");
         builder.Property(e => e.BillingMonth).HasColumnType("tinyint");
         builder.Property(e => e.IssueDate).HasColumnType("date").IsRequired();
         builder.Property(e => e.DueDate).HasColumnType("date").IsRequired();
         builder.Property(e => e.TotalAmount).HasColumnType("decimal(18,2)").IsRequired();
-        builder.Property(e => e.Status).HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Draft'", "DF_Invoices_Status");
+        builder.Property(e => e.Status).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Draft'", "DF_Invoices_Status");
         builder.Property(e => e.Note).HasColumnType("nvarchar(1000)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_Invoices_CreatedAt");
         builder.HasOne<Contract>().WithMany().HasForeignKey(e => new { e.ContractId, e.RoomId }).HasPrincipalKey(e => new { e.Id, e.RoomId }).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Invoices_ContractRoom");

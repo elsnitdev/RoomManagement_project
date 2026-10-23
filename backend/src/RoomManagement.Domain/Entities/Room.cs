@@ -1,3 +1,5 @@
+using RoomManagement.Domain.Enums;
+
 namespace RoomManagement.Domain.Entities;
 
 public sealed class Room
@@ -10,7 +12,7 @@ public sealed class Room
     public decimal? Area { get; set; }
     public decimal BasePrice { get; set; }
     public int MaxOccupants { get; set; }
-    public string Status { get; set; } = null!;
+    public RoomStatus Status { get; set; } = RoomStatus.Available;
     public string? Description { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

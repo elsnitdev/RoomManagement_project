@@ -1,10 +1,12 @@
+using RoomManagement.Domain.Enums;
+
 namespace RoomManagement.Domain.Entities;
 
 public sealed class InvoiceItem
 {
     public Guid Id { get; set; }
     public Guid InvoiceId { get; set; }
-    public string ItemType { get; set; } = null!;
+    public InvoiceItemType ItemType { get; set; }
     public string Description { get; set; } = null!;
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }

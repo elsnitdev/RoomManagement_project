@@ -17,7 +17,7 @@ public sealed class InvoiceAdjustmentConfiguration : IEntityTypeConfiguration<In
         builder.HasKey(e => e.Id).HasName("PK_InvoiceAdjustments");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.InvoiceId).HasColumnType("uniqueidentifier").IsRequired();
-        builder.Property(e => e.AdjustmentType).HasColumnType("nvarchar(20)").IsRequired();
+        builder.Property(e => e.AdjustmentType).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.Amount).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(e => e.Reason).HasColumnType("nvarchar(500)").IsRequired();
         builder.Property(e => e.IdempotencyKey).HasColumnType("varchar(100)").IsRequired();
