@@ -1,7 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\RoomManagement.Domain\RoomManagement.Domain.csproj" />
+    <ProjectReference Include="..\RoomManagement.Data\RoomManagement.Data.csproj" />
   </ItemGroup>
 
   <ItemGroup>

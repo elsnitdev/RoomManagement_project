@@ -1,8 +1,14 @@
+using RoomManagement.Business;
 using RoomManagement.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Đăng ký tầng Data (DbContext, Seeder, PasswordHasher)
 builder.Services.AddRoomManagementData(builder.Configuration);
+
+// Đăng ký tầng Business (UserService và các nghiệp vụ khác)
+builder.Services.AddRoomManagementBusiness();
+
 builder.Services.AddControllers();
 
 var app = builder.Build();
