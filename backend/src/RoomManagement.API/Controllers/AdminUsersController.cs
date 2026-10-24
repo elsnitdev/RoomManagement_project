@@ -103,4 +103,133 @@ public sealed class AdminUsersController : ControllerBase
             });
         }
     }
+
+    /// <summary>
+    /// API lấy danh sách tất cả các yêu cầu đăng ký chủ trọ đang ở trạng thái Chờ duyệt (Pending).
+    /// Giúp Quản trị viên (Admin) xem xét và kiểm tra thông tin cá nhân của người đăng ký.
+    /// </summary>
+    [HttpGet("pending-landlords")]
+    [ProducesResponseType(typeof(IEnumerable<LandlordRegistrationResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPendingLandlords(
+        [FromServices] ILandlordApprovalService approvalService,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Admin đang tải danh sách các yêu cầu đăng ký chủ trọ chờ duyệt.");
+
+        var pendingList = await approvalService.GetPendingRegistrationsAsync(cancellationToken);
+        var response = pendingList.Select(LandlordRegistrationResponse.FromDto);
+
+        return Ok(new
+        {
+            total = pendingList.Count,
+            data = response
+        });
+    }
+
+    /// <summary>
+    /// API Quản trị viên (Admin) phê duyệt yêu cầu đăng ký chủ trọ.
+    /// Sau khi duyệt: tài khoản được kích hoạt và chính thức có quyền Landlord để quản lý khu trọ.
+    /// </summary>
+    /// <param name="id">ID tài khoản chủ trọ cần duyệt.</param>
+    /// <param name="approvalService">Service xử lý nghiệp vụ duyệt.</param>
+    /// <param name="cancellationToken">Token hỗ trợ hủy tác vụ.</param>
+    [HttpPost("pending-landlords/{id}/approve")]
+    [ProducesResponseType(typeof(LandlordRegistrationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ApproveLandlord(
+        [FromRoute] string id,
+        [FromServices] ILandlordApprovalService approvalService,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Admin thực hiện duyệt yêu cầu đăng ký cho tài khoản ID: '{UserId}'", id);
+
+        try
+        {
+            var result = await approvalService.ApproveAsync(id, cancellationToken);
+            var response = LandlordRegistrationResponse.FromDto(result);
+
+            return Ok(new
+            {
+                message = $"Đã phê duyệt thành công yêu cầu của chủ trọ '{response.UserName}'. Tài khoản đã được kích hoạt.",
+                data = response
+            });
+        }
+        catch (AppNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "Không tìm thấy yêu cầu: {Message}", ex.Message);
+            return NotFound(new { message = ex.Message });
+        }
+        catch (AppConflictException ex)
+        {
+            _logger.LogWarning(ex, "Xung đột trạng thái duyệt: {Message}", ex.Message);
+            return Conflict(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Đã xảy ra lỗi không xác định khi duyệt yêu cầu chủ trọ.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                message = "Hệ thống gặp sự cố trong quá trình duyệt yêu cầu. Vui lòng thử lại sau."
+            });
+        }
+    }
+
+    /// <summary>
+    /// API Quản trị viên (Admin) từ chối yêu cầu đăng ký chủ trọ kèm lý do.
+    /// Sau khi từ chối: tài khoản chuyển sang Rejected và vẫn bị khóa, không thể quản lý khu trọ.
+    /// </summary>
+    /// <param name="id">ID tài khoản chủ trọ cần từ chối.</param>
+    /// <param name="request">Chứa lý do từ chối (bắt buộc).</param>
+    /// <param name="approvalService">Service xử lý nghiệp vụ từ chối.</param>
+    /// <param name="cancellationToken">Token hỗ trợ hủy tác vụ.</param>
+    [HttpPost("pending-landlords/{id}/reject")]
+    [ProducesResponseType(typeof(LandlordRegistrationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RejectLandlord(
+        [FromRoute] string id,
+        [FromBody] RejectLandlordRequest request,
+        [FromServices] ILandlordApprovalService approvalService,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Admin thực hiện từ chối yêu cầu đăng ký cho tài khoản ID: '{UserId}' với lý do: {Reason}",
+            id, request.Reason);
+
+        try
+        {
+            var result = await approvalService.RejectAsync(id, request.Reason, cancellationToken);
+            var response = LandlordRegistrationResponse.FromDto(result);
+
+            return Ok(new
+            {
+                message = $"Đã từ chối yêu cầu đăng ký của '{response.UserName}'.",
+                data = response
+            });
+        }
+        catch (AppValidationException ex)
+        {
+            _logger.LogWarning(ex, "Lỗi hợp lệ lý do từ chối: {Message}", ex.Message);
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (AppNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "Không tìm thấy yêu cầu: {Message}", ex.Message);
+            return NotFound(new { message = ex.Message });
+        }
+        catch (AppConflictException ex)
+        {
+            _logger.LogWarning(ex, "Xung đột trạng thái duyệt: {Message}", ex.Message);
+            return Conflict(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Đã xảy ra lỗi không xác định khi từ chối yêu cầu chủ trọ.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                message = "Hệ thống gặp sự cố trong quá trình từ chối yêu cầu. Vui lòng thử lại sau."
+            });
+        }
+    }
 }

@@ -1,3 +1,5 @@
+using RoomManagement.Business.DTOs.Users;
+
 namespace RoomManagement.API.Contracts.Users;
 
 /// <summary>
@@ -32,7 +34,26 @@ public sealed class UserResponse
     public bool IsActive { get; init; }
 
     /// <summary>
+    /// Trạng thái xét duyệt: Pending (chờ duyệt) / Approved (đã duyệt) / Rejected (bị từ chối).
+    /// </summary>
+    public string ApprovalStatus { get; init; } = string.Empty;
+
+    /// <summary>
     /// Ngày giờ tạo tài khoản (UTC).
     /// </summary>
     public DateTime CreatedAt { get; init; }
+
+    /// <summary>
+    /// Chuyển từ DTO tầng Business sang dữ liệu trả về cho Client.
+    /// </summary>
+    public static UserResponse FromDto(UserDto dto) => new()
+    {
+        Id = dto.Id,
+        UserName = dto.UserName,
+        Email = dto.Email,
+        Role = dto.Role,
+        IsActive = dto.IsActive,
+        ApprovalStatus = dto.ApprovalStatus,
+        CreatedAt = dto.CreatedAt
+    };
 }

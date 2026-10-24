@@ -15,6 +15,9 @@ public static class ServiceCollectionExtensions
         // Đăng ký UserService phục vụ nghiệp vụ quản lý người dùng
         services.AddScoped<IUserService, UserService>();
 
+        // Đăng ký LandlordApprovalService phục vụ nghiệp vụ Admin duyệt / từ chối chủ trọ
+        services.AddScoped<ILandlordApprovalService, LandlordApprovalService>();
+
         return services;
     }
 }

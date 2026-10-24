@@ -4,8 +4,11 @@ using Microsoft.Extensions.Logging;
 using RoomManagement.Business.DTOs.Users;
 using RoomManagement.Business.Exceptions;
 using RoomManagement.Business.Interfaces;
+using RoomManagement.Business.Mappings;
+using RoomManagement.Business.Validators;
 using RoomManagement.Data;
 using RoomManagement.Domain;
+using RoomManagement.Domain.Constants;
 using RoomManagement.Domain.Entities;
 
 namespace RoomManagement.Business.Services;
@@ -15,6 +18,9 @@ namespace RoomManagement.Business.Services;
 /// </summary>
 public sealed class UserService : IUserService
 {
+    /// <summary>Độ dài tối thiểu của mật khẩu.</summary>
+    private const int MinimumPasswordLength = 6;
+
     private readonly RoomManagementDbContext _dbContext;
     private readonly IPasswordHasher<AppUser> _passwordHasher;
     private readonly ILogger<UserService> _logger;
@@ -29,6 +35,10 @@ public sealed class UserService : IUserService
         _logger = logger;
     }
 
+    // =========================================================================
+    // ADMIN TẠO TÀI KHOẢN
+    // =========================================================================
+
     /// <summary>
     /// Xử lý tạo tài khoản mới từ phía Quản trị viên (Admin) và phân quyền Landlord hoặc Tenant.
     /// </summary>
@@ -42,20 +52,7 @@ public sealed class UserService : IUserService
         // -------------------------------------------------------------------------
         // BƯỚC 1: KIỂM TRA TÍNH HỢP LỆ CỦA CÁC TRƯỜNG DỮ LIỆU CƠ BẢN
         // -------------------------------------------------------------------------
-        if (string.IsNullOrWhiteSpace(dto.UserName))
-        {
-            throw new AppValidationException("Tên đăng nhập (UserName) không được để trống.");
-        }
-
-        if (string.IsNullOrWhiteSpace(dto.Password))
-        {
-            throw new AppValidationException("Mật khẩu ban đầu không được để trống.");
-        }
-
-        if (dto.Password.Length < 6)
-        {
-            throw new AppValidationException("Mật khẩu phải có độ dài tối thiểu từ 6 ký tự trở lên để đảm bảo an toàn.");
-        }
+        ValidateCredentials(dto.UserName, dto.Password);
 
         // -------------------------------------------------------------------------
         // BƯỚC 2: RÀNG BUỘC VAI TRÒ (ROLE) - CHẶN LEO THANG ĐẶC QUYỀN
@@ -88,51 +85,29 @@ public sealed class UserService : IUserService
         // -------------------------------------------------------------------------
         // BƯỚC 3: CHUẨN HÓA DỮ LIỆU ĐỂ PHỤC VỤ TÌM KIẾM VÀ SO SÁNH DUY NHẤT
         // -------------------------------------------------------------------------
-        var normalizedUserName = dto.UserName.Trim().ToUpperInvariant();
-        var normalizedEmail = string.IsNullOrWhiteSpace(dto.Email)
-            ? null
-            : dto.Email.Trim().ToUpperInvariant();
+        var normalizedUserName = Normalize(dto.UserName)!;
+        var normalizedEmail = Normalize(dto.Email);
 
         // -------------------------------------------------------------------------
         // BƯỚC 4: KIỂM TRA TRÙNG LẶP DỮ LIỆU TRONG DATABASE (USERNAME VÀ EMAIL)
         // -------------------------------------------------------------------------
-        // 4.1. Kiểm tra tên đăng nhập đã tồn tại chưa
-        var isUserNameTaken = await _dbContext.Users.AnyAsync(
-            u => u.NormalizedUserName == normalizedUserName,
-            cancellationToken);
-
-        if (isUserNameTaken)
-        {
-            _logger.LogWarning("Thao tác tạo người dùng thất bại: Tên đăng nhập '{UserName}' đã tồn tại.", dto.UserName);
-            throw new AppConflictException($"Tên đăng nhập '{dto.UserName.Trim()}' đã có người sử dụng. Vui lòng chọn tên đăng nhập khác.");
-        }
-
-        // 4.2. Kiểm tra email đã tồn tại chưa (nếu có cung cấp email)
-        if (!string.IsNullOrWhiteSpace(normalizedEmail))
-        {
-            var isEmailTaken = await _dbContext.Users.AnyAsync(
-                u => u.NormalizedEmail == normalizedEmail,
-                cancellationToken);
-
-            if (isEmailTaken)
-            {
-                _logger.LogWarning("Thao tác tạo người dùng thất bại: Email '{Email}' đã tồn tại.", dto.Email);
-                throw new AppConflictException($"Địa chỉ email '{dto.Email.Trim()}' đã được liên kết với một tài khoản khác trong hệ thống.");
-            }
-        }
+        await EnsureUserNameAvailableAsync(dto.UserName, normalizedUserName, cancellationToken);
+        await EnsureEmailAvailableAsync(dto.Email, normalizedEmail, cancellationToken);
 
         // -------------------------------------------------------------------------
         // BƯỚC 5: KHỞI TẠO THỰC THỂ NGƯỜI DÙNG (APPUSER)
+        // Thông tin cá nhân để trống: người dùng sẽ bị yêu cầu điền ở lần đăng nhập đầu.
         // -------------------------------------------------------------------------
         var newUser = new AppUser
         {
             Id = Guid.NewGuid().ToString(),
             UserName = dto.UserName.Trim(),
             NormalizedUserName = normalizedUserName,
-            Email = string.IsNullOrWhiteSpace(dto.Email) ? null : dto.Email.Trim(),
+            Email = TrimOrNull(dto.Email),
             NormalizedEmail = normalizedEmail,
             Role = assignedRole,
             IsActive = true, // Tài khoản do Admin tạo được kích hoạt sẵn để sử dụng ngay
+            ApprovalStatus = ApprovalStatuses.Approved, // Admin tạo thì coi như đã được duyệt
             CreatedAt = DateTime.UtcNow
         };
 
@@ -154,14 +129,230 @@ public sealed class UserService : IUserService
         // -------------------------------------------------------------------------
         // BƯỚC 8: ÁNH XẠ THỰC THỂ SANG USERDTO TRẢ VỀ (LOẠI BỎ PASSWORDHASH)
         // -------------------------------------------------------------------------
-        return new UserDto
+        return newUser.ToUserDto();
+    }
+
+    // =========================================================================
+    // CHỦ TRỌ TỰ ĐĂNG KÝ
+    // =========================================================================
+
+    /// <summary>
+    /// Xử lý người dùng tự đăng ký làm chủ trọ.
+    /// Kết quả: tài khoản có Role = Landlord nhưng ApprovalStatus = Pending và IsActive = false,
+    /// nghĩa là CHƯA được quản lý khu trọ cho tới khi Admin duyệt.
+    /// </summary>
+    /// <exception cref="AppValidationException">Thiếu thông tin bắt buộc hoặc sai định dạng.</exception>
+    /// <exception cref="AppConflictException">Trùng tên đăng nhập, email hoặc số CCCD.</exception>
+    public async Task<UserDto> RegisterLandlordAsync(RegisterLandlordDto dto, CancellationToken cancellationToken = default)
+    {
+        // BƯỚC 1: Kiểm tra tên đăng nhập và mật khẩu
+        ValidateCredentials(dto.UserName, dto.Password);
+
+        // BƯỚC 2: Dựng thực thể người dùng từ dữ liệu đăng ký (đã cắt khoảng trắng thừa)
+        var newUser = new AppUser
         {
-            Id = newUser.Id,
-            UserName = newUser.UserName,
-            Email = newUser.Email,
-            Role = newUser.Role,
-            IsActive = newUser.IsActive,
-            CreatedAt = newUser.CreatedAt
+            Id = Guid.NewGuid().ToString(),
+            UserName = dto.UserName.Trim(),
+            NormalizedUserName = Normalize(dto.UserName)!,
+            Email = TrimOrNull(dto.Email),
+            NormalizedEmail = Normalize(dto.Email),
+            Role = UserRoles.Landlord,                  // Vai trò mong muốn là chủ trọ...
+            ApprovalStatus = ApprovalStatuses.Pending,  // ...nhưng phải chờ Admin duyệt
+            IsActive = false,                           // Chưa được kích hoạt cho tới khi được duyệt
+            CreatedAt = DateTime.UtcNow,
+
+            // Thông tin cá nhân
+            FullName = TrimOrNull(dto.FullName),
+            PhoneNumber = TrimOrNull(dto.PhoneNumber),
+            CitizenId = TrimOrNull(dto.CitizenId),
+            DateOfBirth = dto.DateOfBirth,
+            Address = TrimOrNull(dto.Address)
+        };
+
+        // BƯỚC 3: Tự đăng ký thì bắt buộc điền đủ hồ sơ và đúng định dạng
+        UserProfileRules.EnsureRequiredFieldsFilled(newUser);
+        UserProfileRules.EnsureValidFormat(newUser);
+
+        // BƯỚC 4: Kiểm tra trùng tên đăng nhập, email, CCCD
+        await EnsureUserNameAvailableAsync(newUser.UserName, newUser.NormalizedUserName, cancellationToken);
+        await EnsureEmailAvailableAsync(newUser.Email, newUser.NormalizedEmail, cancellationToken);
+        await EnsureCitizenIdAvailableAsync(newUser.CitizenId!, excludeUserId: null, cancellationToken);
+
+        // BƯỚC 5: Băm mật khẩu, không bao giờ lưu mật khẩu gốc
+        newUser.PasswordHash = _passwordHasher.HashPassword(newUser, dto.Password);
+
+        // BƯỚC 6: Lưu vào DB. Tài khoản và hồ sơ nằm chung bảng Users nên chỉ cần 1 lần lưu
+        // (lưu thành công cả hai, hoặc thất bại cả hai).
+        await _dbContext.Users.AddAsync(newUser, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Người dùng {UserName} (ID: {UserId}) đã gửi yêu cầu đăng ký chủ trọ, đang chờ duyệt.",
+            newUser.UserName, newUser.Id);
+
+        return newUser.ToUserDto();
+    }
+
+    // =========================================================================
+    // KIỂM TRA & HOÀN THIỆN HỒ SƠ
+    // =========================================================================
+
+    /// <summary>
+    /// Trả về tình trạng hồ sơ: đã đủ chưa, nếu chưa thì thiếu những trường nào.
+    /// </summary>
+    /// <exception cref="AppNotFoundException">Không tìm thấy người dùng.</exception>
+    public async Task<ProfileStatusDto> GetProfileStatusAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        // Chỉ đọc dữ liệu nên dùng AsNoTracking cho nhẹ
+        var user = await _dbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
+            ?? throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{userId}'.");
+
+        return BuildProfileStatus(user);
+    }
+
+    /// <summary>
+    /// Cập nhật thông tin cá nhân. Chỉ ghi đè những trường người dùng có gửi lên.
+    /// Sau khi cập nhật, hồ sơ bắt buộc phải đủ mọi trường cần thiết theo vai trò.
+    /// </summary>
+    /// <exception cref="AppNotFoundException">Không tìm thấy người dùng.</exception>
+    /// <exception cref="AppValidationException">Vẫn còn thiếu trường bắt buộc hoặc sai định dạng.</exception>
+    /// <exception cref="AppConflictException">Số CCCD đã thuộc về tài khoản khác.</exception>
+    public async Task<ProfileStatusDto> CompleteProfileAsync(string userId, CompleteProfileDto dto, CancellationToken cancellationToken = default)
+    {
+        // BƯỚC 1: Lấy người dùng cần cập nhật (có theo dõi thay đổi để lưu lại)
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
+            ?? throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{userId}'.");
+
+        // BƯỚC 2: Gộp dữ liệu mới vào dữ liệu cũ.
+        // Toán tử ?? nghĩa là: nếu người dùng không gửi trường đó thì giữ nguyên giá trị cũ.
+        user.FullName = TrimOrNull(dto.FullName) ?? user.FullName;
+        user.PhoneNumber = TrimOrNull(dto.PhoneNumber) ?? user.PhoneNumber;
+        user.CitizenId = TrimOrNull(dto.CitizenId) ?? user.CitizenId;
+        user.DateOfBirth = dto.DateOfBirth ?? user.DateOfBirth;
+        user.Address = TrimOrNull(dto.Address) ?? user.Address;
+
+        // BƯỚC 3: Sau khi gộp, hồ sơ phải đầy đủ và đúng định dạng
+        UserProfileRules.EnsureRequiredFieldsFilled(user);
+        UserProfileRules.EnsureValidFormat(user);
+
+        // BƯỚC 4: CCCD không được trùng với tài khoản KHÁC (bỏ qua chính người dùng này)
+        if (!string.IsNullOrWhiteSpace(user.CitizenId))
+        {
+            await EnsureCitizenIdAvailableAsync(user.CitizenId, excludeUserId: user.Id, cancellationToken);
+        }
+
+        // BƯỚC 5: Lưu thay đổi
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Người dùng {UserName} (ID: {UserId}) đã cập nhật hồ sơ cá nhân.", user.UserName, user.Id);
+
+        return BuildProfileStatus(user);
+    }
+
+    // =========================================================================
+    // CÁC HÀM HỖ TRỢ DÙNG CHUNG (PRIVATE)
+    // =========================================================================
+
+    /// <summary>
+    /// Kiểm tra tên đăng nhập không trống và mật khẩu đủ độ dài tối thiểu.
+    /// </summary>
+    private static void ValidateCredentials(string userName, string password)
+    {
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            throw new AppValidationException("Tên đăng nhập (UserName) không được để trống.");
+        }
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new AppValidationException("Mật khẩu không được để trống.");
+        }
+
+        if (password.Length < MinimumPasswordLength)
+        {
+            throw new AppValidationException($"Mật khẩu phải có độ dài tối thiểu từ {MinimumPasswordLength} ký tự trở lên để đảm bảo an toàn.");
+        }
+    }
+
+    /// <summary>
+    /// Ném lỗi 409 nếu tên đăng nhập đã có người dùng (so sánh không phân biệt hoa thường).
+    /// </summary>
+    private async Task EnsureUserNameAvailableAsync(string userName, string normalizedUserName, CancellationToken cancellationToken)
+    {
+        var isUserNameTaken = await _dbContext.Users.AnyAsync(
+            u => u.NormalizedUserName == normalizedUserName,
+            cancellationToken);
+
+        if (isUserNameTaken)
+        {
+            _logger.LogWarning("Thao tác tạo người dùng thất bại: Tên đăng nhập '{UserName}' đã tồn tại.", userName);
+            throw new AppConflictException($"Tên đăng nhập '{userName.Trim()}' đã có người sử dụng. Vui lòng chọn tên đăng nhập khác.");
+        }
+    }
+
+    /// <summary>
+    /// Ném lỗi 409 nếu email đã được dùng. Bỏ qua khi không nhập email.
+    /// </summary>
+    private async Task EnsureEmailAvailableAsync(string? email, string? normalizedEmail, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedEmail))
+        {
+            return;
+        }
+
+        var isEmailTaken = await _dbContext.Users.AnyAsync(
+            u => u.NormalizedEmail == normalizedEmail,
+            cancellationToken);
+
+        if (isEmailTaken)
+        {
+            _logger.LogWarning("Thao tác tạo người dùng thất bại: Email '{Email}' đã tồn tại.", email);
+            throw new AppConflictException($"Địa chỉ email '{email?.Trim()}' đã được liên kết với một tài khoản khác trong hệ thống.");
+        }
+    }
+
+    /// <summary>
+    /// Ném lỗi 409 nếu số CCCD đã thuộc về một tài khoản khác.
+    /// </summary>
+    /// <param name="excludeUserId">Id của chính người đang cập nhật (để không tự báo trùng với mình). Null khi tạo mới.</param>
+    private async Task EnsureCitizenIdAvailableAsync(string citizenId, string? excludeUserId, CancellationToken cancellationToken)
+    {
+        var isCitizenIdTaken = await _dbContext.Users.AnyAsync(
+            u => u.CitizenId == citizenId && u.Id != excludeUserId,
+            cancellationToken);
+
+        if (isCitizenIdTaken)
+        {
+            _logger.LogWarning("Số CCCD '{CitizenId}' đã được sử dụng bởi tài khoản khác.", citizenId);
+            throw new AppConflictException("Số CCCD này đã được đăng ký cho một tài khoản khác trong hệ thống.");
+        }
+    }
+
+    /// <summary>
+    /// Tạo kết quả tình trạng hồ sơ dựa trên quy tắc trong <see cref="UserProfileRules"/>.
+    /// </summary>
+    private static ProfileStatusDto BuildProfileStatus(AppUser user)
+    {
+        var missingFields = UserProfileRules.GetMissingFields(user);
+
+        return new ProfileStatusDto
+        {
+            UserId = user.Id,
+            IsProfileCompleted = missingFields.Count == 0,
+            MissingFields = missingFields
         };
     }
+
+    /// <summary>
+    /// Chuẩn hóa chuỗi để so sánh trùng lặp: cắt khoảng trắng và viết hoa. Trả về null nếu chuỗi rỗng.
+    /// </summary>
+    private static string? Normalize(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToUpperInvariant();
+
+    /// <summary>
+    /// Cắt khoảng trắng hai đầu. Trả về null nếu chuỗi rỗng (để DB lưu NULL thay vì chuỗi trống).
+    /// </summary>
+    private static string? TrimOrNull(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

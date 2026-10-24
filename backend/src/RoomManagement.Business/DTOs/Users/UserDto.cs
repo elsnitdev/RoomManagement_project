@@ -32,6 +32,11 @@ public sealed class UserDto
     public bool IsActive { get; set; }
 
     /// <summary>
+    /// Trạng thái xét duyệt của tài khoản: Pending / Approved / Rejected.
+    /// </summary>
+    public string ApprovalStatus { get; set; } = string.Empty;
+
+    /// <summary>
     /// Thời điểm tài khoản được khởi tạo (giờ chuẩn UTC).
     /// </summary>
     public DateTime CreatedAt { get; set; }

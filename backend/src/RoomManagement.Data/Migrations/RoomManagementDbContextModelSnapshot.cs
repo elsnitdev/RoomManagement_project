@@ -97,13 +97,31 @@ namespace RoomManagement.Data.Migrations
                     b.Property<string>("Id")
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<string>("Address")
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValueSql("N'Approved'", "DF_Users_ApprovalStatus");
+
+                    b.Property<string>("CitizenId")
+                        .HasColumnType("varchar(20)");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2(0)")
                         .HasDefaultValueSql("SYSUTCDATETIME()", "DF_Users_CreatedAt");
 
+                    b.Property<DateOnly?>("DateOfBirth")
+                        .HasColumnType("date");
+
                     b.Property<string>("Email")
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("FullName")
+                        .HasColumnType("nvarchar(150)");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
@@ -121,6 +139,15 @@ namespace RoomManagement.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("PhoneNumber")
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("RejectionReason")
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2(0)");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasColumnType("nvarchar(20)");
@@ -131,6 +158,11 @@ namespace RoomManagement.Data.Migrations
 
                     b.HasKey("Id")
                         .HasName("PK_Users");
+
+                    b.HasIndex("CitizenId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Users_CitizenId")
+                        .HasFilter("CitizenId IS NOT NULL");
 
                     b.HasIndex("NormalizedEmail")
                         .IsUnique()
@@ -143,6 +175,8 @@ namespace RoomManagement.Data.Migrations
 
                     b.ToTable("Users", "dbo", t =>
                         {
+                            t.HasCheckConstraint("CK_Users_ApprovalStatus", "(ApprovalStatus IN (N'Pending', N'Approved', N'Rejected'))");
+
                             t.HasCheckConstraint("CK_Users_Role", "(Role IN (N'Admin', N'Landlord', N'Tenant'))");
                         });
                 });
