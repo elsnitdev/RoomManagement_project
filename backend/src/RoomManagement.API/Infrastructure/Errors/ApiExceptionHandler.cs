@@ -27,6 +27,8 @@ public sealed class ApiExceptionHandler : IExceptionHandler
           (StatusCodes.Status409Conflict, "Dữ liệu bị xung đột", business.Code),
       BusinessException { Type: BusinessErrorType.InvalidOperation } business =>
           (StatusCodes.Status422UnprocessableEntity, "Không thể thực hiện thao tác", business.Code),
+      BusinessException { Type: BusinessErrorType.Validation } business =>
+          (StatusCodes.Status400BadRequest, "Dữ liệu yêu cầu không hợp lệ", business.Code),
       _ => (StatusCodes.Status500InternalServerError, "Lỗi hệ thống", "INTERNAL_ERROR")
     };
 

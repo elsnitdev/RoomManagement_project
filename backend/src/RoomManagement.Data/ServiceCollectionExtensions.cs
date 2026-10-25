@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using RoomManagement.Business.Interfaces;
 
 namespace RoomManagement.Data;
 
@@ -17,6 +18,9 @@ public static class ServiceCollectionExtensions
     }
 
     services.AddDbContext<RoomManagementDbContext>(options => options.UseSqlServer(connectionString));
+    services.AddScoped<ILandlordStore, LandlordStore>();
+    services.AddScoped<IPropertyStore, PropertyStore>();
+    services.AddScoped<IRoomStore, RoomStore>();
     return services;
   }
 }

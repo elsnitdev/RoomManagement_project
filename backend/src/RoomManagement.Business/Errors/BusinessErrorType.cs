@@ -4,5 +4,6 @@ public enum BusinessErrorType
 {
     NotFound,
     Conflict,
-    InvalidOperation
+    InvalidOperation,
+    Validation
 }

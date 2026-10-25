@@ -3,8 +3,13 @@ using RoomManagement.Domain.Entities;
 
 namespace RoomManagement.Data;
 
-public sealed class RoomManagementDbContext(DbContextOptions<RoomManagementDbContext> options) : DbContext(options)
+public sealed class RoomManagementDbContext : DbContext
 {
+    public RoomManagementDbContext(DbContextOptions<RoomManagementDbContext> options)
+        : base(options)
+    {
+    }
+
     public DbSet<AppUser> Users => Set<AppUser>();
 public DbSet<TenantProfile> TenantProfiles => Set<TenantProfile>();
 public DbSet<Property> Properties => Set<Property>();
