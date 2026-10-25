@@ -1,12 +1,10 @@
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using RoomManagement.Business.DTOs.Users;
 using RoomManagement.Business.Exceptions;
 using RoomManagement.Business.Interfaces;
 using RoomManagement.Business.Mappings;
 using RoomManagement.Business.Validators;
-using RoomManagement.Data;
 using RoomManagement.Domain;
 using RoomManagement.Domain.Constants;
 using RoomManagement.Domain.Entities;
@@ -15,22 +13,24 @@ namespace RoomManagement.Business.Services;
 
 /// <summary>
 /// Service triển khai các logic nghiệp vụ liên quan đến tài khoản người dùng.
+/// Tuân thủ quy chuẩn Clean Architecture: Tầng Business tập trung vào các quy tắc kiểm tra,
+/// tính toán, phân quyền và giao tiếp với dữ liệu thông qua IUserStore thay vì phụ thuộc DbContext.
 /// </summary>
 public sealed class UserService : IUserService
 {
     /// <summary>Độ dài tối thiểu của mật khẩu.</summary>
     private const int MinimumPasswordLength = 6;
 
-    private readonly RoomManagementDbContext _dbContext;
+    private readonly IUserStore _userStore;
     private readonly IPasswordHasher<AppUser> _passwordHasher;
     private readonly ILogger<UserService> _logger;
 
     public UserService(
-        RoomManagementDbContext dbContext,
+        IUserStore userStore,
         IPasswordHasher<AppUser> passwordHasher,
         ILogger<UserService> logger)
     {
-        _dbContext = dbContext;
+        _userStore = userStore;
         _passwordHasher = passwordHasher;
         _logger = logger;
     }
@@ -89,7 +89,7 @@ public sealed class UserService : IUserService
         var normalizedEmail = Normalize(dto.Email);
 
         // -------------------------------------------------------------------------
-        // BƯỚC 4: KIỂM TRA TRÙNG LẶP DỮ LIỆU TRONG DATABASE (USERNAME VÀ EMAIL)
+        // BƯỚC 4: KIỂM TRA TRÙNG LẶP DỮ LIỆU QUA STORE (USERNAME VÀ EMAIL)
         // -------------------------------------------------------------------------
         await EnsureUserNameAvailableAsync(dto.UserName, normalizedUserName, cancellationToken);
         await EnsureEmailAvailableAsync(dto.Email, normalizedEmail, cancellationToken);
@@ -118,10 +118,10 @@ public sealed class UserService : IUserService
         newUser.PasswordHash = _passwordHasher.HashPassword(newUser, dto.Password);
 
         // -------------------------------------------------------------------------
-        // BƯỚC 7: LƯU THÔNG TIN VÀO CƠ SỞ DỮ LIỆU THÔNG QUA EF CORE
+        // BƯỚC 7: LƯU THÔNG TIN VÀO CƠ SỞ DỮ LIỆU THÔNG QUA STORE
         // -------------------------------------------------------------------------
-        await _dbContext.Users.AddAsync(newUser, cancellationToken);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _userStore.AddAsync(newUser, cancellationToken);
+        await _userStore.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Admin đã tạo thành công tài khoản: {UserName} (ID: {UserId}) với vai trò '{Role}'",
             newUser.UserName, newUser.Id, newUser.Role);
@@ -173,7 +173,7 @@ public sealed class UserService : IUserService
         UserProfileRules.EnsureRequiredFieldsFilled(newUser);
         UserProfileRules.EnsureValidFormat(newUser);
 
-        // BƯỚC 4: Kiểm tra trùng tên đăng nhập, email, CCCD
+        // BƯỚC 4: Kiểm tra trùng tên đăng nhập, email, CCCD qua Store
         await EnsureUserNameAvailableAsync(newUser.UserName, newUser.NormalizedUserName, cancellationToken);
         await EnsureEmailAvailableAsync(newUser.Email, newUser.NormalizedEmail, cancellationToken);
         await EnsureCitizenIdAvailableAsync(newUser.CitizenId!, excludeUserId: null, cancellationToken);
@@ -181,10 +181,9 @@ public sealed class UserService : IUserService
         // BƯỚC 5: Băm mật khẩu, không bao giờ lưu mật khẩu gốc
         newUser.PasswordHash = _passwordHasher.HashPassword(newUser, dto.Password);
 
-        // BƯỚC 6: Lưu vào DB. Tài khoản và hồ sơ nằm chung bảng Users nên chỉ cần 1 lần lưu
-        // (lưu thành công cả hai, hoặc thất bại cả hai).
-        await _dbContext.Users.AddAsync(newUser, cancellationToken);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        // BƯỚC 6: Lưu vào DB qua Store. Tài khoản và hồ sơ nằm chung bảng Users nên chỉ cần 1 lần lưu
+        await _userStore.AddAsync(newUser, cancellationToken);
+        await _userStore.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Người dùng {UserName} (ID: {UserId}) đã gửi yêu cầu đăng ký chủ trọ, đang chờ duyệt.",
             newUser.UserName, newUser.Id);
@@ -202,10 +201,8 @@ public sealed class UserService : IUserService
     /// <exception cref="AppNotFoundException">Không tìm thấy người dùng.</exception>
     public async Task<ProfileStatusDto> GetProfileStatusAsync(string userId, CancellationToken cancellationToken = default)
     {
-        // Chỉ đọc dữ liệu nên dùng AsNoTracking cho nhẹ
-        var user = await _dbContext.Users
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
+        // Chỉ đọc dữ liệu nên gọi qua Store AsNoTracking để tối ưu
+        var user = await _userStore.FindByIdAsNoTrackingAsync(userId, cancellationToken)
             ?? throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{userId}'.");
 
         return BuildProfileStatus(user);
@@ -220,12 +217,11 @@ public sealed class UserService : IUserService
     /// <exception cref="AppConflictException">Số CCCD đã thuộc về tài khoản khác.</exception>
     public async Task<ProfileStatusDto> CompleteProfileAsync(string userId, CompleteProfileDto dto, CancellationToken cancellationToken = default)
     {
-        // BƯỚC 1: Lấy người dùng cần cập nhật (có theo dõi thay đổi để lưu lại)
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
+        // BƯỚC 1: Lấy người dùng cần cập nhật qua Store (có theo dõi để lưu lại)
+        var user = await _userStore.FindByIdAsync(userId, cancellationToken)
             ?? throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{userId}'.");
 
-        // BƯỚC 2: Gộp dữ liệu mới vào dữ liệu cũ.
-        // Toán tử ?? nghĩa là: nếu người dùng không gửi trường đó thì giữ nguyên giá trị cũ.
+        // BƯỚC 2: Gộp dữ liệu mới vào dữ liệu cũ
         user.FullName = TrimOrNull(dto.FullName) ?? user.FullName;
         user.PhoneNumber = TrimOrNull(dto.PhoneNumber) ?? user.PhoneNumber;
         user.CitizenId = TrimOrNull(dto.CitizenId) ?? user.CitizenId;
@@ -242,8 +238,8 @@ public sealed class UserService : IUserService
             await EnsureCitizenIdAvailableAsync(user.CitizenId, excludeUserId: user.Id, cancellationToken);
         }
 
-        // BƯỚC 5: Lưu thay đổi
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        // BƯỚC 5: Yêu cầu Store lưu thay đổi
+        await _userStore.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Người dùng {UserName} (ID: {UserId}) đã cập nhật hồ sơ cá nhân.", user.UserName, user.Id);
 
@@ -276,13 +272,11 @@ public sealed class UserService : IUserService
     }
 
     /// <summary>
-    /// Ném lỗi 409 nếu tên đăng nhập đã có người dùng (so sánh không phân biệt hoa thường).
+    /// Ném lỗi 409 nếu tên đăng nhập đã có người dùng.
     /// </summary>
     private async Task EnsureUserNameAvailableAsync(string userName, string normalizedUserName, CancellationToken cancellationToken)
     {
-        var isUserNameTaken = await _dbContext.Users.AnyAsync(
-            u => u.NormalizedUserName == normalizedUserName,
-            cancellationToken);
+        var isUserNameTaken = await _userStore.ExistsByNormalizedUserNameAsync(normalizedUserName, cancellationToken);
 
         if (isUserNameTaken)
         {
@@ -301,9 +295,7 @@ public sealed class UserService : IUserService
             return;
         }
 
-        var isEmailTaken = await _dbContext.Users.AnyAsync(
-            u => u.NormalizedEmail == normalizedEmail,
-            cancellationToken);
+        var isEmailTaken = await _userStore.ExistsByNormalizedEmailAsync(normalizedEmail, cancellationToken);
 
         if (isEmailTaken)
         {
@@ -315,12 +307,9 @@ public sealed class UserService : IUserService
     /// <summary>
     /// Ném lỗi 409 nếu số CCCD đã thuộc về một tài khoản khác.
     /// </summary>
-    /// <param name="excludeUserId">Id của chính người đang cập nhật (để không tự báo trùng với mình). Null khi tạo mới.</param>
     private async Task EnsureCitizenIdAvailableAsync(string citizenId, string? excludeUserId, CancellationToken cancellationToken)
     {
-        var isCitizenIdTaken = await _dbContext.Users.AnyAsync(
-            u => u.CitizenId == citizenId && u.Id != excludeUserId,
-            cancellationToken);
+        var isCitizenIdTaken = await _userStore.ExistsByCitizenIdAsync(citizenId, excludeUserId, cancellationToken);
 
         if (isCitizenIdTaken)
         {
