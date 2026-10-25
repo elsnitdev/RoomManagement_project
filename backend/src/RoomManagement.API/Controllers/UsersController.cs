@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using RoomManagement.API.Contracts.Users;
 using RoomManagement.Business.DTOs.Users;
 using RoomManagement.Business.Exceptions;
@@ -12,6 +13,7 @@ namespace RoomManagement.API.Controllers;
 ///  - Hoàn thiện / cập nhật hồ sơ cá nhân.
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/users")]
 public sealed class UsersController : ControllerBase
 {
@@ -45,6 +47,9 @@ public sealed class UsersController : ControllerBase
         [FromRoute] string id,
         CancellationToken cancellationToken)
     {
+        if (!string.Equals(User.FindFirst("sub")?.Value, id, StringComparison.Ordinal))
+            return Forbid();
+
         _logger.LogInformation("Kiểm tra tình trạng hồ sơ cho tài khoản ID: '{UserId}'", id);
 
         try
@@ -94,6 +99,9 @@ public sealed class UsersController : ControllerBase
         [FromBody] CompleteProfileRequest request,
         CancellationToken cancellationToken)
     {
+        if (!string.Equals(User.FindFirst("sub")?.Value, id, StringComparison.Ordinal))
+            return Forbid();
+
         _logger.LogInformation("Nhận yêu cầu hoàn thiện/cập nhật hồ sơ cho tài khoản ID: '{UserId}'", id);
 
         try

@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using RoomManagement.Business.Interfaces;
 using RoomManagement.Business.Services;
-using RoomManagement.Business.Stores;
 
 namespace RoomManagement.Business;
 
@@ -13,12 +12,9 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddRoomManagementBusiness(this IServiceCollection services)
     {
-        // Đăng ký các Store truy cập dữ liệu (Stores)
-        services.AddScoped<IUserStore, UserStore>();
-        services.AddScoped<ILandlordApprovalStore, LandlordApprovalStore>();
-
         // Đăng ký các Service xử lý nghiệp vụ (Services)
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IAuthenticationService, AuthenticationService>();
         services.AddScoped<ILandlordApprovalService, LandlordApprovalService>();
 
         return services;

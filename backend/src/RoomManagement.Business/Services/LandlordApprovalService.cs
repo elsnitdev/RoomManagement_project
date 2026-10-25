@@ -60,7 +60,7 @@ public sealed class LandlordApprovalService : ILandlordApprovalService
         landlord.ReviewedAt = DateTime.UtcNow;
 
         // BƯỚC 3: Yêu cầu Store lưu thay đổi vào cơ sở dữ liệu
-        await _approvalStore.SaveChangesAsync(cancellationToken);
+        await SaveReviewAsync(landlord, cancellationToken);
 
         _logger.LogInformation("Admin đã DUYỆT yêu cầu đăng ký chủ trọ của {UserName} (ID: {UserId}).",
             landlord.UserName, landlord.Id);
@@ -100,7 +100,7 @@ public sealed class LandlordApprovalService : ILandlordApprovalService
         landlord.ReviewedAt = DateTime.UtcNow;
 
         // BƯỚC 4: Yêu cầu Store lưu thay đổi vào cơ sở dữ liệu
-        await _approvalStore.SaveChangesAsync(cancellationToken);
+        await SaveReviewAsync(landlord, cancellationToken);
 
         _logger.LogInformation("Admin đã TỪ CHỐI yêu cầu đăng ký chủ trọ của {UserName} (ID: {UserId}). Lý do: {Reason}",
             landlord.UserName, landlord.Id, trimmedReason);
@@ -110,9 +110,16 @@ public sealed class LandlordApprovalService : ILandlordApprovalService
     }
 
     /// <summary>
-    /// Hàm dùng chung tìm tài khoản chủ trọ theo Id và kiểm tra điều kiện trạng thái Chờ duyệt.
-    /// Chống việc duyệt 2 lần hoặc duyệt một tài khoản đã bị từ chối/đã duyệt trước đó.
+    /// Chặn ghi đè khi một request khác đã xử lý yêu cầu sau bước đọc dữ liệu.
     /// </summary>
+    private async Task SaveReviewAsync(AppUser landlord, CancellationToken cancellationToken)
+    {
+        if (!await _approvalStore.TryReviewPendingAsync(landlord, cancellationToken))
+        {
+            throw new AppConflictException("Yêu cầu đăng ký đã được xử lý bởi một thao tác khác.");
+        }
+    }
+
     private async Task<AppUser> GetPendingLandlordAsync(string userId, CancellationToken cancellationToken)
     {
         // 1. Tìm tài khoản chủ trọ theo userId qua Store (chỉ tìm tài khoản có Role là Landlord)

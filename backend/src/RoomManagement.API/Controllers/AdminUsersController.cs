@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using RoomManagement.Domain;
 using RoomManagement.API.Contracts.Users;
 using RoomManagement.Business.DTOs.Users;
 using RoomManagement.Business.Exceptions;
@@ -11,9 +13,7 @@ namespace RoomManagement.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/admin/users")]
-// Khi hệ thống hoàn thiện việc cấp phát JWT Token, chỉ cần bật [Authorize(Roles = UserRoles.Admin)]
-// để bảo vệ API này, đảm bảo chỉ có Quản trị viên mới được phép gọi.
-// [Authorize(Roles = UserRoles.Admin)]
+[Authorize(Roles = UserRoles.Admin)]
 public sealed class AdminUsersController : ControllerBase
 {
     private readonly IUserService _userService;
@@ -64,15 +64,7 @@ public sealed class AdminUsersController : ControllerBase
             var createdUserDto = await _userService.CreateUserByAdminAsync(createUserDto, cancellationToken);
 
             // 3. Chuyển đổi kết quả từ DTO sang UserResponse để trả về cho Client
-            var response = new UserResponse
-            {
-                Id = createdUserDto.Id,
-                UserName = createdUserDto.UserName,
-                Email = createdUserDto.Email,
-                Role = createdUserDto.Role,
-                IsActive = createdUserDto.IsActive,
-                CreatedAt = createdUserDto.CreatedAt
-            };
+            var response = UserResponse.FromDto(createdUserDto);
 
             // 4. Trả về mã 201 Created cùng dữ liệu phản hồi
             return StatusCode(StatusCodes.Status201Created, new

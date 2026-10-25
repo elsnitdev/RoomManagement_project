@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.ComponentModel.DataAnnotations;
 using RoomManagement.Domain;
 using RoomManagement.Domain.Entities;
 
@@ -25,31 +26,37 @@ public sealed class AdminUserSeeder(
             return;
         }
 
-        // Chuẩn hóa username và email
-        var normalizedUserName = _options.UserName.Trim().ToUpperInvariant();
-        var normalizedEmail = string.IsNullOrWhiteSpace(_options.Email)
-            ? null
-            : _options.Email.Trim().ToUpperInvariant();
-
-        // Kiểm tra xem đã tồn tại tài khoản Admin hoặc tài khoản có cùng UserName chưa
-        var exists = await dbContext.Users.AnyAsync(
-            u => u.NormalizedUserName == normalizedUserName || u.Role == UserRoles.Admin,
-            cancellationToken);
-
-        // Nếu đã tồn tại thì return
-        if (exists)
+        // Existing administrators are never reset or modified during startup.
+        if (await dbContext.Users.AnyAsync(u => u.Role == UserRoles.Admin, cancellationToken))
         {
             logger.LogInformation("Tài khoản quản trị viên (Admin) ban đầu đã tồn tại trong hệ thống. Bỏ qua bước seed.");
             return;
+        }
+
+        var userName = _options.UserName?.Trim();
+        var email = string.IsNullOrWhiteSpace(_options.Email) ? null : _options.Email.Trim();
+        if (string.IsNullOrEmpty(userName) || userName.Length is < 3 or > 50)
+            throw new InvalidOperationException("InitialAdmin:UserName must contain between 3 and 50 characters.");
+        if (_options.Password.Length < 12)
+            throw new InvalidOperationException("InitialAdmin:Password must contain at least 12 characters.");
+        if (email is not null && (email.Length > 256 || !new EmailAddressAttribute().IsValid(email)))
+            throw new InvalidOperationException("InitialAdmin:Email must be a valid email of at most 256 characters.");
+
+        var normalizedUserName = userName.ToUpperInvariant();
+        var normalizedEmail = email?.ToUpperInvariant();
+        if (await dbContext.Users.AnyAsync(u => u.NormalizedUserName == normalizedUserName ||
+            (normalizedEmail != null && u.NormalizedEmail == normalizedEmail), cancellationToken))
+        {
+            throw new InvalidOperationException("Initial admin username or email belongs to another account. Choose unused credentials; no account was promoted.");
         }
 
         // Tạo admin
         var adminUser = new AppUser
         {
             Id = Guid.NewGuid().ToString(),
-            UserName = _options.UserName.Trim(),
+            UserName = userName,
             NormalizedUserName = normalizedUserName,
-            Email = _options.Email?.Trim(),
+            Email = email,
             NormalizedEmail = normalizedEmail,
             Role = UserRoles.Admin,
             IsActive = true,

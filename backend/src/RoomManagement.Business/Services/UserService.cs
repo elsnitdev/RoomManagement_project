@@ -53,6 +53,7 @@ public sealed class UserService : IUserService
         // BƯỚC 1: KIỂM TRA TÍNH HỢP LỆ CỦA CÁC TRƯỜNG DỮ LIỆU CƠ BẢN
         // -------------------------------------------------------------------------
         ValidateCredentials(dto.UserName, dto.Password);
+        UserAccountRules.EnsureValidEmail(dto.Email);
 
         // -------------------------------------------------------------------------
         // BƯỚC 2: RÀNG BUỘC VAI TRÒ (ROLE) - CHẶN LEO THANG ĐẶC QUYỀN
@@ -147,6 +148,7 @@ public sealed class UserService : IUserService
     {
         // BƯỚC 1: Kiểm tra tên đăng nhập và mật khẩu
         ValidateCredentials(dto.UserName, dto.Password);
+        UserAccountRules.EnsureValidEmail(dto.Email);
 
         // BƯỚC 2: Dựng thực thể người dùng từ dữ liệu đăng ký (đã cắt khoảng trắng thừa)
         var newUser = new AppUser

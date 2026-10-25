@@ -1,11 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using RoomManagement.Business.Interfaces;
-using RoomManagement.Data;
 using RoomManagement.Domain;
 using RoomManagement.Domain.Constants;
 using RoomManagement.Domain.Entities;
 
-namespace RoomManagement.Business.Stores;
+namespace RoomManagement.Data.Stores;
 
 /// <summary>
 /// Hiện thực hóa interface ILandlordApprovalStore sử dụng Entity Framework Core và RoomManagementDbContext.
@@ -34,20 +33,29 @@ public sealed class LandlordApprovalStore : ILandlordApprovalStore
     }
 
     /// <summary>
-    /// Tìm kiếm tài khoản chủ trọ theo ID (có tracking) để tầng Business có thể cập nhật trạng thái
+    /// Tìm kiếm tài khoản chủ trọ theo ID (không tracking) để tầng Business có thể quyết định trạng thái
     /// duyệt / từ chối và lưu lại vào cơ sở dữ liệu.
     /// </summary>
     public async Task<AppUser?> FindLandlordByIdAsync(string userId, CancellationToken cancellationToken = default)
     {
         return await _dbContext.Users
+            .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == userId && u.Role == UserRoles.Landlord, cancellationToken);
     }
 
     /// <summary>
-    /// Lưu tất cả thay đổi trên DbContext vào cơ sở dữ liệu.
+    /// Cập nhật nguyên tử các trường xét duyệt, không ghi đè thông tin hồ sơ.
     /// </summary>
-    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    public async Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default)
     {
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        var affected = await _dbContext.Users
+            .Where(u => u.Id == reviewedUser.Id && u.Role == UserRoles.Landlord &&
+                        u.ApprovalStatus == ApprovalStatuses.Pending)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(u => u.ApprovalStatus, reviewedUser.ApprovalStatus)
+                .SetProperty(u => u.IsActive, reviewedUser.IsActive)
+                .SetProperty(u => u.RejectionReason, reviewedUser.RejectionReason)
+                .SetProperty(u => u.ReviewedAt, reviewedUser.ReviewedAt), cancellationToken);
+        return affected == 1;
     }
 }

@@ -22,7 +22,9 @@ public sealed class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
         builder.Property(e => e.NormalizedEmail).HasColumnType("nvarchar(256)");
         builder.Property(e => e.PasswordHash).HasColumnType("nvarchar(max)").IsRequired();
         builder.Property(e => e.Role).HasColumnType("nvarchar(20)").IsRequired();
-        builder.Property(e => e.IsActive).HasColumnType("bit").IsRequired().HasDefaultValueSql(@"1", "DF_Users_IsActive");
+        // EF must send false explicitly for pending landlords instead of treating it as an unset value.
+        builder.Property(e => e.IsActive).HasColumnType("bit").IsRequired()
+            .HasDefaultValueSql(@"1", "DF_Users_IsActive").HasSentinel(true);
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_Users_CreatedAt");
         builder.HasIndex(e => e.NormalizedUserName).HasDatabaseName("UX_Users_NormalizedUserName").IsUnique();
         builder.HasIndex(e => e.NormalizedEmail).HasDatabaseName("UX_Users_NormalizedEmail").IsUnique().HasFilter(@"NormalizedEmail IS NOT NULL");

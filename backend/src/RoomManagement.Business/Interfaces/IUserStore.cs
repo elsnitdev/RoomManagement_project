@@ -11,6 +11,8 @@ namespace RoomManagement.Business.Interfaces;
 /// </summary>
 public interface IUserStore
 {
+    Task<AppUser?> FindByLoginAsync(string normalizedLogin, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Kiểm tra xem tên đăng nhập (đã chuẩn hóa viết hoa) đã tồn tại trong hệ thống hay chưa.
     /// </summary>

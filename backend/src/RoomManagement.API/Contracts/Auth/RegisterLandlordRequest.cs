@@ -17,6 +17,7 @@ public sealed class RegisterLandlordRequest
 
     [Required(ErrorMessage = "Email không được để trống.")]
     [EmailAddress(ErrorMessage = "Địa chỉ email không đúng định dạng hợp lệ.")]
+    [StringLength(256, ErrorMessage = "Email không được vượt quá 256 ký tự.")]
     public string Email { get; init; } = string.Empty;
 
     [Required(ErrorMessage = "Mật khẩu không được để trống.")]

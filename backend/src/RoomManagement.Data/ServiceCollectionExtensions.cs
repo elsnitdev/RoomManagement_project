@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using RoomManagement.Business.Interfaces;
+using RoomManagement.Data.Stores;
 
 namespace RoomManagement.Data;
 
@@ -17,6 +19,8 @@ public static class ServiceCollectionExtensions
     }
 
     services.AddDbContext<RoomManagementDbContext>(options => options.UseSqlServer(connectionString));
+    services.AddScoped<IUserStore, UserStore>();
+    services.AddScoped<ILandlordApprovalStore, LandlordApprovalStore>();
 
     // Lấy thông tin admin từ appsettings
     services.Configure<Seeders.InitialAdminOptions>(configuration.GetSection(Seeders.InitialAdminOptions.SectionName));

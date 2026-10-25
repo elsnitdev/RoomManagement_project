@@ -1,9 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
+using RoomManagement.Business.Exceptions;
 using RoomManagement.Business.Interfaces;
-using RoomManagement.Data;
 using RoomManagement.Domain.Entities;
 
-namespace RoomManagement.Business.Stores;
+namespace RoomManagement.Data.Stores;
 
 /// <summary>
 /// Hiện thực hóa interface IUserStore bằng Entity Framework Core qua RoomManagementDbContext.
@@ -67,6 +68,16 @@ public sealed class UserStore : IUserStore
             .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
     }
 
+    public async Task<AppUser?> FindByLoginAsync(string normalizedLogin, CancellationToken cancellationToken = default)
+    {
+        var matches = await _dbContext.Users
+            .Where(u => u.NormalizedUserName == normalizedLogin || u.NormalizedEmail == normalizedLogin)
+            .Take(2)
+            .ToListAsync(cancellationToken);
+        // Username and email each have a unique index, but may collide across accounts.
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
     /// <summary>
     /// Thêm người dùng mới vào DbContext.
     /// </summary>
@@ -80,6 +91,16 @@ public sealed class UserStore : IUserStore
     /// </summary>
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (
+            ex.InnerException is SqlException { Number: 2601 or 2627 } &&
+            ex.Entries.Count > 0 && ex.Entries.All(entry => entry.Entity is AppUser))
+        {
+            // Database uniqueness remains authoritative when requests race past prechecks.
+            throw new AppConflictException("Tên đăng nhập, email hoặc số CCCD đã được sử dụng.");
+        }
     }
 }

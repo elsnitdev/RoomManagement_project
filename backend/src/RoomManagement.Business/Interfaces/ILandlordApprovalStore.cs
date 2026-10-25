@@ -19,7 +19,7 @@ public interface ILandlordApprovalStore
 
     /// <summary>
     /// Tìm kiếm tài khoản chủ trọ (Role = Landlord) theo ID người dùng để phục vụ cập nhật trạng thái.
-    /// Trả về đối tượng được EF Core theo dõi (Tracking) để có thể thay đổi thuộc tính và lưu lại.
+    /// Trả về dữ liệu không theo dõi thay đổi để Business quyết định kết quả duyệt.
     /// </summary>
     /// <param name="userId">Khóa chính (Id) của người dùng.</param>
     /// <param name="cancellationToken">Token hủy thao tác không đồng bộ.</param>
@@ -27,8 +27,9 @@ public interface ILandlordApprovalStore
     Task<AppUser?> FindLandlordByIdAsync(string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lưu các thay đổi trạng thái tài khoản vào cơ sở dữ liệu.
+    /// Chỉ cập nhật các trường xét duyệt nếu trạng thái lưu trữ vẫn là Pending.
+    /// Trả về false nếu một request khác đã xử lý tài khoản.
     /// </summary>
     /// <param name="cancellationToken">Token hủy thao tác không đồng bộ.</param>
-    Task SaveChangesAsync(CancellationToken cancellationToken = default);
+    Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default);
 }

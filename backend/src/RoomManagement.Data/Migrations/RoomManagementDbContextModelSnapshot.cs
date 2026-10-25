@@ -126,7 +126,8 @@ namespace RoomManagement.Data.Migrations
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValueSql("1", "DF_Users_IsActive");
+                        .HasDefaultValueSql("1", "DF_Users_IsActive")
+                        .HasSentinel(true);
 
                     b.Property<string>("NormalizedEmail")
                         .HasColumnType("nvarchar(256)");

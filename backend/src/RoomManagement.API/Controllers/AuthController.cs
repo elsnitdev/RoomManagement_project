@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using RoomManagement.API.Authentication;
 using RoomManagement.API.Contracts.Auth;
 using RoomManagement.API.Contracts.Users;
 using RoomManagement.Business.DTOs.Users;
@@ -8,6 +10,7 @@ using RoomManagement.Business.Interfaces;
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
+[AllowAnonymous]
 [Route("api/auth")]
 public sealed class AuthController : ControllerBase
 {
@@ -21,13 +24,27 @@ public sealed class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-    public IActionResult Login([FromBody] LoginRequest request)
+    [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Login(
+        [FromBody] LoginRequest request,
+        [FromServices] IAuthenticationService authenticationService,
+        [FromServices] JwtTokenService tokenService,
+        CancellationToken cancellationToken)
     {
-        // TODO: xác thực tài khoản và mật khẩu, sau đó cấp phiên đăng nhập.
-        return StatusCode(StatusCodes.Status501NotImplemented, new
+        try
         {
-            message = "API đăng nhập đã nhận yêu cầu; chức năng xác thực chưa được triển khai."
-        });
+            var user = await authenticationService.AuthenticateAsync(request.UserNameOrEmail, request.Password, cancellationToken);
+            if (user is null)
+                return Unauthorized(new { message = "Thông tin đăng nhập không hợp lệ hoặc tài khoản chưa được phép truy cập." });
+
+            return Ok(tokenService.Create(user));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Không thể xử lý yêu cầu đăng nhập.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "Hệ thống gặp sự cố. Vui lòng thử lại sau." });
+        }
     }
 
     /// <summary>
