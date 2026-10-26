@@ -1,3 +1,5 @@
+using RoomManagement.Domain.Enums;
+
 namespace RoomManagement.Domain.Entities;
 
 public sealed class Contract
@@ -10,7 +12,7 @@ public sealed class Contract
     public decimal MonthlyRent { get; set; }
     public decimal DepositAmount { get; set; }
     public byte? PaymentDueDay { get; set; }
-    public string Status { get; set; } = null!;
+    public ContractStatus Status { get; set; } = ContractStatus.Draft;
     public string? Note { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

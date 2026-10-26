@@ -16,7 +16,7 @@ public sealed class InvoiceItemConfiguration : IEntityTypeConfiguration<InvoiceI
         builder.HasKey(e => e.Id).HasName("PK_InvoiceItems");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.InvoiceId).HasColumnType("uniqueidentifier").IsRequired();
-        builder.Property(e => e.ItemType).HasColumnType("nvarchar(20)").IsRequired();
+        builder.Property(e => e.ItemType).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.Description).HasColumnType("nvarchar(255)").IsRequired();
         builder.Property(e => e.Quantity).HasColumnType("decimal(18,2)").IsRequired().HasDefaultValueSql(@"1", "DF_InvoiceItems_Quantity");
         builder.Property(e => e.UnitPrice).HasColumnType("decimal(18,2)").IsRequired();

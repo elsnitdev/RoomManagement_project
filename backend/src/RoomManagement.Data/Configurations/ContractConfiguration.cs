@@ -24,7 +24,7 @@ public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
         builder.Property(e => e.MonthlyRent).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(e => e.DepositAmount).HasColumnType("decimal(18,2)").IsRequired().HasDefaultValueSql(@"0", "DF_Contracts_Deposit");
         builder.Property(e => e.PaymentDueDay).HasColumnType("tinyint");
-        builder.Property(e => e.Status).HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Draft'", "DF_Contracts_Status");
+        builder.Property(e => e.Status).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Draft'", "DF_Contracts_Status");
         builder.Property(e => e.Note).HasColumnType("nvarchar(1000)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_Contracts_CreatedAt");
         builder.Property(e => e.UpdatedAt).HasColumnType("datetime2(0)");

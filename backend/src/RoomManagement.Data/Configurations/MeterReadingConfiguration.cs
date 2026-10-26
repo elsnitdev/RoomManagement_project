@@ -17,7 +17,7 @@ public sealed class MeterReadingConfiguration : IEntityTypeConfiguration<MeterRe
         builder.HasKey(e => e.Id).HasName("PK_MeterReadings");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.RoomId).HasColumnType("uniqueidentifier").IsRequired();
-        builder.Property(e => e.MeterType).HasColumnType("nvarchar(20)").IsRequired();
+        builder.Property(e => e.MeterType).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.Year).HasColumnType("smallint").IsRequired();
         builder.Property(e => e.Month).HasColumnType("tinyint").IsRequired();
         builder.Property(e => e.PreviousValue).HasColumnType("decimal(18,2)").IsRequired();

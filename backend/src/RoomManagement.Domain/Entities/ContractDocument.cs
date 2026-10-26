@@ -1,3 +1,5 @@
+using RoomManagement.Domain.Enums;
+
 namespace RoomManagement.Domain.Entities;
 
 public sealed class ContractDocument
@@ -7,6 +9,6 @@ public sealed class ContractDocument
     public string FileName { get; set; } = null!;
     public string StorageKey { get; set; } = null!;
     public string? FileType { get; set; }
-    public string DocumentType { get; set; } = null!;
+    public ContractDocumentType DocumentType { get; set; }
     public DateTime UploadedAt { get; set; }
 }

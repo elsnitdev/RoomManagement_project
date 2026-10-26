@@ -20,11 +20,11 @@ public sealed class TenantRequestConfiguration : IEntityTypeConfiguration<Tenant
         builder.Property(e => e.ContractId).HasColumnType("uniqueidentifier").IsRequired();
         builder.Property(e => e.RequestedByTenantId).HasColumnType("uniqueidentifier").IsRequired();
         builder.Property(e => e.RelatedInvoiceId).HasColumnType("uniqueidentifier");
-        builder.Property(e => e.Category).HasColumnType("nvarchar(20)").IsRequired();
+        builder.Property(e => e.Category).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.Title).HasColumnType("nvarchar(200)").IsRequired();
         builder.Property(e => e.Description).HasColumnType("nvarchar(2000)").IsRequired();
-        builder.Property(e => e.Priority).HasColumnType("nvarchar(10)").IsRequired().HasDefaultValueSql(@"N'Medium'", "DF_TenantRequests_Priority");
-        builder.Property(e => e.Status).HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Pending'", "DF_TenantRequests_Status");
+        builder.Property(e => e.Priority).HasConversion<string>().HasColumnType("nvarchar(10)").IsRequired().HasDefaultValueSql(@"N'Medium'", "DF_TenantRequests_Priority");
+        builder.Property(e => e.Status).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Pending'", "DF_TenantRequests_Status");
         builder.Property(e => e.AssignedToUserId).HasColumnType("nvarchar(450)");
         builder.Property(e => e.RequestedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_TenantRequests_RequestedAt");
         builder.Property(e => e.UpdatedAt).HasColumnType("datetime2(0)");

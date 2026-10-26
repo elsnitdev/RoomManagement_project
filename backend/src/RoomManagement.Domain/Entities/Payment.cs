@@ -1,3 +1,5 @@
+using RoomManagement.Domain.Enums;
+
 namespace RoomManagement.Domain.Entities;
 
 public sealed class Payment
@@ -6,8 +8,8 @@ public sealed class Payment
     public Guid InvoiceId { get; set; }
     public decimal ClaimedAmount { get; set; }
     public decimal? VerifiedAmount { get; set; }
-    public string PaymentMethod { get; set; } = null!;
-    public string Status { get; set; } = null!;
+    public PaymentMethod PaymentMethod { get; set; }
+    public PaymentStatus Status { get; set; }
     public DateTime? PaidAt { get; set; }
     public DateTime? VerifiedAt { get; set; }
     public string? VerifiedByUserId { get; set; }

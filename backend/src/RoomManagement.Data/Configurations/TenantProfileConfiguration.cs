@@ -20,7 +20,7 @@ public sealed class TenantProfileConfiguration : IEntityTypeConfiguration<Tenant
         builder.Property(e => e.Email).HasColumnType("varchar(150)");
         builder.Property(e => e.CitizenId).HasColumnType("varchar(20)");
         builder.Property(e => e.DateOfBirth).HasColumnType("date");
-        builder.Property(e => e.Gender).HasColumnType("nvarchar(10)");
+        builder.Property(e => e.Gender).HasConversion<string>().HasColumnType("nvarchar(10)");
         builder.Property(e => e.PermanentAddress).HasColumnType("nvarchar(300)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_TenantProfiles_CreatedAt");
         builder.Property(e => e.UpdatedAt).HasColumnType("datetime2(0)");

@@ -20,8 +20,8 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(e => e.InvoiceId).HasColumnType("uniqueidentifier").IsRequired();
         builder.Property(e => e.ClaimedAmount).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(e => e.VerifiedAmount).HasColumnType("decimal(18,2)");
-        builder.Property(e => e.PaymentMethod).HasColumnType("nvarchar(20)").IsRequired();
-        builder.Property(e => e.Status).HasColumnType("nvarchar(20)").IsRequired();
+        builder.Property(e => e.PaymentMethod).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
+        builder.Property(e => e.Status).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.PaidAt).HasColumnType("datetime2(0)");
         builder.Property(e => e.VerifiedAt).HasColumnType("datetime2(0)");
         builder.Property(e => e.VerifiedByUserId).HasColumnType("nvarchar(450)");

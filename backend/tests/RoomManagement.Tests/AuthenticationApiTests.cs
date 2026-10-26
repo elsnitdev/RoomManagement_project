@@ -23,7 +23,21 @@ public sealed class AuthenticationApiTests
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/admin/users", new { })).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/users/unknown/profile-status")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync("/api/users/unknown/profile", new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/properties")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync($"/api/properties/{Guid.NewGuid()}/rooms")).StatusCode);
         Assert.Empty(factory.Store.LookedUpIds);
+    }
+
+    [Theory]
+    [InlineData(UserRoles.Admin)]
+    [InlineData(UserRoles.Tenant)]
+    public async Task Non_landlord_cannot_access_property_and_room_resources(string role)
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, factory.Store.AddUser(role));
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/properties")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"/api/properties/{Guid.NewGuid()}/rooms")).StatusCode);
     }
 
     [Theory]

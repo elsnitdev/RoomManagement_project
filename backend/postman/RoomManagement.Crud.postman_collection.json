@@ -1,0 +1,372 @@
+{
+  "info": {
+    "name": "RoomManagement - Property & Room CRUD",
+    "description": "Import vào Postman và chạy thư mục CRUD flow theo thứ tự. Chạy API bằng launch profile http trên http://localhost:5185, cấu hình ConnectionStrings__RoomManagement và migration trước. Đăng nhập tài khoản Landlord đã được duyệt bằng collection RoomManagement API để environment có accessToken, rồi chọn cùng environment cho collection này. Chủ trọ được lấy từ JWT; không gửi OwnerUserId. DELETE trả 204 không có JSON body. Lỗi trả application/problem+json. Nếu dữ liệu phụ thuộc đã được tạo thêm, DELETE trả 409.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "CRUD flow",
+      "item": [
+        {
+          "name": "01 - Create property",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties",
+            "description": "Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Khu mẫu Postman\",\n  \"address\": \"123 Đường Mẫu, TP.HCM\",\n  \"description\": \"Dữ liệu thử API\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) { pm.collectionVariables.set(\"propertyId\", pm.response.json().data.id); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "02 - List properties",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties?page=1&pageSize=20",
+            "description": "Expected HTTP 200."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "03 - Get property",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}",
+            "description": "Expected HTTP 200."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "04 - Update property",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}",
+            "description": "Expected HTTP 200.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Khu mẫu Postman đã sửa\",\n  \"address\": \"123 Đường Mẫu, TP.HCM\",\n  \"description\": \"Đã cập nhật qua Postman\",\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "05 - Create room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms",
+            "description": "Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomNumber\": \"A101\",\n  \"roomName\": \"Phòng tầng 1\",\n  \"floor\": 1,\n  \"area\": 22.5,\n  \"basePrice\": 2500000,\n  \"maxOccupants\": 2,\n  \"description\": \"Phòng thử API\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) { pm.collectionVariables.set(\"roomId\", pm.response.json().data.id); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "06 - List rooms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms?page=1&pageSize=20",
+            "description": "Expected HTTP 200."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "07 - Get room",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms/{{roomId}}",
+            "description": "Expected HTTP 200."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "08 - Update room",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms/{{roomId}}",
+            "description": "Expected HTTP 200.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomNumber\": \"A101\",\n  \"roomName\": \"Phòng tầng 1 đã sửa\",\n  \"floor\": 1,\n  \"area\": 23,\n  \"basePrice\": 2600000,\n  \"maxOccupants\": 2,\n  \"description\": \"Đã cập nhật qua Postman\",\n  \"status\": \"Maintenance\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "09 - Filter rooms by status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms?page=1&pageSize=20&status=Maintenance",
+            "description": "Expected HTTP 200."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10 - Delete room",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms/{{roomId}}",
+            "description": "Expected HTTP 204."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "11 - Delete property",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}",
+            "description": "Expected HTTP 204."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5185"
+    },
+    {
+      "key": "propertyId",
+      "value": ""
+    },
+    {
+      "key": "roomId",
+      "value": ""
+    }
+  ]
+}

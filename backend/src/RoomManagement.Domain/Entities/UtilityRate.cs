@@ -1,10 +1,12 @@
+using RoomManagement.Domain.Enums;
+
 namespace RoomManagement.Domain.Entities;
 
 public sealed class UtilityRate
 {
     public Guid Id { get; set; }
     public Guid PropertyId { get; set; }
-    public string UtilityType { get; set; } = null!;
+    public UtilityType UtilityType { get; set; }
     public decimal UnitPrice { get; set; }
     public string Unit { get; set; } = null!;
     public DateOnly EffectiveFrom { get; set; }

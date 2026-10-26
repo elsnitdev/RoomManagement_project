@@ -31,6 +31,9 @@ public static class ServiceCollectionExtensions
     // Đăng ký AdminUserSeeder
     services.AddScoped<Seeders.AdminUserSeeder>();
 
+    services.AddScoped<ILandlordStore, LandlordStore>();
+    services.AddScoped<IPropertyStore, PropertyStore>();
+    services.AddScoped<IRoomStore, RoomStore>();
     return services;
   }
 }
