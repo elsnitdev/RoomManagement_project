@@ -18,7 +18,7 @@ public sealed class ServiceConfiguration : IEntityTypeConfiguration<Service>
         builder.Property(e => e.Description).HasColumnType("nvarchar(500)");
         builder.Property(e => e.Unit).HasColumnType("nvarchar(50)");
         builder.Property(e => e.DefaultPrice).HasColumnType("decimal(18,2)");
-        builder.Property(e => e.IsActive).HasColumnType("bit").IsRequired().HasDefaultValueSql(@"1", "DF_Services_IsActive");
+        builder.Property(e => e.IsActive).HasColumnType("bit").IsRequired().HasDefaultValueSql(@"1", "DF_Services_IsActive").HasSentinel(true);
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_Services_CreatedAt");
         builder.HasIndex(e => e.Name).HasDatabaseName("UX_Services_Name").IsUnique();
     }

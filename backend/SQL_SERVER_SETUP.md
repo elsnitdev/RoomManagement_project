@@ -3,8 +3,8 @@
 ## 1 mở terminal hoặc powershell tại thư mục dự án RoomManagement_project
 
 chạy lệnh
-**$env:ConnectionStrings\_\_RoomManagement = 'Server=.\SQLEXPRESS;Database=RoomManagement;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True'**
-thay .\SQLEXPRESS bằng tên server tại máy
+**$env:ConnectionStrings\_\_RoomManagement = 'Server=.\SQLEXPRESS02;Database=RoomManagement;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True'**
+Instance đã xác nhận trên máy hiện tại là `.\SQLEXPRESS02`; nếu chạy ở máy khác, thay bằng tên instance tương ứng.
 
 ## 2 chạy lệnh update migration
 
@@ -12,4 +12,5 @@ thay .\SQLEXPRESS bằng tên server tại máy
 
 ## 3 Tại mục RoomManagement_project chạy lệnh khởi động API
 
-**dotnet run --project .\RoomManagement.API\RoomManagement.API.csproj --launch-profile http**
+**dotnet run --project .\backend\src\RoomManagement.API\RoomManagement.API.csproj --launch-profile http**
+ELSNIT\SQLEXPRESS02

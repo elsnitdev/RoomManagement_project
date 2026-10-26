@@ -7,6 +7,6 @@ public sealed class Service
     public string? Description { get; set; }
     public string? Unit { get; set; }
     public decimal? DefaultPrice { get; set; }
-    public bool IsActive { get; set; }
+    public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
 }

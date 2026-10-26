@@ -26,3 +26,5 @@ POST /api/auth/login nhận userNameOrEmail và password, trả accessToken Bear
 Các test SQL chỉ chạy khi cấu hình ROOMMANAGEMENT_TEST_SQLSERVER trỏ tới SQL Server dành cho kiểm thử. Chúng tạo database tên ngẫu nhiên RoomManagement_Tests_<guid> rồi xóa chính database đó sau test. Tài khoản kết nối cần quyền tạo/xóa database; không dùng connection của database ứng dụng để chạy test.
 
 Sơ đồ luồng và trách nhiệm từng file: [account-and-approval-flow.md](docs/account-and-approval-flow.md).
+
+Collection và environment Postman để thử các API hiện có: [postman/README.md](postman/README.md).

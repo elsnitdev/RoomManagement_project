@@ -845,7 +845,8 @@ namespace RoomManagement.Data.Migrations
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValueSql("1", "DF_Properties_IsActive");
+                        .HasDefaultValueSql("1", "DF_Properties_IsActive")
+                        .HasSentinel(true);
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1061,7 +1062,8 @@ namespace RoomManagement.Data.Migrations
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValueSql("1", "DF_Services_IsActive");
+                        .HasDefaultValueSql("1", "DF_Services_IsActive")
+                        .HasSentinel(true);
 
                     b.Property<string>("Name")
                         .IsRequired()
