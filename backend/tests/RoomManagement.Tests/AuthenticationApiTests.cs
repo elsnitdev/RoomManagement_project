@@ -162,6 +162,59 @@ public sealed class AuthenticationApiTests
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/auth/register-landlord", request)).StatusCode);
     }
 
+    [Fact]
+    public async Task Admin_creating_admin_or_invalid_role_returns_422_problem_details()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, factory.Store.AddUser(UserRoles.Admin));
+
+        var request = new
+        {
+            userName = "escalation-attempt",
+            email = "escalation@example.com",
+            password = TestUserStore.Password,
+            role = UserRoles.Admin
+        };
+
+        var response = await client.PostAsJsonAsync("/api/admin/users", request);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("CANNOT_CREATE_ADMIN_ACCOUNT", json.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Pending_landlords_endpoint_returns_envelope_with_data_and_meta()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, factory.Store.AddUser(UserRoles.Admin));
+
+        var response = await client.GetAsync("/api/admin/users/pending-landlords");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(json.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array);
+        Assert.True(json.TryGetProperty("meta", out var meta) && meta.TryGetProperty("total", out _));
+    }
+
+    [Fact]
+    public async Task Profile_status_endpoint_returns_envelope_with_data()
+    {
+        await using var factory = new ApiFactory();
+        var owner = factory.Store.AddUser();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, owner);
+
+        var response = await client.GetAsync($"/api/users/{owner.Id}/profile-status");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(json.TryGetProperty("data", out var data));
+        Assert.True(data.TryGetProperty("isProfileCompleted", out _));
+    }
+
     private static async Task SignInAsync(HttpClient client, AppUser user)
     {
         var response = await client.PostAsJsonAsync("/api/auth/login", new { userNameOrEmail = user.Email, password = TestUserStore.Password });

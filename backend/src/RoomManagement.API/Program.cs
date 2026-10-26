@@ -1,18 +1,31 @@
 using RoomManagement.Business;
 using RoomManagement.Data;
 using RoomManagement.API.Authentication;
+using RoomManagement.API.Filters;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Đăng ký tầng Data (DbContext, Seeder, PasswordHasher)
+// Đăng ký dịch vụ ProblemDetails chuẩn RFC 7807 theo ai-feature-workflow-guide.md
+builder.Services.AddProblemDetails();
+
+// Đăng ký tầng Data (DbContext, Seeder, PasswordHasher, Stores)
 builder.Services.AddRoomManagementData(builder.Configuration);
 
-// Đăng ký tầng Business (UserService và các nghiệp vụ khác)
+// Đăng ký tầng Business (UserService, LandlordApprovalService và các nghiệp vụ khác)
 builder.Services.AddRoomManagementBusiness();
 builder.Services.AddRoomManagementAuthentication(builder.Configuration);
 
-builder.Services.AddControllers();
+// Đăng ký Controllers kèm GlobalExceptionFilter và cấu hình Enum dạng chuỗi (String Enum) theo ai-feature-workflow-guide.md
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<GlobalExceptionFilter>();
+})
+.AddJsonOptions(options =>
+{
+    // Quy định tại ai-feature-workflow-guide.md: "Enum trao đổi qua JSON dạng chuỗi."
+    options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
 
 var app = builder.Build();
 // Validate authentication secrets before any bootstrap writes.

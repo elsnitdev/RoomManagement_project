@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using RoomManagement.API.Authentication;
+using RoomManagement.API.Common;
 using RoomManagement.API.Contracts.Auth;
+using RoomManagement.API.Contracts.Common;
 using RoomManagement.API.Contracts.Users;
 using RoomManagement.Business.DTOs.Users;
 using RoomManagement.Business.Exceptions;
@@ -9,6 +11,13 @@ using RoomManagement.Business.Interfaces;
 
 namespace RoomManagement.API.Controllers;
 
+/// <summary>
+/// Controller xử lý các tác vụ xác thực danh tính và đăng ký tài khoản.
+/// Tuân thủ quy chuẩn Clean Architecture và tài liệu ai-feature-workflow-guide.md:
+/// - Xử lý đăng nhập, cấp phát JWT Token.
+/// - Xử lý đăng ký chủ trọ chờ duyệt.
+/// - Ánh xạ các kết quả thành công sang envelope chuẩn { data } và lỗi sang ProblemDetails.
+/// </summary>
 [ApiController]
 [AllowAnonymous]
 [Route("api/auth")]
@@ -23,9 +32,20 @@ public sealed class AuthController : ControllerBase
         _logger = logger;
     }
 
+    /// <summary>
+    /// API đăng nhập hệ thống cho mọi vai trò (Admin, Landlord, Tenant).
+    /// </summary>
+    /// <param name="request">Chứa thông tin đăng nhập (UserName/Email và mật khẩu).</param>
+    /// <param name="authenticationService">Dịch vụ xác thực tài khoản và kiểm tra trạng thái hoạt động.</param>
+    /// <param name="tokenService">Dịch vụ tạo JWT Access Token.</param>
+    /// <param name="cancellationToken">Token hỗ trợ hủy tác vụ.</param>
+    /// <returns>
+    /// - 200 OK: Trả về LoginResponse chứa AccessToken và User info (hỗ trợ cả envelope data).
+    /// - 401 Unauthorized: Thông tin đăng nhập sai hoặc tài khoản chưa được duyệt/kích hoạt.
+    /// </returns>
     [HttpPost("login")]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login(
         [FromBody] LoginRequest request,
         [FromServices] IAuthenticationService authenticationService,
@@ -36,14 +56,26 @@ public sealed class AuthController : ControllerBase
         {
             var user = await authenticationService.AuthenticateAsync(request.UserNameOrEmail, request.Password, cancellationToken);
             if (user is null)
-                return Unauthorized(new { message = "Thông tin đăng nhập không hợp lệ hoặc tài khoản chưa được phép truy cập." });
+            {
+                // Thông báo lỗi chung thống nhất để chống rò rỉ sự tồn tại của tài khoản
+                return Unauthorized(ProblemDetailsHelper.Create(
+                    StatusCodes.Status401Unauthorized,
+                    "Đăng nhập không thành công",
+                    "Thông tin đăng nhập không hợp lệ hoặc tài khoản chưa được phép truy cập.",
+                    code: "INVALID_CREDENTIALS"));
+            }
 
-            return Ok(tokenService.Create(user));
+            var loginResponse = tokenService.Create(user);
+            return Ok(loginResponse);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Không thể xử lý yêu cầu đăng nhập.");
-            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "Hệ thống gặp sự cố. Vui lòng thử lại sau." });
+            return StatusCode(StatusCodes.Status500InternalServerError, ProblemDetailsHelper.Create(
+                StatusCodes.Status500InternalServerError,
+                "Lỗi máy chủ nội bộ",
+                "Hệ thống gặp sự cố. Vui lòng thử lại sau.",
+                code: "INTERNAL_SERVER_ERROR"));
         }
     }
 
@@ -56,14 +88,16 @@ public sealed class AuthController : ControllerBase
     /// <param name="request">Dữ liệu đăng ký gồm tài khoản và hồ sơ cá nhân.</param>
     /// <param name="cancellationToken">Token hỗ trợ hủy tác vụ bất đồng bộ.</param>
     /// <returns>
-    /// - 201 Created: Đăng ký thành công, tài khoản đang chờ duyệt.
+    /// - 201 Created: Đăng ký thành công, tài khoản đang chờ duyệt (bọc trong { data }).
     /// - 400 Bad Request: Dữ liệu không hợp lệ hoặc thiếu thông tin bắt buộc.
     /// - 409 Conflict: Trùng tên đăng nhập, email hoặc số CCCD.
+    /// - 422 Unprocessable Entity: Vi phạm quy tắc nghiệp vụ đăng ký.
     /// </returns>
     [HttpPost("register-landlord")]
-    [ProducesResponseType(typeof(UserResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse<UserResponse>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> RegisterLandlord(
         [FromBody] RegisterLandlordRequest request,
         CancellationToken cancellationToken)
@@ -92,43 +126,61 @@ public sealed class AuthController : ControllerBase
             // 3. Chuyển đổi kết quả sang UserResponse để trả về cho Client
             var response = UserResponse.FromDto(createdUserDto);
 
-            // 4. Trả về mã 201 Created thông báo đã nhận yêu cầu và đang chờ duyệt
+            // 4. Trả về mã 201 Created bọc trong envelope { data } chuẩn kiến trúc
             return StatusCode(StatusCodes.Status201Created, new
             {
-                message = "Đăng ký tài khoản chủ trọ thành công. Tài khoản của bạn đang ở trạng thái chờ Quản trị viên (Admin) xét duyệt.",
-                data = response
+                data = response,
+                message = "Đăng ký tài khoản chủ trọ thành công. Tài khoản của bạn đang ở trạng thái chờ Quản trị viên (Admin) xét duyệt."
             });
+        }
+        catch (BusinessRuleException ex)
+        {
+            _logger.LogWarning(ex, "Vi phạm quy tắc nghiệp vụ khi đăng ký chủ trọ: {Message}", ex.Message);
+            return UnprocessableEntity(ProblemDetailsHelper.Create(
+                StatusCodes.Status422UnprocessableEntity,
+                "Vi phạm quy tắc nghiệp vụ",
+                ex.Message,
+                code: ex.Code ?? "BUSINESS_RULE_VIOLATION"));
         }
         catch (AppValidationException ex)
         {
-            // Bắt lỗi vi phạm quy tắc nghiệp vụ (thiếu trường, sai định dạng CCCD/SĐT, chưa đủ tuổi...)
             _logger.LogWarning(ex, "Lỗi kiểm tra tính hợp lệ khi đăng ký chủ trọ: {Message}", ex.Message);
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(ProblemDetailsHelper.Create(
+                StatusCodes.Status400BadRequest,
+                "Dữ liệu không hợp lệ",
+                ex.Message,
+                code: ex.Code ?? "VALIDATION_FAILED"));
         }
         catch (AppConflictException ex)
         {
-            // Bắt lỗi trùng lặp (UserName, Email hoặc CCCD đã tồn tại)
             _logger.LogWarning(ex, "Lỗi xung đột dữ liệu khi đăng ký chủ trọ: {Message}", ex.Message);
-            return Conflict(new { message = ex.Message });
+            return Conflict(ProblemDetailsHelper.Create(
+                StatusCodes.Status409Conflict,
+                "Xung đột dữ liệu",
+                ex.Message,
+                code: ex.Code ?? "DUPLICATE_DATA"));
         }
         catch (Exception ex)
         {
-            // Ghi log lỗi hệ thống không lường trước
             _logger.LogError(ex, "Đã xảy ra lỗi không xác định khi đăng ký tài khoản chủ trọ.");
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                message = "Hệ thống gặp sự cố trong quá trình xử lý đăng ký. Vui lòng thử lại sau."
-            });
+            return StatusCode(StatusCodes.Status500InternalServerError, ProblemDetailsHelper.Create(
+                StatusCodes.Status500InternalServerError,
+                "Lỗi máy chủ nội bộ",
+                "Hệ thống gặp sự cố trong quá trình xử lý đăng ký. Vui lòng thử lại sau.",
+                code: "INTERNAL_SERVER_ERROR"));
         }
     }
 
+    /// <summary>
+    /// API đăng ký tài khoản chung (chưa triển khai).
+    /// </summary>
     [HttpPost("register")]
     public IActionResult Register([FromBody] RegisterRequest request)
     {
-        // TODO: kiểm tra trùng tài khoản, băm mật khẩu và tạo người dùng với quyền phù hợp.
-        return StatusCode(StatusCodes.Status501NotImplemented, new
-        {
-            message = "API đăng ký chung chưa được triển khai. Vui lòng sử dụng /api/auth/register-landlord để đăng ký chủ trọ."
-        });
+        return StatusCode(StatusCodes.Status501NotImplemented, ProblemDetailsHelper.Create(
+            StatusCodes.Status501NotImplemented,
+            "Chưa triển khai",
+            "API đăng ký chung chưa được triển khai. Vui lòng sử dụng /api/auth/register-landlord để đăng ký chủ trọ.",
+            code: "NOT_IMPLEMENTED"));
     }
 }

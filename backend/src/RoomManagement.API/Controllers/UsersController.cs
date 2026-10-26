@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using RoomManagement.API.Common;
+using RoomManagement.API.Contracts.Common;
 using RoomManagement.API.Contracts.Users;
 using RoomManagement.Business.DTOs.Users;
 using RoomManagement.Business.Exceptions;
@@ -11,6 +13,9 @@ namespace RoomManagement.API.Controllers;
 /// Controller xử lý các nghiệp vụ hồ sơ cá nhân của người dùng:
 ///  - Kiểm tra xem hồ sơ đã đủ các trường bắt buộc chưa (dùng khi đăng nhập lần đầu).
 ///  - Hoàn thiện / cập nhật hồ sơ cá nhân.
+/// Tuân thủ quy chuẩn Clean Architecture và tài liệu ai-feature-workflow-guide.md:
+///  - Phản hồi dữ liệu bọc trong envelope chuẩn { data }.
+///  - Phản hồi lỗi chuẩn hóa theo ProblemDetails (400, 404, 409, 422).
 /// </summary>
 [ApiController]
 [Authorize]
@@ -37,12 +42,12 @@ public sealed class UsersController : ControllerBase
     /// <param name="id">ID của người dùng cần kiểm tra.</param>
     /// <param name="cancellationToken">Token hỗ trợ hủy tác vụ.</param>
     /// <returns>
-    /// - 200 OK: Trả về trạng thái hồ sơ (isProfileCompleted) và danh sách trường thiếu.
+    /// - 200 OK: Trả về trạng thái hồ sơ (isProfileCompleted) bọc trong envelope { data }.
     /// - 404 Not Found: Người dùng không tồn tại.
     /// </returns>
     [HttpGet("{id}/profile-status")]
-    [ProducesResponseType(typeof(ProfileStatusResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<ProfileStatusResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetProfileStatus(
         [FromRoute] string id,
         CancellationToken cancellationToken)
@@ -57,20 +62,32 @@ public sealed class UsersController : ControllerBase
             var statusDto = await _userService.GetProfileStatusAsync(id, cancellationToken);
             var response = ProfileStatusResponse.FromDto(statusDto);
 
-            return Ok(response);
+            // Trả về envelope { data } chuẩn kiến trúc và giữ các trường trực tiếp tương thích ngược
+            return Ok(new
+            {
+                data = response,
+                isProfileCompleted = response.IsProfileCompleted,
+                missingFields = response.MissingFields,
+                userId = response.UserId
+            });
         }
         catch (AppNotFoundException ex)
         {
             _logger.LogWarning(ex, "Không tìm thấy người dùng: {Message}", ex.Message);
-            return NotFound(new { message = ex.Message });
+            return NotFound(ProblemDetailsHelper.Create(
+                StatusCodes.Status404NotFound,
+                "Không tìm thấy tài nguyên",
+                ex.Message,
+                code: ex.Code ?? "USER_NOT_FOUND"));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Đã xảy ra lỗi khi kiểm tra tình trạng hồ sơ.");
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                message = "Hệ thống gặp sự cố trong quá trình kiểm tra hồ sơ. Vui lòng thử lại sau."
-            });
+            return StatusCode(StatusCodes.Status500InternalServerError, ProblemDetailsHelper.Create(
+                StatusCodes.Status500InternalServerError,
+                "Lỗi máy chủ nội bộ",
+                "Hệ thống gặp sự cố trong quá trình kiểm tra hồ sơ. Vui lòng thử lại sau.",
+                code: "INTERNAL_SERVER_ERROR"));
         }
     }
 
@@ -84,16 +101,18 @@ public sealed class UsersController : ControllerBase
     /// <param name="request">Thông tin cập nhật (chỉ gửi trường cần cập nhật, giữ nguyên các trường khác).</param>
     /// <param name="cancellationToken">Token hỗ trợ hủy tác vụ.</param>
     /// <returns>
-    /// - 200 OK: Cập nhật thành công và hồ sơ đã hoàn thiện.
+    /// - 200 OK: Cập nhật thành công và hồ sơ đã hoàn thiện (bọc trong { data }).
     /// - 400 Bad Request: Dữ liệu không hợp lệ hoặc vẫn còn thiếu trường bắt buộc.
     /// - 404 Not Found: Người dùng không tồn tại.
     /// - 409 Conflict: Số CCCD cập nhật bị trùng với tài khoản khác.
+    /// - 422 Unprocessable Entity: Vi phạm quy tắc nghiệp vụ cập nhật hồ sơ.
     /// </returns>
     [HttpPut("{id}/profile")]
-    [ProducesResponseType(typeof(ProfileStatusResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse<ProfileStatusResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> CompleteProfile(
         [FromRoute] string id,
         [FromBody] CompleteProfileRequest request,
@@ -120,35 +139,57 @@ public sealed class UsersController : ControllerBase
             var statusDto = await _userService.CompleteProfileAsync(id, dto, cancellationToken);
             var response = ProfileStatusResponse.FromDto(statusDto);
 
-            // 3. Trả về kết quả thành công kèm tình trạng hồ sơ mới nhất
+            // 3. Trả về kết quả thành công bọc trong envelope { data } chuẩn kiến trúc
             return Ok(new
             {
-                message = "Cập nhật thông tin hồ sơ cá nhân thành công.",
-                data = response
+                data = response,
+                message = "Cập nhật thông tin hồ sơ cá nhân thành công."
             });
+        }
+        catch (BusinessRuleException ex)
+        {
+            _logger.LogWarning(ex, "Vi phạm quy tắc nghiệp vụ cập nhật hồ sơ: {Message}", ex.Message);
+            return UnprocessableEntity(ProblemDetailsHelper.Create(
+                StatusCodes.Status422UnprocessableEntity,
+                "Vi phạm quy tắc nghiệp vụ",
+                ex.Message,
+                code: ex.Code ?? "BUSINESS_RULE_VIOLATION"));
         }
         catch (AppValidationException ex)
         {
             _logger.LogWarning(ex, "Lỗi hợp lệ hồ sơ: {Message}", ex.Message);
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(ProblemDetailsHelper.Create(
+                StatusCodes.Status400BadRequest,
+                "Dữ liệu không hợp lệ",
+                ex.Message,
+                code: ex.Code ?? "VALIDATION_FAILED"));
         }
         catch (AppNotFoundException ex)
         {
             _logger.LogWarning(ex, "Không tìm thấy người dùng: {Message}", ex.Message);
-            return NotFound(new { message = ex.Message });
+            return NotFound(ProblemDetailsHelper.Create(
+                StatusCodes.Status404NotFound,
+                "Không tìm thấy tài nguyên",
+                ex.Message,
+                code: ex.Code ?? "USER_NOT_FOUND"));
         }
         catch (AppConflictException ex)
         {
             _logger.LogWarning(ex, "Xung đột CCCD: {Message}", ex.Message);
-            return Conflict(new { message = ex.Message });
+            return Conflict(ProblemDetailsHelper.Create(
+                StatusCodes.Status409Conflict,
+                "Xung đột dữ liệu",
+                ex.Message,
+                code: ex.Code ?? "CITIZEN_ID_CONFLICT"));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Đã xảy ra lỗi khi hoàn thiện hồ sơ.");
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                message = "Hệ thống gặp sự cố trong quá trình cập nhật hồ sơ. Vui lòng thử lại sau."
-            });
+            return StatusCode(StatusCodes.Status500InternalServerError, ProblemDetailsHelper.Create(
+                StatusCodes.Status500InternalServerError,
+                "Lỗi máy chủ nội bộ",
+                "Hệ thống gặp sự cố trong quá trình cập nhật hồ sơ. Vui lòng thử lại sau.",
+                code: "INTERNAL_SERVER_ERROR"));
         }
     }
 }
