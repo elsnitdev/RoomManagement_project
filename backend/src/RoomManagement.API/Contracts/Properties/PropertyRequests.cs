@@ -5,9 +5,9 @@ using RoomManagement.Business.DTOs;
 namespace RoomManagement.API.Contracts.Properties;
 
 public sealed record CreatePropertyRequest(
-    [property: JsonRequired, Required, StringLength(150, MinimumLength = 1)] string Name,
-    [property: JsonRequired, Required, StringLength(300, MinimumLength = 1)] string Address,
-    [property: StringLength(1000)] string? Description) : IValidatableObject
+    [property: JsonRequired][Required, StringLength(150, MinimumLength = 1)] string Name,
+    [property: JsonRequired][Required, StringLength(300, MinimumLength = 1)] string Address,
+    [StringLength(1000)] string? Description) : IValidatableObject
 {
     public CreatePropertyInput ToInput() => new(Name, Address, Description);
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
@@ -18,12 +18,13 @@ public sealed record CreatePropertyRequest(
 }
 
 public sealed record UpdatePropertyRequest(
-    [property: JsonRequired, Required, StringLength(150, MinimumLength = 1)] string Name,
-    [property: JsonRequired, Required, StringLength(300, MinimumLength = 1)] string Address,
-    [property: StringLength(1000)] string? Description,
-    [property: JsonRequired] bool IsActive) : IValidatableObject
+    [property: JsonRequired][Required, StringLength(150, MinimumLength = 1)] string Name,
+    [property: JsonRequired][Required, StringLength(300, MinimumLength = 1)] string Address,
+    [StringLength(1000)] string? Description,
+    [property: JsonRequired] bool IsActive,
+    [property: JsonRequired][Required] string RowVersion) : IValidatableObject
 {
-    public UpdatePropertyInput ToInput() => new(Name, Address, Description, IsActive);
+    public UpdatePropertyInput ToInput() => new(Name, Address, Description, IsActive, RowVersion);
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (string.IsNullOrWhiteSpace(Name)) yield return new ValidationResult("Tên khu trọ không được rỗng.", [nameof(Name)]);

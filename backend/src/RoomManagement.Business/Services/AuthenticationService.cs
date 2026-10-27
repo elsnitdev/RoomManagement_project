@@ -8,9 +8,17 @@ using RoomManagement.Domain.Entities;
 
 namespace RoomManagement.Business.Services;
 
-public sealed class AuthenticationService(IUserStore userStore, IPasswordHasher<AppUser> passwordHasher)
-    : IAuthenticationService
+public sealed class AuthenticationService : IAuthenticationService
 {
+    private readonly IUserStore userStore;
+    private readonly IPasswordHasher<AppUser> passwordHasher;
+
+    public AuthenticationService(IUserStore userStore, IPasswordHasher<AppUser> passwordHasher)
+    {
+        this.userStore = userStore;
+        this.passwordHasher = passwordHasher;
+    }
+
     public async Task<UserDto?> AuthenticateAsync(string userNameOrEmail, string password, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(userNameOrEmail) || string.IsNullOrEmpty(password))

@@ -78,6 +78,7 @@ public sealed class RoomService
         var ownerId = await OwnerAsync(ct);
         var room = await _rooms.GetAsync(propertyId, roomId, ownerId, ct)
             ?? throw new BusinessException(BusinessErrorType.NotFound, "ROOM_NOT_FOUND", "Không tìm thấy phòng.");
+        RowVersionGuard.Verify(input.RowVersion, room.RowVersion);
         PropertyRoomValidation.Room(input.RoomNumber, input.RoomName, input.Area, input.BasePrice, input.MaxOccupants, input.Description);
         if (input.Status is not (RoomStatus.Available or RoomStatus.Maintenance or RoomStatus.Inactive))
             throw new BusinessException(BusinessErrorType.Validation, "ROOM_STATUS_INVALID", "Chỉ được chọn Available, Maintenance hoặc Inactive.");

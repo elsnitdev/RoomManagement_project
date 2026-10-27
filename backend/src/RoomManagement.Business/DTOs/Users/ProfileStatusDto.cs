@@ -6,14 +6,14 @@ namespace RoomManagement.Business.DTOs.Users;
 /// </summary>
 public sealed class ProfileStatusDto
 {
-    public string UserId { get; set; } = string.Empty;
+  public string UserId { get; set; } = string.Empty;
 
-    /// <summary>true nếu đã điền đủ mọi thông tin bắt buộc.</summary>
-    public bool IsProfileCompleted { get; set; }
+  /// <summary>true nếu đã điền đủ mọi thông tin bắt buộc.</summary>
+  public bool IsProfileCompleted { get; set; }
 
-    /// <summary>
-    /// Danh sách tên các trường còn thiếu (ví dụ: "FullName", "CitizenId").
-    /// Danh sách rỗng khi hồ sơ đã đủ.
-    /// </summary>
-    public IReadOnlyList<string> MissingFields { get; set; } = [];
+  /// <summary>
+  /// Danh sách tên các trường còn thiếu (ví dụ: "FullName", "CitizenId").
+  /// Danh sách rỗng khi hồ sơ đã đủ.
+  /// </summary>
+  public IReadOnlyList<string> MissingFields { get; set; } = [];
 }

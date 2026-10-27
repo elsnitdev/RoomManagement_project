@@ -65,6 +65,7 @@ public sealed class PropertyService
     public async Task<Property> UpdateAsync(Guid propertyId, UpdatePropertyInput input, CancellationToken ct)
     {
         var property = await GetAsync(propertyId, ct);
+        RowVersionGuard.Verify(input.RowVersion, property.RowVersion);
         PropertyRoomValidation.Required(input.Name, 150, "Tên khu trọ");
         PropertyRoomValidation.Required(input.Address, 300, "Địa chỉ");
         PropertyRoomValidation.Optional(input.Description, 1000, "Mô tả");

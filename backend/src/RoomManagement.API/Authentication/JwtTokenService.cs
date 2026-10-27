@@ -9,8 +9,17 @@ using RoomManagement.Business.DTOs.Users;
 
 namespace RoomManagement.API.Authentication;
 
-public sealed class JwtTokenService(IOptions<JwtOptions> options, TimeProvider clock)
+public sealed class JwtTokenService
 {
+    private readonly IOptions<JwtOptions> options;
+    private readonly TimeProvider clock;
+
+    public JwtTokenService(IOptions<JwtOptions> options, TimeProvider clock)
+    {
+        this.options = options;
+        this.clock = clock;
+    }
+
     public LoginResponse Create(UserDto user)
     {
         var settings = options.Value;
@@ -19,12 +28,12 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, TimeProvider c
         var token = new JwtSecurityToken(
             issuer: settings.Issuer,
             audience: settings.Audience,
-            claims:
-            [
+            claims: new Claim[]
+            {
                 new Claim(JwtRegisteredClaimNames.Sub, user.Id),
                 new Claim("role", user.Role),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-            ],
+            },
             notBefore: now.UtcDateTime,
             expires: expiresAt.UtcDateTime,
             signingCredentials: new SigningCredentials(

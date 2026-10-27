@@ -92,7 +92,7 @@ public sealed class RoomStore : IRoomStore
         try { await _db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException ex)
         {
-            throw new BusinessException(BusinessErrorType.NotFound, "ROOM_NOT_FOUND", "Không tìm thấy phòng.", ex);
+            throw new BusinessException(BusinessErrorType.Conflict, "ROW_VERSION_CONFLICT", "Phòng đã thay đổi hoặc bị xóa. Tải lại dữ liệu trước khi cập nhật.", ex);
         }
         catch (DbUpdateException ex) when (ex.InnerException is SqlException sql
             && sql.Number is 2601 or 2627 && sql.Message.Contains("UX_Rooms_Property_Number", StringComparison.OrdinalIgnoreCase))

@@ -39,13 +39,13 @@ public sealed class PropertyRoomServiceTests
     public async Task RoomUpdate_RejectsOccupiedEvenWhenRoomExists()
     {
         var propertyId = Guid.NewGuid();
-        var room = new Room { Id = Guid.NewGuid(), PropertyId = propertyId, RoomNumber = "A1", MaxOccupants = 1 };
+        var room = new Room { Id = Guid.NewGuid(), PropertyId = propertyId, RoomNumber = "A1", MaxOccupants = 1, RowVersion = new byte[8] };
         var properties = new FakeProperties { Property = new Property { Id = propertyId, OwnerUserId = OwnerId, IsActive = true } };
         var rooms = new FakeRooms { Room = room };
         var service = new RoomManagementRoomService(new Current(), new ActiveLandlord(), properties, rooms);
         var error = await Assert.ThrowsAsync<BusinessException>(() =>
             service.UpdateAsync(propertyId, room.Id,
-                new UpdateRoomInput("A1", null, null, null, 100, 1, null, RoomStatus.Occupied), Ct));
+                new UpdateRoomInput("A1", null, null, null, 100, 1, null, RoomStatus.Occupied, Convert.ToBase64String(new byte[8])), Ct));
         Assert.Equal("ROOM_STATUS_INVALID", error.Code);
         Assert.False(rooms.Saved);
         Assert.Equal(OwnerId, rooms.LastOwnerId);

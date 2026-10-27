@@ -8,13 +8,24 @@ using RoomManagement.Domain.Entities;
 
 namespace RoomManagement.Data.Seeders;
 
-public sealed class AdminUserSeeder(
-    RoomManagementDbContext dbContext,
-    IPasswordHasher<AppUser> passwordHasher,
-    IOptions<InitialAdminOptions> options,
-    ILogger<AdminUserSeeder> logger)
+public sealed class AdminUserSeeder
 {
-    private readonly InitialAdminOptions _options = options.Value;
+    private readonly RoomManagementDbContext dbContext;
+    private readonly IPasswordHasher<AppUser> passwordHasher;
+    private readonly InitialAdminOptions _options;
+    private readonly ILogger<AdminUserSeeder> logger;
+
+    public AdminUserSeeder(
+        RoomManagementDbContext dbContext,
+        IPasswordHasher<AppUser> passwordHasher,
+        IOptions<InitialAdminOptions> options,
+        ILogger<AdminUserSeeder> logger)
+    {
+        this.dbContext = dbContext;
+        this.passwordHasher = passwordHasher;
+        _options = options.Value;
+        this.logger = logger;
+    }
 
     // Tạo tài khoản admin ban đầu
     public async Task SeedAsync(CancellationToken cancellationToken = default)

@@ -26,6 +26,7 @@ public sealed class RoomConfiguration : IEntityTypeConfiguration<Room>
         builder.Property(e => e.Description).HasColumnType("nvarchar(1000)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_Rooms_CreatedAt");
         builder.Property(e => e.UpdatedAt).HasColumnType("datetime2(0)");
+        builder.Property(e => e.RowVersion).IsRowVersion();
         builder.HasOne<Property>().WithMany().HasForeignKey(e => e.PropertyId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Rooms_Properties");
         builder.HasIndex(e => new { e.PropertyId, e.RoomNumber }).HasDatabaseName("UX_Rooms_Property_Number").IsUnique();
         builder.HasIndex(e => new { e.PropertyId, e.Status }).HasDatabaseName("IX_Rooms_Property_Status");

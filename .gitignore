@@ -1,5 +1,7 @@
 plans/
 ai-feature-workflow-guide.md
+backend/tests/RoomManagement.Tests/CrudIntegration.Local.cs
+.dotnet-cli/
 
 # Backend
 bin/

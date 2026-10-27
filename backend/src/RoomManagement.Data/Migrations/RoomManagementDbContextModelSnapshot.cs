@@ -126,8 +126,7 @@ namespace RoomManagement.Data.Migrations
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValueSql("1", "DF_Users_IsActive")
-                        .HasSentinel(true);
+                        .HasDefaultValueSql("1", "DF_Users_IsActive");
 
                     b.Property<string>("NormalizedEmail")
                         .HasColumnType("nvarchar(256)");
@@ -845,8 +844,7 @@ namespace RoomManagement.Data.Migrations
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValueSql("1", "DF_Properties_IsActive")
-                        .HasSentinel(true);
+                        .HasDefaultValueSql("1", "DF_Properties_IsActive");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -855,6 +853,12 @@ namespace RoomManagement.Data.Migrations
                     b.Property<string>("OwnerUserId")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2(0)");
@@ -968,6 +972,12 @@ namespace RoomManagement.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -1062,8 +1072,7 @@ namespace RoomManagement.Data.Migrations
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValueSql("1", "DF_Services_IsActive")
-                        .HasSentinel(true);
+                        .HasDefaultValueSql("1", "DF_Services_IsActive");
 
                     b.Property<string>("Name")
                         .IsRequired()

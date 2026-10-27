@@ -12,3 +12,5 @@ Nếu Postman báo `getaddrinfo ENOTFOUND {{baseurl}}`, biến `baseUrl` chưa �
 Collection có kiểm tra HTTP status và vài trường phản hồi chính trong tab **Test Results**. Token có hiệu lực 15 phút theo cấu hình hiện tại; khi nhận `401` do hết hạn, chạy lại request login. `POST /api/auth/register` trả `501` vì chưa được triển khai.
 
 Các request tạo tài khoản, cập nhật hồ sơ, duyệt và từ chối sẽ ghi vào database đang kết nối. Hãy dùng database thử nghiệm khi chạy toàn bộ luồng.
+
+Khi thử CRUD khu trọ/phòng, import thêm `RoomManagement.Crud.postman_collection.json`. Response tạo/xem/cập nhật có `rowVersion`; collection tự lưu vào `propertyVersion` hoặc `roomVersion` và gửi lại ở request PUT. Nếu hai người cùng mở bản ghi rồi một người lưu trước, người lưu sau nhận `409 ROW_VERSION_CONFLICT`; chạy lại GET để lấy dữ liệu và version mới trước khi sửa tiếp.

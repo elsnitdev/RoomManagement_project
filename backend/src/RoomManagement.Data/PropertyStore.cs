@@ -41,7 +41,7 @@ public sealed class PropertyStore : IPropertyStore
     try { await _db.SaveChangesAsync(ct); }
     catch (DbUpdateConcurrencyException ex)
     {
-      throw new BusinessException(BusinessErrorType.NotFound, "PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.", ex);
+      throw new BusinessException(BusinessErrorType.Conflict, "ROW_VERSION_CONFLICT", "Khu trọ đã thay đổi hoặc bị xóa. Tải lại dữ liệu trước khi cập nhật.", ex);
     }
   }
 

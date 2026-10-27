@@ -3,8 +3,15 @@ using RoomManagement.Business.Interfaces;
 
 namespace RoomManagement.API.Authentication;
 
-public sealed class CurrentUserJwtEvents(IAuthenticationService authenticationService) : JwtBearerEvents
+public sealed class CurrentUserJwtEvents : JwtBearerEvents
 {
+    private readonly IAuthenticationService authenticationService;
+
+    public CurrentUserJwtEvents(IAuthenticationService authenticationService)
+    {
+        this.authenticationService = authenticationService;
+    }
+
     public override async Task TokenValidated(TokenValidatedContext context)
     {
         var userId = context.Principal?.FindFirst("sub")?.Value;

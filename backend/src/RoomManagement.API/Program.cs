@@ -26,46 +26,46 @@ builder.Services.AddControllers()
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddProblemDetails(options =>
 {
-    options.CustomizeProblemDetails = context =>
+  options.CustomizeProblemDetails = context =>
+  {
+    var problem = context.ProblemDetails;
+    problem.Instance ??= context.HttpContext.Request.Path;
+    problem.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+    if (!problem.Extensions.ContainsKey("code"))
     {
-        var problem = context.ProblemDetails;
-        problem.Instance ??= context.HttpContext.Request.Path;
-        problem.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
-        if (!problem.Extensions.ContainsKey("code"))
-        {
-            problem.Extensions["code"] = problem.Status switch
-            {
-                StatusCodes.Status400BadRequest => "BAD_REQUEST",
-                StatusCodes.Status401Unauthorized => "UNAUTHORIZED",
-                StatusCodes.Status403Forbidden => "FORBIDDEN",
-                StatusCodes.Status404NotFound => "NOT_FOUND",
-                StatusCodes.Status405MethodNotAllowed => "METHOD_NOT_ALLOWED",
-                StatusCodes.Status409Conflict => "CONFLICT",
-                StatusCodes.Status422UnprocessableEntity => "INVALID_OPERATION",
-                StatusCodes.Status500InternalServerError => "INTERNAL_ERROR",
-                StatusCodes.Status501NotImplemented => "NOT_IMPLEMENTED",
-                _ => "HTTP_ERROR"
-            };
-        }
-    };
+      problem.Extensions["code"] = problem.Status switch
+      {
+        StatusCodes.Status400BadRequest => "BAD_REQUEST",
+        StatusCodes.Status401Unauthorized => "UNAUTHORIZED",
+        StatusCodes.Status403Forbidden => "FORBIDDEN",
+        StatusCodes.Status404NotFound => "NOT_FOUND",
+        StatusCodes.Status405MethodNotAllowed => "METHOD_NOT_ALLOWED",
+        StatusCodes.Status409Conflict => "CONFLICT",
+        StatusCodes.Status422UnprocessableEntity => "INVALID_OPERATION",
+        StatusCodes.Status500InternalServerError => "INTERNAL_ERROR",
+        StatusCodes.Status501NotImplemented => "NOT_IMPLEMENTED",
+        _ => "HTTP_ERROR"
+      };
+    }
+  };
 });
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
-    options.InvalidModelStateResponseFactory = context =>
+  options.InvalidModelStateResponseFactory = context =>
+  {
+    var problem = new ValidationProblemDetails(context.ModelState)
     {
-        var problem = new ValidationProblemDetails(context.ModelState)
-        {
-            Status = StatusCodes.Status400BadRequest,
-            Title = "Dữ liệu yêu cầu không hợp lệ",
-            Instance = context.HttpContext.Request.Path
-        };
-        problem.Extensions["code"] = "VALIDATION_ERROR";
-        problem.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
-        return new BadRequestObjectResult(problem)
-        {
-            ContentTypes = { "application/problem+json" }
-        };
+      Status = StatusCodes.Status400BadRequest,
+      Title = "Dữ liệu yêu cầu không hợp lệ",
+      Instance = context.HttpContext.Request.Path
     };
+    problem.Extensions["code"] = "VALIDATION_ERROR";
+    problem.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+    return new BadRequestObjectResult(problem)
+    {
+      ContentTypes = { "application/problem+json" }
+    };
+  };
 });
 
 var app = builder.Build();
@@ -73,15 +73,15 @@ _ = app.Services.GetRequiredService<IOptions<JwtOptions>>().Value;
 
 try
 {
-    using var scope = app.Services.CreateScope();
-    var seeder = scope.ServiceProvider.GetRequiredService<RoomManagement.Data.Seeders.AdminUserSeeder>();
-    await seeder.SeedAsync();
+  using var scope = app.Services.CreateScope();
+  var seeder = scope.ServiceProvider.GetRequiredService<RoomManagement.Data.Seeders.AdminUserSeeder>();
+  await seeder.SeedAsync();
 }
 catch (Exception ex)
 {
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogError(ex, "Đã xảy ra lỗi trong quá trình khởi tạo dữ liệu ban đầu (Data Seeding).");
-    throw;
+  var logger = app.Services.GetRequiredService<ILogger<Program>>();
+  logger.LogError(ex, "Đã xảy ra lỗi trong quá trình khởi tạo dữ liệu ban đầu (Data Seeding).");
+  throw;
 }
 
 app.UseExceptionHandler();
@@ -91,4 +91,4 @@ app.UseAuthorization();
 app.MapControllers();
 app.Run();
 
-public partial class Program;
+public partial class Program { }

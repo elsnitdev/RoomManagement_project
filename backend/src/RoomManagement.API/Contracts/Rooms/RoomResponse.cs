@@ -14,12 +14,13 @@ public sealed record RoomResponse(
     string? Description,
     RoomStatus Status,
     DateTime CreatedAt,
-    DateTime? UpdatedAt)
+    DateTime? UpdatedAt,
+    string RowVersion)
 {
     public static RoomResponse From(RoomResult result)
     {
         var room = result.Room;
         return new(room.Id, room.PropertyId, room.RoomNumber, room.RoomName, room.Floor, room.Area,
-            room.BasePrice, room.MaxOccupants, room.Description, result.Status, room.CreatedAt, room.UpdatedAt);
+            room.BasePrice, room.MaxOccupants, room.Description, result.Status, room.CreatedAt, room.UpdatedAt, Convert.ToBase64String(room.RowVersion));
     }
 }

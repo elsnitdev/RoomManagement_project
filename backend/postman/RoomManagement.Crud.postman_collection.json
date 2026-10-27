@@ -1,12 +1,18 @@
 {
   "info": {
     "name": "RoomManagement - Property & Room CRUD",
-    "description": "Import vào Postman và chạy thư mục CRUD flow theo thứ tự. Chạy API bằng launch profile http trên http://localhost:5185, cấu hình ConnectionStrings__RoomManagement và migration trước. Đăng nhập tài khoản Landlord đã được duyệt bằng collection RoomManagement API để environment có accessToken, rồi chọn cùng environment cho collection này. Chủ trọ được lấy từ JWT; không gửi OwnerUserId. DELETE trả 204 không có JSON body. Lỗi trả application/problem+json. Nếu dữ liệu phụ thuộc đã được tạo thêm, DELETE trả 409.",
+    "description": "Import vào Postman và chạy thư mục CRUD flow theo thứ tự. Chạy API bằng launch profile http trên http://localhost:5185, cấu hình ConnectionStrings__RoomManagement và migration trước. Đăng nhập tài khoản Landlord đã được duyệt bằng collection RoomManagement API để environment có accessToken, rồi chọn cùng environment cho collection này. Chủ trọ được lấy từ JWT; không gửi OwnerUserId. DELETE trả 204 không có JSON body. Lỗi trả application/problem+json. Nếu dữ liệu phụ thuộc đã được tạo thêm, DELETE trả 409. PUT yêu cầu rowVersion từ GET/POST trước đó; phiên bản cũ trả 409 ROW_VERSION_CONFLICT.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
     "type": "bearer",
-    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
   },
   "item": [
     {
@@ -45,7 +51,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
-                  "if (pm.response.code === 201) { pm.collectionVariables.set(\"propertyId\", pm.response.json().data.id); }"
+                  "if (pm.response.code === 201) { pm.collectionVariables.set(\"propertyId\", pm.response.json().data.id); }",
+                  "if ([200, 201].includes(pm.response.code)) { pm.collectionVariables.set('propertyVersion', pm.response.json().data.rowVersion); }"
                 ]
               }
             }
@@ -97,7 +104,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if ([200, 201].includes(pm.response.code)) { pm.collectionVariables.set('propertyVersion', pm.response.json().data.rowVersion); }"
                 ]
               }
             }
@@ -122,7 +130,7 @@
             "description": "Expected HTTP 200.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Khu mẫu Postman đã sửa\",\n  \"address\": \"123 Đường Mẫu, TP.HCM\",\n  \"description\": \"Đã cập nhật qua Postman\",\n  \"isActive\": true\n}",
+              "raw": "{\r\n  \"name\": \"Khu mẫu Postman đã sửa\",\r\n  \"address\": \"123 Đường Mẫu, TP.HCM\",\r\n  \"description\": \"Đã cập nhật qua Postman\",\r\n  \"isActive\": true,\r\n  \"rowVersion\": \"{{propertyVersion}}\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -136,7 +144,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if ([200, 201].includes(pm.response.code)) { pm.collectionVariables.set('propertyVersion', pm.response.json().data.rowVersion); }"
                 ]
               }
             }
@@ -176,7 +185,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
-                  "if (pm.response.code === 201) { pm.collectionVariables.set(\"roomId\", pm.response.json().data.id); }"
+                  "if (pm.response.code === 201) { pm.collectionVariables.set(\"roomId\", pm.response.json().data.id); }",
+                  "if ([200, 201].includes(pm.response.code)) { pm.collectionVariables.set('roomVersion', pm.response.json().data.rowVersion); }"
                 ]
               }
             }
@@ -228,7 +238,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if ([200, 201].includes(pm.response.code)) { pm.collectionVariables.set('roomVersion', pm.response.json().data.rowVersion); }"
                 ]
               }
             }
@@ -253,7 +264,7 @@
             "description": "Expected HTTP 200.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"roomNumber\": \"A101\",\n  \"roomName\": \"Phòng tầng 1 đã sửa\",\n  \"floor\": 1,\n  \"area\": 23,\n  \"basePrice\": 2600000,\n  \"maxOccupants\": 2,\n  \"description\": \"Đã cập nhật qua Postman\",\n  \"status\": \"Maintenance\"\n}",
+              "raw": "{\r\n  \"roomNumber\": \"A101\",\r\n  \"roomName\": \"Phòng tầng 1 đã sửa\",\r\n  \"floor\": 1,\r\n  \"area\": 23,\r\n  \"basePrice\": 2600000,\r\n  \"maxOccupants\": 2,\r\n  \"description\": \"Đã cập nhật qua Postman\",\r\n  \"status\": \"Maintenance\",\r\n  \"rowVersion\": \"{{roomVersion}}\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -267,7 +278,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if ([200, 201].includes(pm.response.code)) { pm.collectionVariables.set('roomVersion', pm.response.json().data.rowVersion); }"
                 ]
               }
             }
@@ -366,6 +378,14 @@
     },
     {
       "key": "roomId",
+      "value": ""
+    },
+    {
+      "key": "propertyVersion",
+      "value": ""
+    },
+    {
+      "key": "roomVersion",
       "value": ""
     }
   ]
