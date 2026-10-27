@@ -2,6 +2,7 @@ import { useState } from "react";
 import { contracts, formatCurrency, invoices, todayLabel } from "./mockData";
 import { Badge, Button, Empty, Field, Heading, Icon, Stat } from "./ui";
 import RoomDetail from "./RoomDetail";
+import TenantManager from "./TenantManager";
 
 const roomStatus = {
   occupied: "Đã thuê",
@@ -16,6 +17,8 @@ export default function Landlord({
   setProperties,
   rooms,
   setRooms,
+  tenants = [],
+  setTenants,
   requests,
   setRequests,
   selectedProperty,
@@ -454,6 +457,16 @@ export default function Landlord({
           )}
         </section>
       </>
+    );
+  if (page === "tenants")
+    return (
+      <TenantManager
+        tenants={tenants}
+        setTenants={setTenants}
+        contracts={contracts}
+        navigate={navigate}
+        notify={notify}
+      />
     );
   if (page === "contracts")
     return (

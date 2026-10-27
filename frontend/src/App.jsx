@@ -8,6 +8,7 @@ import {
   initialProperties,
   initialRequests,
   initialRooms,
+  initialTenants,
   initialUsers,
 } from "./mockData";
 import { Brand, Icon } from "./ui";
@@ -23,6 +24,7 @@ const landlordNav = [
   { id: "overview", label: "Tổng quan", icon: "grid" },
   { id: "properties", label: "Khu trọ", icon: "building" },
   { id: "rooms", label: "Phòng", icon: "door" },
+  { id: "tenants", label: "Người ở", icon: "users" },
   { id: "contracts", label: "Hợp đồng", icon: "file" },
   { id: "billing", label: "Hóa đơn", icon: "receipt" },
   { id: "requests", label: "Yêu cầu", icon: "chat" },
@@ -35,6 +37,7 @@ const titleMap = {
   properties: "Khu trọ",
   rooms: "Danh sách phòng",
   room: "Chi tiết phòng",
+  tenants: "Hồ sơ người ở",
   contracts: "Hợp đồng",
   billing: "Hóa đơn & công nợ",
   requests: "Yêu cầu người thuê",
@@ -50,6 +53,7 @@ export default function App() {
   const [users, setUsers] = useState(initialUsers);
   const [properties, setProperties] = useState(initialProperties);
   const [rooms, setRooms] = useState(initialRooms);
+  const [tenants, setTenants] = useState(initialTenants);
   const [requests, setRequests] = useState(initialRequests);
   const [selectedProperty, setSelectedProperty] = useState("all");
   const toastTimer = useRef(null);
@@ -248,6 +252,8 @@ export default function App() {
               setProperties={setProperties}
               rooms={rooms}
               setRooms={setRooms}
+              tenants={tenants}
+              setTenants={setTenants}
               requests={requests}
               setRequests={setRequests}
               selectedProperty={selectedProperty}

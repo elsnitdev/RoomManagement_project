@@ -1,6 +1,7 @@
-plans/
+# plans/
 ai-feature-workflow-guide.md
 landlord-manage-tenant-profiles-plan.md
+architecture_and_workflow_frontend.md
 
 # Backend
 bin/
