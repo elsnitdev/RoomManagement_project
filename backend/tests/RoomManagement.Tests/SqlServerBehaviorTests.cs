@@ -186,6 +186,95 @@ public sealed class SqlServerBehaviorTests
         Assert.NotNull(await new UserStore(context).FindByLoginAsync(first.NormalizedUserName));
     }
 
+    [SqlServerFact]
+    public async Task Tenant_profile_persists_default_created_at_and_null_user_id()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var landlord = CreateUser();
+        landlord.Role = UserRoles.Landlord;
+        context.Users.Add(landlord);
+        await context.SaveChangesAsync();
+
+        var store = new TenantProfileStore(context);
+        var profile = new TenantProfile
+        {
+            Id = Guid.NewGuid(),
+            CreatedByUserId = landlord.Id,
+            FullName = "Khách Hàng Mới",
+            PhoneNumber = "0901234567",
+            CreatedAt = DateTime.UtcNow
+        };
+        await store.AddAsync(profile);
+        await store.SaveChangesAsync();
+
+        context.ChangeTracker.Clear();
+        var saved = await context.TenantProfiles.SingleAsync(p => p.Id == profile.Id);
+        Assert.Null(saved.UserId);
+        Assert.Equal(landlord.Id, saved.CreatedByUserId);
+        Assert.NotEqual(default, saved.CreatedAt);
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_tenant_profile_writes_translate_unique_citizen_id_failure_to_conflict()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        await using var seedContext = database.CreateContext();
+        var landlord = CreateUser();
+        landlord.Role = UserRoles.Landlord;
+        seedContext.Users.Add(landlord);
+        await seedContext.SaveChangesAsync();
+
+        await using var firstContext = database.CreateContext();
+        await using var secondContext = database.CreateContext();
+        var first = new TenantProfile
+        {
+            Id = Guid.NewGuid(),
+            CreatedByUserId = landlord.Id,
+            FullName = "Người 1",
+            PhoneNumber = "0901111111",
+            CitizenId = "079201012345",
+            CreatedAt = DateTime.UtcNow
+        };
+        var second = new TenantProfile
+        {
+            Id = Guid.NewGuid(),
+            CreatedByUserId = landlord.Id,
+            FullName = "Người 2",
+            PhoneNumber = "0902222222",
+            CitizenId = "079201012345",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var firstStore = new TenantProfileStore(firstContext);
+        var secondStore = new TenantProfileStore(secondContext);
+        await firstStore.AddAsync(first);
+        await secondStore.AddAsync(second);
+
+        var outcomes = await Task.WhenAll(
+            Record.ExceptionAsync(() => firstStore.SaveChangesAsync()),
+            Record.ExceptionAsync(() => secondStore.SaveChangesAsync()));
+
+        Assert.Single(outcomes, error => error is null);
+        Assert.Single(outcomes, error => error is AppConflictException);
+    }
+
+    [SqlServerFact]
+    public async Task Tenant_profile_migration_preserves_existing_profiles()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync(migrate: false);
+        await using var context = database.CreateContext();
+        await context.GetService<IMigrator>().MigrateAsync("20261024150734_AddUserProfilesAndApproval");
+        var id = Guid.NewGuid();
+        await context.Database.ExecuteSqlRawAsync(
+            "INSERT INTO dbo.TenantProfiles (Id, FullName, PhoneNumber, CreatedAt) VALUES ({0}, N'Legacy Tenant', '0901234567', SYSUTCDATETIME())", id);
+        await context.Database.MigrateAsync();
+        var saved = await context.TenantProfiles.SingleAsync(p => p.Id == id);
+        Assert.Equal("Legacy Tenant", saved.FullName);
+        Assert.Null(saved.CreatedByUserId);
+        Assert.Null(saved.UserId);
+    }
+
     private static AppUser CreateUser()
     {
         var suffix = Guid.NewGuid().ToString("N");

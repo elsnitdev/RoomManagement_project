@@ -126,8 +126,7 @@ namespace RoomManagement.Data.Migrations
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValueSql("1", "DF_Users_IsActive")
-                        .HasSentinel(true);
+                        .HasDefaultValueSql("1", "DF_Users_IsActive");
 
                     b.Property<string>("NormalizedEmail")
                         .HasColumnType("nvarchar(256)");
@@ -845,8 +844,7 @@ namespace RoomManagement.Data.Migrations
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValueSql("1", "DF_Properties_IsActive")
-                        .HasSentinel(true);
+                        .HasDefaultValueSql("1", "DF_Properties_IsActive");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1062,8 +1060,7 @@ namespace RoomManagement.Data.Migrations
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValueSql("1", "DF_Services_IsActive")
-                        .HasSentinel(true);
+                        .HasDefaultValueSql("1", "DF_Services_IsActive");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1098,6 +1095,9 @@ namespace RoomManagement.Data.Migrations
                         .HasColumnType("datetime2(0)")
                         .HasDefaultValueSql("SYSUTCDATETIME()", "DF_TenantProfiles_CreatedAt");
 
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<DateOnly?>("DateOfBirth")
                         .HasColumnType("date");
 
@@ -1131,6 +1131,9 @@ namespace RoomManagement.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_TenantProfiles_CitizenId")
                         .HasFilter("CitizenId IS NOT NULL");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("IX_TenantProfiles_CreatedByUserId");
 
                     b.HasIndex("UserId")
                         .IsUnique()
@@ -1492,6 +1495,12 @@ namespace RoomManagement.Data.Migrations
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.TenantProfile", b =>
                 {
+                    b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("FK_TenantProfiles_CreatedByUser");
+
                     b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")

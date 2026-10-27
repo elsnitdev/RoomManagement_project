@@ -16,6 +16,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IAuthenticationService, AuthenticationService>();
         services.AddScoped<ILandlordApprovalService, LandlordApprovalService>();
+        services.AddScoped<ITenantProfileService, TenantProfileService>();
 
         return services;
     }
