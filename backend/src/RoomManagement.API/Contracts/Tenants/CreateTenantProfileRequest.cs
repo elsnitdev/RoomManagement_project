@@ -3,10 +3,11 @@ using RoomManagement.Business.DTOs.Tenants;
 namespace RoomManagement.API.Contracts.Tenants;
 
 /// <summary>
-/// Yêu cầu tạo mới hồ sơ người thuê từ Chủ trọ.
+/// Lớp đại diện cho dữ liệu JSON mà Frontend gửi lên khi yêu cầu tạo mới hồ sơ người thuê (Request Body).
 /// </summary>
 public sealed class CreateTenantProfileRequest
 {
+    // Từ khóa 'init' trong C#: chỉ cho phép gán giá trị khi khởi tạo đối tượng (giúp dữ liệu bất biến sau khi nhận từ JSON)
     /// <summary>Họ và tên người thuê (Bắt buộc, tối đa 150 ký tự).</summary>
     public string FullName { get; init; } = string.Empty;
 
@@ -19,7 +20,7 @@ public sealed class CreateTenantProfileRequest
     /// <summary>Số Căn cước công dân / CMND (Tùy chọn, đúng 12 chữ số).</summary>
     public string? CitizenId { get; init; }
 
-    /// <summary>Ngày tháng năm sinh (Tùy chọn, phải trong quá khứ).</summary>
+    /// <summary>Ngày tháng năm sinh (Tùy chọn, phải trong quá khứ, định dạng JSON: "YYYY-MM-DD").</summary>
     public DateOnly? DateOfBirth { get; init; }
 
     /// <summary>Giới tính: Male / Female / Other (Tùy chọn).</summary>
@@ -28,7 +29,9 @@ public sealed class CreateTenantProfileRequest
     /// <summary>Địa chỉ thường trú (Tùy chọn, tối đa 300 ký tự).</summary>
     public string? PermanentAddress { get; init; }
 
-    /// <summary>Chuyển đổi sang Business DTO.</summary>
+    /// <summary>
+    /// Hàm chuyển đổi dữ liệu từ Request (tầng API) sang DTO (tầng Business) để truyền vào Service xử lý.
+    /// </summary>
     public CreateTenantProfileDto ToDto() => new()
     {
         FullName = FullName,

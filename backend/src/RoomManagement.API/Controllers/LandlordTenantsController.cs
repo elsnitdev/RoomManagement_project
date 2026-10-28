@@ -19,14 +19,16 @@ namespace RoomManagement.API.Controllers;
 /// - Phản hồi phân trang bọc trong { data, meta }.
 /// - Phản hồi lỗi chuẩn hóa ProblemDetails (400, 404, 409, 422, 500).
 /// </summary>
-[ApiController]
-[Authorize(Roles = UserRoles.Landlord)]
-[Route("api/landlord/tenants")]
+[ApiController] // Tự động kiểm tra ModelState và hỗ trợ binding dữ liệu JSON từ body/query
+[Authorize(Roles = UserRoles.Landlord)] // Yêu cầu người gọi phải đăng nhập (có JWT Token hợp lệ) VÀ có vai trò là Landlord
+[Route("api/landlord/tenants")] // Đường dẫn gốc (Base URL) cho toàn bộ các API trong Controller này
 public sealed class LandlordTenantsController : ControllerBase
 {
+    // Khai báo interface của tầng Business và công cụ ghi log
     private readonly ITenantProfileService _tenantProfileService;
     private readonly ILogger<LandlordTenantsController> _logger;
 
+    // Constructor nhận các dịch vụ thông qua cơ chế Dependency Injection (DI) của ASP.NET Core
     public LandlordTenantsController(
         ITenantProfileService tenantProfileService,
         ILogger<LandlordTenantsController> logger)
@@ -37,25 +39,21 @@ public sealed class LandlordTenantsController : ControllerBase
 
     /// <summary>
     /// API cho phép Chủ trọ tạo hồ sơ người thuê mới (chưa có tài khoản).
+    /// Phương thức: POST /api/landlord/tenants
     /// </summary>
-    /// <param name="request">Thông tin người thuê cần tạo.</param>
-    /// <param name="cancellationToken">Token hỗ trợ hủy tác vụ.</param>
-    /// <returns>
-    /// - 201 Created: Tạo hồ sơ thành công (bọc trong { data, message }).
-    /// - 400 Bad Request: Dữ liệu nhập vào không hợp lệ.
-    /// - 409 Conflict: Số CCCD đã được sử dụng bởi hồ sơ khác.
-    /// </returns>
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<TenantProfileResponse>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Create(
-        [FromBody] CreateTenantProfileRequest request,
-        CancellationToken cancellationToken)
+        [FromBody] CreateTenantProfileRequest request, // [FromBody]: Đọc dữ liệu JSON từ phần thân (body) của HTTP Request
+        CancellationToken cancellationToken) // Token giúp hủy request nếu phía trình duyệt ngắt kết nối giữa chừng
     {
+        // Lấy ID của chủ trọ đang đăng nhập từ trong JWT Token
         var landlordId = GetCurrentUserId();
         if (string.IsNullOrEmpty(landlordId))
         {
+            // Nếu không xác định được danh tính chủ trọ -> trả về 403 Forbidden (Từ chối truy cập)
             return Forbid();
         }
 
@@ -64,11 +62,14 @@ public sealed class LandlordTenantsController : ControllerBase
 
         try
         {
+            // Gọi tầng Business để xử lý nghiệp vụ tạo hồ sơ
             var createdDto = await _tenantProfileService.CreateProfileAsync(
                 landlordId, request.ToDto(), cancellationToken);
 
+            // Chuyển đổi kết quả từ Business DTO sang Response Contract để trả về cho Frontend
             var response = TenantProfileResponse.FromDto(createdDto);
 
+            // Trả về HTTP 201 Created cùng cấu trúc JSON: { data: ..., message: "..." }
             return StatusCode(StatusCodes.Status201Created, new
             {
                 data = response,
@@ -77,6 +78,7 @@ public sealed class LandlordTenantsController : ControllerBase
         }
         catch (AppValidationException ex)
         {
+            // Bắt lỗi dữ liệu đầu vào không hợp lệ -> trả về HTTP 400 Bad Request
             _logger.LogWarning(ex, "Lỗi kiểm tra tính hợp lệ khi tạo hồ sơ người thuê: {Message}", ex.Message);
             return BadRequest(ProblemDetailsHelper.Create(
                 StatusCodes.Status400BadRequest,
@@ -86,6 +88,7 @@ public sealed class LandlordTenantsController : ControllerBase
         }
         catch (AppConflictException ex)
         {
+            // Bắt lỗi trùng số CCCD -> trả về HTTP 409 Conflict
             _logger.LogWarning(ex, "Lỗi xung đột dữ liệu khi tạo hồ sơ người thuê: {Message}", ex.Message);
             return Conflict(ProblemDetailsHelper.Create(
                 StatusCodes.Status409Conflict,
@@ -95,6 +98,7 @@ public sealed class LandlordTenantsController : ControllerBase
         }
         catch (BusinessRuleException ex)
         {
+            // Bắt lỗi vi phạm quy tắc nghiệp vụ -> trả về HTTP 422 Unprocessable Entity
             _logger.LogWarning(ex, "Vi phạm quy tắc nghiệp vụ khi tạo hồ sơ người thuê: {Message}", ex.Message);
             return UnprocessableEntity(ProblemDetailsHelper.Create(
                 StatusCodes.Status422UnprocessableEntity,
@@ -104,6 +108,7 @@ public sealed class LandlordTenantsController : ControllerBase
         }
         catch (Exception ex)
         {
+            // Bắt mọi lỗi hệ thống ngoài dự kiến -> trả về HTTP 500 Internal Server Error
             _logger.LogError(ex, "Lỗi máy chủ khi tạo hồ sơ người thuê.");
             return StatusCode(StatusCodes.Status500InternalServerError, ProblemDetailsHelper.Create(
                 StatusCodes.Status500InternalServerError,
@@ -115,19 +120,13 @@ public sealed class LandlordTenantsController : ControllerBase
 
     /// <summary>
     /// API xem chi tiết thông tin hồ sơ người thuê.
-    /// Chỉ xem được hồ sơ do chính mình tạo hoặc người thuê có hợp đồng tại khu trọ do mình sở hữu.
+    /// Phương thức: GET /api/landlord/tenants/{id}
     /// </summary>
-    /// <param name="id">Mã định danh của hồ sơ người thuê.</param>
-    /// <param name="cancellationToken">Token hỗ trợ hủy tác vụ.</param>
-    /// <returns>
-    /// - 200 OK: Trả về thông tin chi tiết bọc trong { data }.
-    /// - 404 Not Found: Không tìm thấy hồ sơ hoặc chủ trọ không có quyền xem.
-    /// </returns>
-    [HttpGet("{id:guid}")]
+    [HttpGet("{id:guid}")] // Ràng buộc tham số {id} trên URL phải có định dạng kiểu Guid hợp lệ
     [ProducesResponseType(typeof(ApiResponse<TenantProfileResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(
-        [FromRoute] Guid id,
+        [FromRoute] Guid id, // [FromRoute]: Lấy giá trị {id} trực tiếp từ đường dẫn URL
         CancellationToken cancellationToken)
     {
         var landlordId = GetCurrentUserId();
@@ -138,9 +137,11 @@ public sealed class LandlordTenantsController : ControllerBase
 
         try
         {
+            // Gọi tầng Business lấy chi tiết hồ sơ (đã bao gồm bước kiểm tra quyền truy cập của chủ trọ)
             var dto = await _tenantProfileService.GetProfileByIdAsync(landlordId, id, cancellationToken);
             var response = TenantProfileResponse.FromDto(dto);
 
+            // Trả về HTTP 200 OK bọc trong đối tượng { data }
             return Ok(new
             {
                 data = response
@@ -148,6 +149,7 @@ public sealed class LandlordTenantsController : ControllerBase
         }
         catch (AppNotFoundException ex)
         {
+            // Nếu không tìm thấy hoặc chủ trọ không có quyền xem -> trả về HTTP 404 Not Found
             _logger.LogWarning(ex, "Không tìm thấy hồ sơ người thuê: {Message}", ex.Message);
             return NotFound(ProblemDetailsHelper.Create(
                 StatusCodes.Status404NotFound,
@@ -177,18 +179,12 @@ public sealed class LandlordTenantsController : ControllerBase
 
     /// <summary>
     /// API xem danh sách hồ sơ người thuê thuộc quyền quản lý của Chủ trọ (có phân trang và tìm kiếm).
+    /// Phương thức: GET /api/landlord/tenants?keyword=...&page=1&pageSize=10
     /// </summary>
-    /// <param name="keyword">Từ khóa tìm kiếm theo họ tên, số điện thoại hoặc CCCD.</param>
-    /// <param name="page">Trang cần lấy (mặc định 1).</param>
-    /// <param name="pageSize">Số lượng hồ sơ trên một trang (mặc định 10).</param>
-    /// <param name="cancellationToken">Token hỗ trợ hủy tác vụ.</param>
-    /// <returns>
-    /// - 200 OK: Danh sách hồ sơ bọc trong envelope chuẩn { data, meta }.
-    /// </returns>
     [HttpGet]
     [ProducesResponseType(typeof(ApiPagedResponse<TenantProfileResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetList(
-        [FromQuery] string? keyword,
+        [FromQuery] string? keyword, // [FromQuery]: Đọc tham số trên thanh địa chỉ sau dấu '?' (Query String)
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10,
         CancellationToken cancellationToken = default)
@@ -201,6 +197,7 @@ public sealed class LandlordTenantsController : ControllerBase
 
         try
         {
+            // Đóng gói các tham số tìm kiếm & phân trang vào DTO để chuyển xuống tầng Business
             var query = new TenantProfileQueryDto
             {
                 Keyword = keyword,
@@ -208,11 +205,14 @@ public sealed class LandlordTenantsController : ControllerBase
                 PageSize = pageSize
             };
 
+            // Lấy danh sách bản ghi của trang hiện tại và tổng số lượng bản ghi thỏa mãn
             var (items, totalCount) = await _tenantProfileService.GetProfilesAsync(
                 landlordId, query, cancellationToken);
 
+            // Chuyển đổi từng phần tử sang TenantProfileResponse
             var responses = items.Select(TenantProfileResponse.FromDto).ToList();
 
+            // Trả về HTTP 200 OK kèm cấu trúc phân trang chuẩn { data: [...], meta: { total, page, pageSize } }
             return Ok(new ApiPagedResponse<TenantProfileResponse>(responses, totalCount, page, pageSize));
         }
         catch (BusinessRuleException ex)
@@ -245,24 +245,16 @@ public sealed class LandlordTenantsController : ControllerBase
 
     /// <summary>
     /// API cập nhật thông tin hồ sơ người thuê.
+    /// Phương thức: PUT /api/landlord/tenants/{id}
     /// </summary>
-    /// <param name="id">Mã định danh hồ sơ người thuê.</param>
-    /// <param name="request">Dữ liệu cập nhật mới.</param>
-    /// <param name="cancellationToken">Token hỗ trợ hủy tác vụ.</param>
-    /// <returns>
-    /// - 200 OK: Cập nhật thành công (bọc trong { data, message }).
-    /// - 400 Bad Request: Dữ liệu không hợp lệ.
-    /// - 404 Not Found: Không tìm thấy hồ sơ hoặc không có quyền thao tác.
-    /// - 409 Conflict: Số CCCD trùng với hồ sơ khác.
-    /// </returns>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<TenantProfileResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
-        [FromRoute] Guid id,
-        [FromBody] UpdateTenantProfileRequest request,
+        [FromRoute] Guid id, // Mã hồ sơ cần sửa lấy từ URL
+        [FromBody] UpdateTenantProfileRequest request, // Dữ liệu mới lấy từ JSON body
         CancellationToken cancellationToken)
     {
         var landlordId = GetCurrentUserId();
@@ -276,11 +268,13 @@ public sealed class LandlordTenantsController : ControllerBase
 
         try
         {
+            // Gọi tầng Business kiểm tra quyền, kiểm tra dữ liệu & CCCD trùng, rồi lưu cập nhật
             var updatedDto = await _tenantProfileService.UpdateProfileAsync(
                 landlordId, id, request.ToDto(), cancellationToken);
 
             var response = TenantProfileResponse.FromDto(updatedDto);
 
+            // Trả về HTTP 200 OK kèm dữ liệu mới sau khi sửa
             return Ok(new
             {
                 data = response,
@@ -334,8 +328,12 @@ public sealed class LandlordTenantsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Hàm phụ trợ giúp trích xuất User ID của người dùng đang đăng nhập từ JWT Claims.
+    /// </summary>
     private string? GetCurrentUserId()
     {
+        // Tìm claim "sub" (Subject - chuẩn JWT) hoặc ClaimTypes.NameIdentifier trong thông tin xác thực User
         return User.FindFirst("sub")?.Value ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     }
 }

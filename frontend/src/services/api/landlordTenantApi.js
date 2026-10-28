@@ -5,7 +5,7 @@ const BASE_PATH = '/api/landlord/tenants'
 
 /**
  * Lấy danh sách hồ sơ người thuê do chủ trọ quản lý (hỗ trợ phân trang và tìm kiếm theo từ khóa).
- * Backend trả về cấu trúc phân trang: { data: TenantProfileResponse[], meta: { total, page, pageSize, totalPages } }
+ * Backend trả về cấu trúc phân trang: { data: TenantProfileResponse[], meta: { total, page, pageSize } }
  */
 export function getLandlordTenants({ keyword = '', page = 1, pageSize = 10 } = {}, options = {}) {
   const params = new URLSearchParams()
@@ -54,3 +54,72 @@ export async function updateLandlordTenant(id, payload) {
   invalidateApiCache('landlord:tenants')
   return result
 }
+
+/**
+ * Chuyển đổi lỗi API (ApiError / ProblemDetails) thành { generalError, fieldErrors }
+ * tương thích với biểu mẫu quản lý hồ sơ người thuê.
+ */
+export function mapTenantApiError(error) {
+  const fieldErrors = {}
+  const details = error?.details || {}
+  const code = details.code || ''
+  const message = error?.message || details.detail || details.message || 'Đã có lỗi xảy ra khi xử lý hồ sơ người thuê.'
+
+  // 1. Ánh xạ từ ASP.NET ValidationProblemDetails (details.errors) nếu có
+  if (details.errors && typeof details.errors === 'object') {
+    const fieldKeyMap = {
+      FullName: 'fullName',
+      fullName: 'fullName',
+      PhoneNumber: 'phoneNumber',
+      phoneNumber: 'phoneNumber',
+      Email: 'email',
+      email: 'email',
+      CitizenId: 'citizenId',
+      citizenId: 'citizenId',
+      DateOfBirth: 'dateOfBirth',
+      dateOfBirth: 'dateOfBirth',
+      Gender: 'gender',
+      gender: 'gender',
+      PermanentAddress: 'permanentAddress',
+      permanentAddress: 'permanentAddress',
+    }
+    for (const [key, messages] of Object.entries(details.errors)) {
+      const targetField = fieldKeyMap[key]
+      const firstMsg = Array.isArray(messages) ? messages[0] : messages
+      if (targetField && firstMsg) {
+        fieldErrors[targetField] = firstMsg
+      }
+    }
+  }
+
+  // 2. Xử lý lỗi xung đột CCCD (409 Conflict / CITIZEN_ID_CONFLICT)
+  if (error?.status === 409 || code === 'CITIZEN_ID_CONFLICT') {
+    fieldErrors.citizenId = message
+  }
+
+  // 3. Phân tích thông điệp lỗi từ AppValidationException (400 Bad Request) để gán đúng trường
+  if (error?.status === 400 || code === 'VALIDATION_FAILED' || code === 'VALIDATION_ERROR') {
+    const lowerMsg = message.toLowerCase()
+    if (lowerMsg.includes('họ và tên') && !fieldErrors.fullName) {
+      fieldErrors.fullName = message
+    } else if (lowerMsg.includes('số điện thoại') && !fieldErrors.phoneNumber) {
+      fieldErrors.phoneNumber = message
+    } else if (lowerMsg.includes('email') && !fieldErrors.email) {
+      fieldErrors.email = message
+    } else if (lowerMsg.includes('cccd') && !fieldErrors.citizenId) {
+      fieldErrors.citizenId = message
+    } else if (lowerMsg.includes('ngày sinh') && !fieldErrors.dateOfBirth) {
+      fieldErrors.dateOfBirth = message
+    } else if (lowerMsg.includes('giới tính') && !fieldErrors.gender) {
+      fieldErrors.gender = message
+    } else if (lowerMsg.includes('địa chỉ') && !fieldErrors.permanentAddress) {
+      fieldErrors.permanentAddress = message
+    }
+  }
+
+  return {
+    generalError: message,
+    fieldErrors,
+  }
+}
+

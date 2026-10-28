@@ -17,8 +17,6 @@ export default function Landlord({
   setProperties,
   rooms,
   setRooms,
-  tenants = [],
-  setTenants,
   requests,
   setRequests,
   selectedProperty,
@@ -461,8 +459,6 @@ export default function Landlord({
   if (page === "tenants")
     return (
       <TenantManager
-        tenants={tenants}
-        setTenants={setTenants}
         contracts={contracts}
         navigate={navigate}
         notify={notify}

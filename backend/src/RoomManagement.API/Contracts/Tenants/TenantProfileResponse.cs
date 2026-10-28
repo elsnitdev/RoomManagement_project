@@ -3,14 +3,14 @@ using RoomManagement.Business.DTOs.Tenants;
 namespace RoomManagement.API.Contracts.Tenants;
 
 /// <summary>
-/// Dữ liệu phản hồi thông tin hồ sơ người thuê gửi về cho Client.
+/// Lớp đại diện cho cấu trúc JSON thông tin hồ sơ người thuê mà Backend trả về cho Frontend.
 /// </summary>
 public sealed class TenantProfileResponse
 {
     /// <summary>Mã định danh duy nhất của hồ sơ người thuê.</summary>
     public Guid Id { get; init; }
 
-    /// <summary>ID tài khoản người dùng nếu đã liên kết tài khoản.</summary>
+    /// <summary>ID tài khoản người dùng nếu đã liên kết tài khoản (null nếu người thuê chưa có tài khoản).</summary>
     public string? UserId { get; init; }
 
     /// <summary>ID của chủ trọ khởi tạo hồ sơ.</summary>
@@ -44,7 +44,7 @@ public sealed class TenantProfileResponse
     public DateTime? UpdatedAt { get; init; }
 
     /// <summary>
-    /// Chuyển đổi từ Business DTO sang Response Contract.
+    /// Hàm tĩnh (static) chuyển đổi từ Business DTO sang Response Contract để đóng gói trả về JSON cho Client.
     /// </summary>
     public static TenantProfileResponse FromDto(TenantProfileDto dto) => new()
     {

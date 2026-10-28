@@ -8,7 +8,6 @@ import {
   initialProperties,
   initialRequests,
   initialRooms,
-  initialTenants,
   initialUsers,
 } from "./mockData";
 import { Brand, Icon } from "./ui";
@@ -53,7 +52,6 @@ export default function App() {
   const [users, setUsers] = useState(initialUsers);
   const [properties, setProperties] = useState(initialProperties);
   const [rooms, setRooms] = useState(initialRooms);
-  const [tenants, setTenants] = useState(initialTenants);
   const [requests, setRequests] = useState(initialRequests);
   const [selectedProperty, setSelectedProperty] = useState("all");
   const toastTimer = useRef(null);
@@ -252,8 +250,6 @@ export default function App() {
               setProperties={setProperties}
               rooms={rooms}
               setRooms={setRooms}
-              tenants={tenants}
-              setTenants={setTenants}
               requests={requests}
               setRequests={setRequests}
               selectedProperty={selectedProperty}

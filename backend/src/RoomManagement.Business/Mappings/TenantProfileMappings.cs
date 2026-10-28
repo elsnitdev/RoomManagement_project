@@ -4,12 +4,14 @@ using RoomManagement.Domain.Entities;
 namespace RoomManagement.Business.Mappings;
 
 /// <summary>
-/// Các hàm mở rộng ánh xạ giữa Entity TenantProfile và DTO.
+/// Lớp tĩnh chứa các phương thức mở rộng (Extension Methods) giúp chuyển đổi qua lại giữa Entity và DTO.
 /// </summary>
 public static class TenantProfileMappings
 {
     /// <summary>
-    /// Chuyển đổi thực thể TenantProfile sang TenantProfileDto.
+    /// Chuyển đổi thực thể TenantProfile (tầng Domain) sang TenantProfileDto (tầng Business).
+    /// Từ khóa 'this' trước tham số đầu tiên biến hàm này thành Extension Method,
+    /// cho phép gọi trực tiếp dạng: profile.ToTenantProfileDto()
     /// </summary>
     public static TenantProfileDto ToTenantProfileDto(this TenantProfile profile) => new()
     {
