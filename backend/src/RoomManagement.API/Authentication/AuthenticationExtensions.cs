@@ -14,7 +14,7 @@ public static class AuthenticationExtensions
         .Validate(o => !string.IsNullOrWhiteSpace(o.Issuer), "Jwt:Issuer is required.")
         .Validate(o => !string.IsNullOrWhiteSpace(o.Audience), "Jwt:Audience is required.")
         .Validate(o => !string.IsNullOrWhiteSpace(o.SigningKey) && Encoding.UTF8.GetByteCount(o.SigningKey) >= 32,
-            "Set Jwt:SigningKey to a random secret of at least 32 bytes using user secrets or environment variables.")
+            "Configure Jwt:SigningKey with at least 32 bytes in appsettings.Local.json or an environment variable.")
         .Validate(o => o.AccessTokenMinutes is >= 1 and <= 60, "Jwt:AccessTokenMinutes must be between 1 and 60.")
         .ValidateOnStart();
 

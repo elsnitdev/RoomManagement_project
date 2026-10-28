@@ -15,7 +15,7 @@ public static class ServiceCollectionExtensions
     if (string.IsNullOrWhiteSpace(connectionString))
     {
       throw new InvalidOperationException(
-          "Set ConnectionStrings:RoomManagement using environment variables or user secrets.");
+        "Configure ConnectionStrings:RoomManagement in appsettings.Local.json or an environment variable.");
     }
 
     services.AddDbContext<RoomManagementDbContext>(options => options.UseSqlServer(connectionString));

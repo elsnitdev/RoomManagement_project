@@ -14,6 +14,7 @@ dist/
 # Environment
 .env
 .env.local
+backend/src/RoomManagement.API/appsettings.Local.json
 
 # IDE
 .vs/
