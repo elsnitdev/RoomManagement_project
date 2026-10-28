@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Brand, Button, Field, Icon } from "./ui";
+import { useAuth } from "./contexts/AuthContext";
 
-export default function Auth({ route, navigate, enterDemo, notify }) {
+export default function Auth({ route, navigate }) {
   const [login, setLogin] = useState({ identity: "", password: "" });
   const [registration, setRegistration] = useState({
     userName: "",
@@ -19,19 +20,44 @@ export default function Auth({ route, navigate, enterDemo, notify }) {
   const [registrationName, setRegistrationName] = useState("");
   const isRegister = route === "register";
   const isPending = route === "pending";
+  const { signIn, signOut } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const update = (key, value) =>
     setRegistration((current) => ({ ...current, [key]: value }));
-  function submitLogin(event) {
+  async function submitLogin(event) {
     event.preventDefault();
-    if (!login.identity.trim() || !login.password) {
-      setError("Vui lòng nhập tên đăng nhập và mật khẩu.");
+    const userNameOrEmail = login.identity.trim();
+    if (!userNameOrEmail || !login.password) {
+      if (!userNameOrEmail && !login.password) {
+        setError("Vui lòng nhập tên đăng nhập và mật khẩu.");
+      } else if (!userNameOrEmail) {
+        setError("Vui lòng nhập tên đăng nhập.");
+      } else if (!login.password) {
+        setError("Vui lòng nhập mật khẩu.");
+      }
       return;
     }
     setError("");
-    enterDemo(
-      login.identity.toLowerCase().includes("admin") ? "admin" : "landlord",
-    );
-    notify("Đã vào bản xem trước với dữ liệu mẫu.");
+    setIsSubmitting(true);
+    try {
+      const result = await signIn({
+        userNameOrEmail,
+        password: login.password,
+      });
+
+      if (result.user.role === "Admin") {
+        navigate("admin/overview");
+      } else if (result.user.role === "Landlord") {
+        navigate("landlord/overview");
+      } else {
+        signOut();
+        setError("Giao diện cho vai trò này chưa được hỗ trợ.");
+      }
+    } catch (err) {
+      setError(err.message || "Đăng nhập thất bại. Vui lòng thử lại.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
   function submitRegistration(event) {
     event.preventDefault();
@@ -239,6 +265,7 @@ export default function Auth({ route, navigate, enterDemo, notify }) {
               <button
                 className="button button--primary full-width auth-submit"
                 type="submit"
+                disabled={isSubmitting}
               >
                 Gửi hồ sơ đăng ký <Icon name="arrow" size={17} />
               </button>
@@ -296,35 +323,11 @@ export default function Auth({ route, navigate, enterDemo, notify }) {
               <button
                 className="button button--primary full-width auth-submit"
                 type="submit"
+                disabled={isSubmitting}
               >
-                Đăng nhập <Icon name="arrow" size={17} />
+                {isSubmitting ? "Đang đăng nhập..." : "Đăng nhập"}
               </button>
             </form>
-            <div className="auth-divider">
-              <span>HOẶC XEM GIAO DIỆN MẪU</span>
-            </div>
-            <div className="demo-actions">
-              <button type="button" onClick={() => enterDemo("admin")}>
-                <span className="demo-icon">
-                  <Icon name="grid" size={18} />
-                </span>
-                <span>
-                  <strong>Quản trị viên</strong>
-                  <small>Duyệt tài khoản, quản lý người dùng</small>
-                </span>
-                <Icon name="chevron" size={16} />
-              </button>
-              <button type="button" onClick={() => enterDemo("landlord")}>
-                <span className="demo-icon">
-                  <Icon name="building" size={18} />
-                </span>
-                <span>
-                  <strong>Chủ trọ</strong>
-                  <small>Quản lý phòng, hợp đồng, hóa đơn</small>
-                </span>
-                <Icon name="chevron" size={16} />
-              </button>
-            </div>
             <p className="auth-register">
               Chưa có tài khoản?{" "}
               <button

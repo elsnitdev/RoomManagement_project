@@ -16,10 +16,14 @@ export function setAccessToken(token) {
 }
 
 function errorMessage(data, status) {
+  if (status === 502 || status === 503 || status === 504) {
+    return 'Máy chủ chưa sẵn sàng. Vui lòng thử lại sau.'
+  }
   if (typeof data === 'object' && data !== null) {
     if (data.message) return data.message
     const validationMessage = Object.values(data.errors || {}).flat()[0]
     if (validationMessage) return validationMessage
+    if (data.detail) return data.detail
     if (data.title) return data.title
   }
   return status === 401
@@ -67,6 +71,10 @@ export async function apiRequest(path, { method = 'GET', body, headers, signal, 
   }
 
   if (!response.ok) {
+    if (auth && response.status === 401) {
+      setAccessToken(null)
+      window.dispatchEvent(new Event('auth:unauthorized'))
+    }
     throw new ApiError(errorMessage(data, response.status), response.status, data)
   }
 

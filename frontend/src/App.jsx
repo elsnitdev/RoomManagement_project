@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "./contexts/AuthContext";
 import Admin from "./Admin";
 import Auth from "./Auth";
 import Landlord from "./Landlord";
 import Profile from "./Profile";
+import PropertyManagement from "./components/PropertyManagement";
+import RoomManagementPage from "./pages/RoomManagementPage";
+import CreateRoomPage from "./pages/CreateRoomPage";
 import {
   initialApprovals,
   initialProperties,
@@ -22,7 +26,6 @@ const adminNav = [
 const landlordNav = [
   { id: "overview", label: "Tổng quan", icon: "grid" },
   { id: "properties", label: "Khu trọ", icon: "building" },
-  { id: "rooms", label: "Phòng", icon: "door" },
   { id: "contracts", label: "Hợp đồng", icon: "file" },
   { id: "billing", label: "Hóa đơn", icon: "receipt" },
   { id: "requests", label: "Yêu cầu", icon: "chat" },
@@ -43,6 +46,7 @@ const titleMap = {
 const fromHash = () => window.location.hash.replace(/^#\/?/, "") || "login";
 
 export default function App() {
+  const { user, isAuthenticated, signOut } = useAuth();
   const [route, setRoute] = useState(fromHash);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState("");
@@ -53,6 +57,16 @@ export default function App() {
   const [requests, setRequests] = useState(initialRequests);
   const [selectedProperty, setSelectedProperty] = useState("all");
   const toastTimer = useRef(null);
+  const [routeRole, rawPage, roomId, propertySection, roomAction] = route.split("/");
+  const protectedRoute = routeRole === "admin" || routeRole === "landlord";
+  const userRoute =
+    user?.role === "Admin"
+      ? "admin"
+      : user?.role === "Landlord"
+        ? "landlord"
+        : null;
+  const canAccess = isAuthenticated && routeRole === userRoute;
+  const isPublic = !protectedRoute;
   useEffect(() => {
     const onHash = () => {
       setRoute(fromHash());
@@ -63,9 +77,22 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
   useEffect(() => {
-    const page = route.split("/")[1];
-    document.title = `${titleMap[page] || (route === "register" ? "Đăng ký chủ trọ" : "Đăng nhập")} | Nhà Trọ Xanh`;
+    const [, page, , section, action] = route.split("/");
+    const title = page === "properties" && section === "rooms"
+      ? action === "new" ? "Tạo phòng" : "Quản lý phòng"
+      : titleMap[page] || (route === "register" ? "Đăng ký chủ trọ" : "Đăng nhập");
+    document.title = `${title} | Nhà Trọ Xanh`;
   }, [route]);
+  useEffect(() => {
+    if (protectedRoute && !canAccess) {
+      window.location.hash = userRoute ? `#/${userRoute}/overview` : "#/login";
+    }
+  }, [protectedRoute, canAccess, userRoute]);
+  useEffect(() => {
+    if (canAccess && routeRole === "landlord" && (rawPage === "rooms" || rawPage === "room")) {
+      window.location.hash = "#/landlord/properties";
+    }
+  }, [canAccess, routeRole, rawPage]);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
   function notify(message) {
     setToast(message);
@@ -79,28 +106,16 @@ export default function App() {
       window.scrollTo(0, 0);
     } else window.location.hash = next;
   }
-  function enterDemo(nextRole) {
-    navigate(`${nextRole}/overview`);
-  }
   function logout() {
+    signOut();
     navigate("login");
-    notify("Đã thoát bản xem trước.");
+    notify("Đã đăng xuất.");
   }
-  const [routeRole, rawPage, roomId] = route.split("/");
-  const isPublic = !["admin", "landlord"].includes(routeRole);
+  if (protectedRoute && !canAccess) return null;
   if (isPublic)
     return (
       <>
-        <div className="preview-ribbon">
-          <span className="preview-dot" />
-          BẢN XEM TRƯỚC · DỮ LIỆU MẪU
-        </div>
-        <Auth
-          route={route}
-          navigate={navigate}
-          enterDemo={enterDemo}
-          notify={notify}
-        />
+        <Auth route={route} navigate={navigate} />
         {toast && (
           <div className="toast" role="status">
             {toast}
@@ -110,6 +125,9 @@ export default function App() {
     );
   const activeRole = routeRole;
   const page = titleMap[rawPage] ? rawPage : "overview";
+  const propertyPageTitle = propertySection === "rooms"
+    ? roomAction === "new" ? "Tạo phòng" : "Quản lý phòng"
+    : titleMap[page];
   const items = activeRole === "admin" ? adminNav : landlordNav;
   return (
     <div className="app-shell">
@@ -176,13 +194,13 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="sidebar-help">
+          {page !== "properties" && <div className="sidebar-help">
             <span className="help-icon">
               <Icon name="alert" size={18} />
             </span>
             <strong>Đang xem giao diện mẫu</strong>
             <p>Mọi thao tác chỉ thay đổi dữ liệu trong phiên này.</p>
-          </div>
+          </div>}
           <button
             className="nav-item logout-button"
             type="button"
@@ -207,21 +225,19 @@ export default function App() {
             </button>
             <span className="breadcrumb">
               Không gian làm việc <Icon name="chevron" size={15} />{" "}
-              <strong>{titleMap[page]}</strong>
+              <strong>{page === "properties" ? propertyPageTitle : titleMap[page]}</strong>
             </span>
           </div>
           <div className="topbar-right">
-            <span className="demo-chip">
+            {page !== "properties" && <span className="demo-chip">
               <span className="preview-dot" /> Dữ liệu mẫu
-            </span>
+            </span>}
             <div className="topbar-profile">
               <span className="avatar">
                 {activeRole === "admin" ? "AD" : "NA"}
               </span>
               <span>
-                <strong>
-                  {activeRole === "admin" ? "Quản trị viên" : "Nguyễn An"}
-                </strong>
+                <strong>{user?.userName || "Người dùng"}</strong>
                 <small>{activeRole === "admin" ? "Admin" : "Chủ trọ"}</small>
               </span>
             </div>
@@ -240,6 +256,12 @@ export default function App() {
               navigate={navigate}
               notify={notify}
             />
+          ) : page === "properties" ? (
+            propertySection === "rooms" && roomId ? (
+              roomAction === "new"
+                ? <CreateRoomPage key={roomId} propertyId={roomId} navigate={navigate} notify={notify} />
+                : <RoomManagementPage key={roomId} propertyId={roomId} navigate={navigate} notify={notify} />
+            ) : <PropertyManagement propertyId={roomId} navigate={navigate} notify={notify} />
           ) : (
             <Landlord
               page={page}

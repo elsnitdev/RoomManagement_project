@@ -56,7 +56,8 @@ Sau khi một thao tác ghi thành công, module API tương ứng xóa cache li
 
 - Mặc định `VITE_API_BASE_URL` để trống: frontend dùng Vite proxy `/api` tới `http://localhost:5185` khi phát triển.
 - Khi frontend và API khác origin ở môi trường triển khai, đặt `VITE_API_BASE_URL=https://api.example.com` trong cấu hình build. Backend phải cho phép CORS cho origin của frontend.
-- Token hiện nằm trong bộ nhớ. Tải lại trang sẽ cần đăng nhập lại; frontend không lưu token vào localStorage.
-- Giao diện hiện tại vẫn là bản mock để review. Các hàm API mới khớp những endpoint backend đã triển khai cho đăng nhập, đăng ký chủ trọ, hồ sơ và duyệt tài khoản. API khu trọ/phòng/hóa đơn chưa có nên chưa thêm hàm gọi thật cho chúng.
+- Phiên đăng nhập được lưu trong `sessionStorage` của tab để F5 không phải đăng nhập lại. Phiên tự xóa khi token hết hạn, API trả `401`, hoặc người dùng đăng xuất; frontend không lưu token vào `localStorage`.
+- Trang `#/landlord/properties` hiển thị khu trọ từ API thật. `#/landlord/properties/{id}` chỉ hiển thị chi tiết khu trọ và liên kết tới hai trang phòng riêng: `#/landlord/properties/{id}/rooms` để tìm, lọc, sửa, xóa phòng; `#/landlord/properties/{id}/rooms/new` để tạo phòng. Các trang này dùng endpoint `/api/properties` và `/api/properties/{id}/rooms`; cần chạy backend và đăng nhập bằng tài khoản Landlord đã được duyệt.
+- Các trang tổng quan, hợp đồng, hóa đơn và yêu cầu vẫn dùng dữ liệu mẫu. Chúng chưa đồng bộ với trang khu trọ/phòng dùng API thật.
 
-Để thêm endpoint mới, thêm hàm vào module nghiệp vụ phù hợp trong `services/api/`. Nếu là nhóm nghiệp vụ mới (ví dụ `roomApi.js` khi backend có API phòng), tạo module mới rồi thêm một dòng `export * from './api/roomApi'` vào `services/api.js`. Mọi module dùng `apiRequest` từ `apiClient.js` và xóa cache tương ứng sau thao tác ghi.
+Để thêm endpoint mới, thêm hàm vào module nghiệp vụ phù hợp trong `services/api/` rồi export từ `services/api.js`. Mọi module dùng `apiRequest` từ `apiClient.js` và xóa cache tương ứng sau thao tác ghi. Ví dụ hiện có: `PropertyApi.js` và `RoomApi.js`.
