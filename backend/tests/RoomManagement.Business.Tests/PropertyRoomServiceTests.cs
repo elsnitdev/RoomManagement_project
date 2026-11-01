@@ -64,6 +64,51 @@ public sealed class PropertyRoomServiceTests
         Assert.False(rooms.Deleted);
     }
 
+    [Fact]
+    public async Task BatchPreview_RejectsDuplicateScopeBeforeStore()
+    {
+        var propertyId = Guid.NewGuid();
+        var property = new FakeProperties { Property = new Property { Id = propertyId, OwnerUserId = OwnerId, IsActive = true } };
+        var store = new FakeBatchStore();
+        var service = new RoomBatchService(new Current(), new ActiveLandlord(), property, store);
+        var values = new RoomValues(null, 25, 100, 2, null);
+        var plan = new RoomBatchPlan(
+            [new RoomBatchGroup("a", null, 1, 2, values), new RoomBatchGroup("b", null, 1, 3, values)], []);
+        var error = await Assert.ThrowsAsync<BusinessException>(() => service.PreviewAsync(propertyId, plan, Ct));
+        Assert.Equal("ROOM_BATCH_GROUP_INVALID", error.Code);
+        Assert.False(store.PreviewCalled);
+    }
+
+    [Fact]
+    public async Task BatchPreview_RejectsOverrideOutsideGroup()
+    {
+        var propertyId = Guid.NewGuid();
+        var property = new FakeProperties { Property = new Property { Id = propertyId, OwnerUserId = OwnerId, IsActive = true } };
+        var store = new FakeBatchStore();
+        var service = new RoomBatchService(new Current(), new ActiveLandlord(), property, store);
+        var values = new RoomValues(null, 25, 100, 2, null);
+        var plan = new RoomBatchPlan([new RoomBatchGroup("a", null, 1, 2, values)],
+            [new RoomBatchOverride("a", 3, values)]);
+        var error = await Assert.ThrowsAsync<BusinessException>(() => service.PreviewAsync(propertyId, plan, Ct));
+        Assert.Equal("ROOM_BATCH_OVERRIDE_INVALID", error.Code);
+        Assert.False(store.PreviewCalled);
+    }
+
+    [Fact]
+    public async Task GeneratedRoom_CannotChangeNumberOrFloorThroughNormalEdit()
+    {
+        var propertyId = Guid.NewGuid();
+        var room = new Room { Id = Guid.NewGuid(), PropertyId = propertyId, RoomNumber = "101", Floor = 1,
+            SequenceNumber = 1, MaxOccupants = 2, RowVersion = new byte[8] };
+        var property = new FakeProperties { Property = new Property { Id = propertyId, OwnerUserId = OwnerId, IsActive = true } };
+        var rooms = new FakeRooms { Room = room };
+        var service = new RoomManagementRoomService(new Current(), new ActiveLandlord(), property, rooms);
+        var error = await Assert.ThrowsAsync<BusinessException>(() => service.UpdateAsync(propertyId, room.Id,
+            new UpdateRoomInput("102", null, 1, 25, 100, 2, null, RoomStatus.Available, Convert.ToBase64String(new byte[8])), Ct));
+        Assert.Equal("ROOM_NUMBER_MANAGED", error.Code);
+        Assert.False(rooms.Saved);
+    }
+
     private sealed class Current : ICurrentLandlord
     {
         public string GetUserId() => OwnerId;
@@ -104,12 +149,30 @@ public sealed class PropertyRoomServiceTests
         }
         public Task<RoomResult?> GetResultAsync(Guid propertyId, Guid roomId, string ownerId, CancellationToken ct) =>
             Task.FromResult<RoomResult?>(null);
-        public Task<(IReadOnlyList<RoomResult> Items, long TotalItems)> ListAsync(Guid propertyId, string ownerId, string? search, RoomStatus? status, int skip, int take, CancellationToken ct) =>
+        public Task<(IReadOnlyList<RoomResult> Items, long TotalItems)> ListAsync(Guid propertyId, string ownerId, string? search, RoomStatus? status, Guid? rowId, int? floor, int skip, int take, CancellationToken ct) =>
             Task.FromResult(((IReadOnlyList<RoomResult>)Array.Empty<RoomResult>(), 0L));
         public Task<bool> NumberExistsAsync(Guid propertyId, string number, Guid? exceptRoomId, CancellationToken ct) => Task.FromResult(false);
         public Task<bool> HasActiveContractAsync(Guid roomId, CancellationToken ct) => Task.FromResult(false);
         public Task<string?> GetDeleteBlockerAsync(Guid roomId, CancellationToken ct) => Task.FromResult(Blocker);
         public Task SaveAsync(CancellationToken ct) { Saved = true; return Task.CompletedTask; }
         public Task DeleteAsync(Room room, CancellationToken ct) { Deleted = true; return Task.CompletedTask; }
+    }
+
+    private sealed class FakeBatchStore : IRoomBatchStore
+    {
+        public bool PreviewCalled { get; private set; }
+        public Task<IReadOnlyList<RoomRow>> ListRowsAsync(Guid propertyId, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<RoomRow>>([]);
+        public Task<RoomRow> AddRowAsync(Guid propertyId, string code, string name, CancellationToken ct) =>
+            throw new NotImplementedException();
+        public Task<RoomRow> UpdateRowAsync(Guid propertyId, Guid rowId, string name, bool isActive, CancellationToken ct) =>
+            throw new NotImplementedException();
+        public Task<RoomBatchPreviewResult> PreviewAsync(Guid propertyId, RoomBatchPlan plan, CancellationToken ct)
+        {
+            PreviewCalled = true;
+            return Task.FromResult(new RoomBatchPreviewResult([], "test"));
+        }
+        public Task<RoomBatchCreateResult> CreateAsync(Guid propertyId, string ownerId, RoomBatchPlan plan, string fingerprint, Guid idempotencyKey, CancellationToken ct) =>
+            throw new NotImplementedException();
     }
 }

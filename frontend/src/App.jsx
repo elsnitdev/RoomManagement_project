@@ -57,7 +57,8 @@ export default function App() {
   const [requests, setRequests] = useState(initialRequests);
   const [selectedProperty, setSelectedProperty] = useState("all");
   const toastTimer = useRef(null);
-  const [routeRole, rawPage, roomId, propertySection, roomAction] = route.split("/");
+  const [routeRole, rawPage, roomId, propertySection, roomAction] =
+    route.split("/");
   const protectedRoute = routeRole === "admin" || routeRole === "landlord";
   const userRoute =
     user?.role === "Admin"
@@ -78,19 +79,27 @@ export default function App() {
   }, []);
   useEffect(() => {
     const [, page, , section, action] = route.split("/");
-    const title = page === "properties" && section === "rooms"
-      ? action === "new" ? "Tạo phòng" : "Quản lý phòng"
-      : titleMap[page] || (route === "register" ? "Đăng ký chủ trọ" : "Đăng nhập");
+    const title =
+      page === "properties" && section === "rooms"
+        ? action === "new"
+          ? "Tạo phòng"
+          : "Quản lý phòng"
+        : titleMap[page] ||
+          (route === "register" ? "Đăng ký chủ trọ" : "Đăng nhập");
     document.title = `${title} | Nhà Trọ Xanh`;
   }, [route]);
   useEffect(() => {
     if (protectedRoute && !canAccess) {
-      window.location.hash = userRoute ? `#/${userRoute}/overview` : "#/login";
+      window.location.hash = userRoute ? `/${userRoute}/overview` : "/login";
     }
   }, [protectedRoute, canAccess, userRoute]);
   useEffect(() => {
-    if (canAccess && routeRole === "landlord" && (rawPage === "rooms" || rawPage === "room")) {
-      window.location.hash = "#/landlord/properties";
+    if (
+      canAccess &&
+      routeRole === "landlord" &&
+      (rawPage === "rooms" || rawPage === "room")
+    ) {
+      window.location.hash = "/landlord/properties";
     }
   }, [canAccess, routeRole, rawPage]);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
@@ -100,7 +109,7 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(""), 4200);
   }
   function navigate(path) {
-    const next = `#/${path}`;
+    const next = `/${path}`;
     if (window.location.hash === next) {
       setMobileNav(false);
       window.scrollTo(0, 0);
@@ -125,9 +134,12 @@ export default function App() {
     );
   const activeRole = routeRole;
   const page = titleMap[rawPage] ? rawPage : "overview";
-  const propertyPageTitle = propertySection === "rooms"
-    ? roomAction === "new" ? "Tạo phòng" : "Quản lý phòng"
-    : titleMap[page];
+  const propertyPageTitle =
+    propertySection === "rooms"
+      ? roomAction === "new"
+        ? "Tạo phòng"
+        : "Quản lý phòng"
+      : titleMap[page];
   const items = activeRole === "admin" ? adminNav : landlordNav;
   return (
     <div className="app-shell">
@@ -194,13 +206,15 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          {page !== "properties" && <div className="sidebar-help">
-            <span className="help-icon">
-              <Icon name="alert" size={18} />
-            </span>
-            <strong>Đang xem giao diện mẫu</strong>
-            <p>Mọi thao tác chỉ thay đổi dữ liệu trong phiên này.</p>
-          </div>}
+          {page !== "properties" && (
+            <div className="sidebar-help">
+              <span className="help-icon">
+                <Icon name="alert" size={18} />
+              </span>
+              <strong>Đang xem giao diện mẫu</strong>
+              <p>Mọi thao tác chỉ thay đổi dữ liệu trong phiên này.</p>
+            </div>
+          )}
           <button
             className="nav-item logout-button"
             type="button"
@@ -225,13 +239,17 @@ export default function App() {
             </button>
             <span className="breadcrumb">
               Không gian làm việc <Icon name="chevron" size={15} />{" "}
-              <strong>{page === "properties" ? propertyPageTitle : titleMap[page]}</strong>
+              <strong>
+                {page === "properties" ? propertyPageTitle : titleMap[page]}
+              </strong>
             </span>
           </div>
           <div className="topbar-right">
-            {page !== "properties" && <span className="demo-chip">
-              <span className="preview-dot" /> Dữ liệu mẫu
-            </span>}
+            {page !== "properties" && (
+              <span className="demo-chip">
+                <span className="preview-dot" /> Dữ liệu mẫu
+              </span>
+            )}
             <div className="topbar-profile">
               <span className="avatar">
                 {activeRole === "admin" ? "AD" : "NA"}
@@ -243,7 +261,11 @@ export default function App() {
             </div>
           </div>
         </header>
-        <main id="main-content" tabIndex="-1" className="main-content">
+        <main
+          id="main-content"
+          tabIndex="-1"
+          className={`main-content${page === "properties" && propertySection === "rooms" && roomAction === "new" ? " main-content--room-batch" : ""}`}
+        >
           {page === "profile" ? (
             <Profile role={activeRole} notify={notify} />
           ) : activeRole === "admin" ? (
@@ -258,10 +280,28 @@ export default function App() {
             />
           ) : page === "properties" ? (
             propertySection === "rooms" && roomId ? (
-              roomAction === "new"
-                ? <CreateRoomPage key={roomId} propertyId={roomId} navigate={navigate} notify={notify} />
-                : <RoomManagementPage key={roomId} propertyId={roomId} navigate={navigate} notify={notify} />
-            ) : <PropertyManagement propertyId={roomId} navigate={navigate} notify={notify} />
+              roomAction === "new" ? (
+                <CreateRoomPage
+                  key={roomId}
+                  propertyId={roomId}
+                  navigate={navigate}
+                  notify={notify}
+                />
+              ) : (
+                <RoomManagementPage
+                  key={roomId}
+                  propertyId={roomId}
+                  navigate={navigate}
+                  notify={notify}
+                />
+              )
+            ) : (
+              <PropertyManagement
+                propertyId={roomId}
+                navigate={navigate}
+                notify={notify}
+              />
+            )
           ) : (
             <Landlord
               page={page}

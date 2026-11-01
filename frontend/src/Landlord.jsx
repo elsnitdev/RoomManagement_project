@@ -2,6 +2,7 @@ import { useState } from "react";
 import { contracts, formatCurrency, invoices, todayLabel } from "./mockData";
 import { Badge, Button, Empty, Field, Heading, Icon, Stat } from "./ui";
 import RoomDetail from "./RoomDetail";
+import InvoicePaymentPage from "./components/billing/InvoicePaymentPage";
 
 const roomStatus = {
   occupied: "Đã thuê",
@@ -71,10 +72,6 @@ export default function Landlord({
     (room) => room.status === "maintenance",
   ).length;
   const unpaid = scopedInvoices.reduce(
-    (sum, item) => sum + item.amount - item.paid,
-    0,
-  );
-  const unpaidAll = invoices.reduce(
     (sum, item) => sum + item.amount - item.paid,
     0,
   );
@@ -511,95 +508,7 @@ export default function Landlord({
       </>
     );
   if (page === "billing")
-    return (
-      <>
-        <Heading
-          eyebrow="TÀI CHÍNH"
-          title="Hóa đơn & công nợ"
-          description="Theo dõi số tiền đã xác nhận và khoản còn phải thu theo từng phòng."
-        />
-        <div className="stats-grid">
-          <Stat
-            icon="receipt"
-            label="Hóa đơn tháng 10"
-            value={invoices.length.toString()}
-            note="Kỳ 10/2026"
-          />
-          <Stat
-            icon="wallet"
-            label="Đã thu"
-            value={formatCurrency(
-              invoices.reduce((sum, item) => sum + item.paid, 0),
-            )}
-            note="Thanh toán đã ghi nhận"
-            tint="green"
-          />
-          <Stat
-            icon="clock"
-            label="Còn phải thu"
-            value={formatCurrency(unpaidAll)}
-            note="Bao gồm thanh toán một phần"
-            tint="amber"
-          />
-        </div>
-        <section className="content-card">
-          <div className="card-title-row">
-            <h2>Hóa đơn kỳ 10/2026</h2>
-            <span className="subtle-count">{invoices.length} hóa đơn mẫu</span>
-          </div>
-          <div className="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Mã hóa đơn</th>
-                  <th>Phòng / người thuê</th>
-                  <th>Tổng tiền</th>
-                  <th>Đã thu</th>
-                  <th>Còn nợ</th>
-                  <th>Trạng thái</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <strong>{item.id}</strong>
-                      <small className="table-sub">Hạn {item.due}</small>
-                    </td>
-                    <td>
-                      <strong>{item.room}</strong>
-                      <small className="table-sub">{item.tenant}</small>
-                    </td>
-                    <td className="nowrap">{formatCurrency(item.amount)}</td>
-                    <td className="nowrap">{formatCurrency(item.paid)}</td>
-                    <td className="nowrap">
-                      <strong>{formatCurrency(item.amount - item.paid)}</strong>
-                    </td>
-                    <td>
-                      <Badge
-                        kind={
-                          item.status === "paid"
-                            ? "approved"
-                            : item.status === "partial"
-                              ? "pending"
-                              : "rejected"
-                        }
-                      >
-                        {item.status === "paid"
-                          ? "Đã thanh toán"
-                          : item.status === "partial"
-                            ? "Thanh toán một phần"
-                            : "Chưa thanh toán"}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </>
-    );
+    return <InvoicePaymentPage invoices={invoices} />;
   if (page === "requests")
     return (
       <>

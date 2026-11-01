@@ -5,10 +5,12 @@ const propertyPath = propertyId => `/api/properties/${encodeURIComponent(propert
 const roomsPath = propertyId => `${propertyPath(propertyId)}/rooms`
 const roomPath = (propertyId, roomId) => `${roomsPath(propertyId)}/${encodeURIComponent(roomId)}`
 
-function queryString({ page = 1, pageSize = 20, search, status } = {}) {
+function queryString({ page = 1, pageSize = 20, search, status, rowId, floor } = {}) {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
   if (search?.trim()) params.set('search', search.trim())
   if (status !== undefined && status !== null && status !== '') params.set('status', String(status))
+  if (rowId) params.set('rowId', rowId)
+  if (floor !== undefined && floor !== null && floor !== '') params.set('floor', String(floor))
   return params.toString()
 }
 
@@ -22,6 +24,17 @@ export function getRoom(propertyId, roomId) {
 
 export async function createRoom(propertyId, data) {
   const response = await apiRequest(roomsPath(propertyId), { method: 'POST', body: data })
+  invalidateApiCache('rooms')
+  return response.data
+}
+
+export async function previewRoomBatch(propertyId, plan) {
+  const response = await apiRequest(`${roomsPath(propertyId)}/batch/preview`, { method: 'POST', body: plan })
+  return response.data
+}
+
+export async function createRoomBatch(propertyId, plan) {
+  const response = await apiRequest(`${roomsPath(propertyId)}/batch`, { method: 'POST', body: plan })
   invalidateApiCache('rooms')
   return response.data
 }

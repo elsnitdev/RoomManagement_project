@@ -2,7 +2,7 @@ import { ArrowLeft, AlertTriangle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { getProperty } from '../services/api'
-import RoomForm from '../components/rooms/RoomForm'
+import RoomBatchWizard from '../components/rooms/RoomBatchWizard'
 import { Feedback, IconButton } from '../components/property/ManagementUi'
 import '../styles/property-management.css'
 
@@ -22,9 +22,9 @@ export default function CreateRoomPage({ propertyId, navigate, notify }) {
       {propertyQuery.isLoading ? <div className="pm-loading" role="status">Đang tải khu trọ...</div>
         : propertyQuery.error ? <Feedback error={propertyQuery.error} onRetry={propertyQuery.reload} />
           : property && <>
-            <header className="pm-hero"><div><span className="pm-eyebrow">{property.name}</span><h1>Tạo phòng mới</h1><p>Phòng mới sẽ thuộc khu trọ {property.name}.</p></div></header>
+            <header className="pm-hero"><div><span className="pm-eyebrow">{property.name}</span><h1>Tạo nhiều phòng</h1><p>Khai báo theo dãy hoặc tầng, chỉnh riêng phòng đặc biệt trước khi lưu.</p></div></header>
             {property.isActive
-              ? <RoomForm propertyId={propertyId} onCancel={back} onSaved={room => { notify(`Đã tạo phòng ${room.roomNumber}.`); back() }} />
+              ? <RoomBatchWizard propertyId={propertyId} onCancel={back} onSaved={rooms => { notify(`Đã tạo ${rooms.length} phòng.`); back() }} notify={notify} />
               : <p className="pm-inactive-note"><AlertTriangle size={17} aria-hidden="true" /> Khu trọ đang tạm ngừng. Hãy kích hoạt khu trọ trong phần chỉnh sửa trước khi tạo phòng.</p>}
           </>}
     </div>

@@ -972,11 +972,17 @@ namespace RoomManagement.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<Guid?>("RowId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
+
+                    b.Property<int?>("SequenceNumber")
+                        .HasColumnType("int");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -990,6 +996,8 @@ namespace RoomManagement.Data.Migrations
                     b.HasKey("Id")
                         .HasName("PK_Rooms");
 
+                    b.HasIndex("RowId");
+
                     b.HasIndex("PropertyId", "RoomNumber")
                         .IsUnique()
                         .HasDatabaseName("UX_Rooms_Property_Number");
@@ -997,12 +1005,98 @@ namespace RoomManagement.Data.Migrations
                     b.HasIndex("PropertyId", "Status")
                         .HasDatabaseName("IX_Rooms_Property_Status");
 
+                    b.HasIndex("PropertyId", "RowId", "Floor", "SequenceNumber");
+
                     b.ToTable("Rooms", "dbo", t =>
                         {
                             t.HasCheckConstraint("CK_Rooms_Amounts", "(BasePrice >= 0 AND MaxOccupants > 0 AND (Area IS NULL OR Area > 0))");
 
                             t.HasCheckConstraint("CK_Rooms_Status", "(Status IN (N'Available', N'Occupied', N'Maintenance', N'Inactive'))");
                         });
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.RoomBatchSubmission", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId", "OwnerUserId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("RoomBatchSubmissions", "dbo");
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.RoomNumberCounter", b =>
+                {
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ScopeKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("LastSequence")
+                        .HasColumnType("int");
+
+                    b.HasKey("PropertyId", "ScopeKey");
+
+                    b.ToTable("RoomNumberCounters", "dbo");
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.RoomRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PropertyId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("RoomRows", "dbo");
                 });
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.RoomService", b =>
@@ -1480,6 +1574,38 @@ namespace RoomManagement.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_Rooms_Properties");
+
+                    b.HasOne("RoomManagement.Domain.Entities.RoomRow", null)
+                        .WithMany()
+                        .HasForeignKey("RowId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.RoomBatchSubmission", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.Property", null)
+                        .WithMany()
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.RoomNumberCounter", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.Property", null)
+                        .WithMany()
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.RoomRow", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.Property", null)
+                        .WithMany()
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.RoomService", b =>

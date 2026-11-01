@@ -16,7 +16,24 @@ namespace RoomManagement.API.Controllers;
 public sealed class RoomsController : ControllerBase
 {
     private readonly RoomService _service;
-    public RoomsController(RoomService service) => _service = service;
+    private readonly RoomBatchService _batchService;
+    public RoomsController(RoomService service, RoomBatchService batchService)
+    {
+        _service = service;
+        _batchService = batchService;
+    }
+
+    [HttpPost("batch/preview")]
+    public async Task<IActionResult> PreviewBatch(Guid propertyId, [FromBody] RoomBatchPreviewRequest request, CancellationToken ct) =>
+        Ok(new ApiResponse<RoomBatchPreviewResult>(await _batchService.PreviewAsync(propertyId, request.ToInput(), ct)));
+
+    [HttpPost("batch")]
+    public async Task<IActionResult> CreateBatch(Guid propertyId, [FromBody] RoomBatchCreateRequest request, CancellationToken ct)
+    {
+        var result = await _batchService.CreateAsync(propertyId, request.ToInput(), request.PreviewFingerprint, request.IdempotencyKey, ct);
+        return StatusCode(StatusCodes.Status201Created,
+            new ApiResponse<RoomBatchCreateResponse>(new(result.Rooms.Select(RoomResponse.From).ToList())));
+    }
 
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<RoomResponse>), StatusCodes.Status201Created)]
@@ -31,9 +48,10 @@ public sealed class RoomsController : ControllerBase
     public async Task<ActionResult<PageResponse<RoomResponse>>> List(
         Guid propertyId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null, [FromQuery] RoomStatus? status = null,
+        [FromQuery] Guid? rowId = null, [FromQuery] int? floor = null,
         CancellationToken ct = default)
     {
-        var result = await _service.ListAsync(propertyId, new RoomFilter(page, pageSize, search, status), ct);
+        var result = await _service.ListAsync(propertyId, new RoomFilter(page, pageSize, search, status, rowId, floor), ct);
         return Ok(new PageResponse<RoomResponse>(result.Items.Select(RoomResponse.From).ToList(),
             new PageMeta(page, pageSize, result.TotalItems, (int)Math.Ceiling((double)result.TotalItems / pageSize))));
     }

@@ -22,6 +22,7 @@ export default function RoomForm({ propertyId, initial, onCancel, onSaved }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const editing = Boolean(initial)
+  const managedNumber = editing && initial.sequenceNumber != null
 
   async function submit(event) {
     event.preventDefault()
@@ -59,9 +60,9 @@ export default function RoomForm({ propertyId, initial, onCancel, onSaved }) {
         <IconButton label="Đóng biểu mẫu phòng" icon={X} onClick={onCancel} disabled={busy} />
       </div>
       <form className="pm-form-grid" onSubmit={submit}>
-        <label className="field"><span>Mã phòng *</span><input autoFocus required maxLength={50} value={draft.roomNumber} onChange={event => setDraft({ ...draft, roomNumber: event.target.value })} placeholder="Ví dụ: P101" /></label>
+        <label className="field"><span>Mã phòng *</span><input autoFocus required readOnly={managedNumber} maxLength={50} value={draft.roomNumber} onChange={event => setDraft({ ...draft, roomNumber: event.target.value })} placeholder="Ví dụ: P101" /></label>
         <label className="field"><span>Tên phòng</span><input maxLength={100} value={draft.roomName} onChange={event => setDraft({ ...draft, roomName: event.target.value })} placeholder="Ví dụ: Phòng góc tầng 1" /></label>
-        <label className="field"><span>Tầng</span><input type="number" step="1" value={draft.floor} onChange={event => setDraft({ ...draft, floor: event.target.value })} /></label>
+        <label className="field"><span>Tầng</span><input type="number" step="1" readOnly={managedNumber} value={draft.floor} onChange={event => setDraft({ ...draft, floor: event.target.value })} /></label>
         <label className="field"><span>Diện tích (m²)</span><input type="number" min="0.01" step="0.01" value={draft.area} onChange={event => setDraft({ ...draft, area: event.target.value })} /></label>
         <label className="field"><span>Giá phòng (VND/tháng) *</span><input type="number" min="0" step="0.01" required value={draft.basePrice} onChange={event => setDraft({ ...draft, basePrice: event.target.value })} /></label>
         <label className="field"><span>Số người tối đa *</span><input type="number" min="1" step="1" required value={draft.maxOccupants} onChange={event => setDraft({ ...draft, maxOccupants: event.target.value })} /></label>

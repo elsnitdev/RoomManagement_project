@@ -16,6 +16,7 @@ public sealed class RoomConfiguration : IEntityTypeConfiguration<Room>
         builder.HasKey(e => e.Id).HasName("PK_Rooms");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.PropertyId).HasColumnType("uniqueidentifier").IsRequired();
+        builder.Property(e => e.SequenceNumber).HasColumnType("int");
         builder.Property(e => e.RoomNumber).HasColumnType("nvarchar(50)").IsRequired();
         builder.Property(e => e.RoomName).HasColumnType("nvarchar(100)");
         builder.Property(e => e.Floor).HasColumnType("int");
@@ -28,7 +29,9 @@ public sealed class RoomConfiguration : IEntityTypeConfiguration<Room>
         builder.Property(e => e.UpdatedAt).HasColumnType("datetime2(0)");
         builder.Property(e => e.RowVersion).IsRowVersion();
         builder.HasOne<Property>().WithMany().HasForeignKey(e => e.PropertyId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Rooms_Properties");
+        builder.HasOne<RoomRow>().WithMany().HasForeignKey(e => e.RowId).OnDelete(DeleteBehavior.NoAction);
         builder.HasIndex(e => new { e.PropertyId, e.RoomNumber }).HasDatabaseName("UX_Rooms_Property_Number").IsUnique();
+        builder.HasIndex(e => new { e.PropertyId, e.RowId, e.Floor, e.SequenceNumber });
         builder.HasIndex(e => new { e.PropertyId, e.Status }).HasDatabaseName("IX_Rooms_Property_Status");
     }
 }

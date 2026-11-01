@@ -62,7 +62,9 @@ public sealed class RoomService
         PropertyRoomValidation.Search(filter.Search);
         if (filter.Status.HasValue && !Enum.IsDefined(filter.Status.Value))
             throw new BusinessException(BusinessErrorType.Validation, "VALIDATION_ERROR", "Trạng thái phòng không hợp lệ.");
-        var (items, total) = await _rooms.ListAsync(propertyId, ownerId, filter.Search?.Trim(), filter.Status, (filter.Page - 1) * filter.PageSize, filter.PageSize, ct);
+        if (filter.Floor is <= 0)
+            throw new BusinessException(BusinessErrorType.Validation, "VALIDATION_ERROR", "Tầng không hợp lệ.");
+        var (items, total) = await _rooms.ListAsync(propertyId, ownerId, filter.Search?.Trim(), filter.Status, filter.RowId, filter.Floor, (filter.Page - 1) * filter.PageSize, filter.PageSize, ct);
         return new PageResult<RoomResult>(items, total, filter.Page, filter.PageSize);
     }
 
@@ -83,6 +85,8 @@ public sealed class RoomService
         if (input.Status is not (RoomStatus.Available or RoomStatus.Maintenance or RoomStatus.Inactive))
             throw new BusinessException(BusinessErrorType.Validation, "ROOM_STATUS_INVALID", "Chỉ được chọn Available, Maintenance hoặc Inactive.");
         var number = input.RoomNumber.Trim();
+        if (room.SequenceNumber.HasValue && (number != room.RoomNumber || input.Floor != room.Floor))
+            throw new BusinessException(BusinessErrorType.Conflict, "ROOM_NUMBER_MANAGED", "Mã phòng và tầng của phòng cấp số tự động không thể sửa tại đây.");
         if (await _rooms.NumberExistsAsync(propertyId, number, roomId, ct))
             throw new BusinessException(BusinessErrorType.Conflict, "ROOM_NUMBER_ALREADY_EXISTS", "Mã phòng đã tồn tại trong khu trọ.");
         var hasActiveContract = await _rooms.HasActiveContractAsync(roomId, ct);

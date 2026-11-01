@@ -34,6 +34,7 @@ public static class ServiceCollectionExtensions
     services.AddScoped<ILandlordStore, LandlordStore>();
     services.AddScoped<IPropertyStore, PropertyStore>();
     services.AddScoped<IRoomStore, RoomStore>();
+    services.AddScoped<IRoomBatchStore, RoomBatchStore>();
     return services;
   }
 }

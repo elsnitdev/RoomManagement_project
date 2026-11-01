@@ -6,6 +6,8 @@ public sealed class Room
 {
     public Guid Id { get; set; }
     public Guid PropertyId { get; set; }
+    public Guid? RowId { get; set; }
+    public int? SequenceNumber { get; set; }
     public string RoomNumber { get; set; } = null!;
     public string? RoomName { get; set; }
     public int? Floor { get; set; }

@@ -41,11 +41,13 @@ public sealed class RoomStore : IRoomStore
         return row is null ? null : new RoomResult(row.Room, EffectiveStatus(row.Room.Status, row.HasActiveContract));
     }
 
-    public async Task<(IReadOnlyList<RoomResult> Items, long TotalItems)> ListAsync(Guid propertyId, string ownerId, string? search, RoomStatus? status, int skip, int take, CancellationToken ct)
+    public async Task<(IReadOnlyList<RoomResult> Items, long TotalItems)> ListAsync(Guid propertyId, string ownerId, string? search, RoomStatus? status, Guid? rowId, int? floor, int skip, int take, CancellationToken ct)
     {
         var query = OwnedRooms(propertyId, ownerId).AsNoTracking();
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(r => r.RoomNumber.Contains(search) || (r.RoomName != null && r.RoomName.Contains(search)));
+        if (rowId.HasValue) query = query.Where(r => r.RowId == rowId);
+        if (floor.HasValue) query = query.Where(r => r.Floor == floor);
         if (status.HasValue)
         {
             query = status.Value switch

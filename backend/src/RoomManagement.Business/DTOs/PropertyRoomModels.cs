@@ -8,5 +8,5 @@ public sealed record PropertyFilter(int Page, int PageSize, string? Search, bool
 public sealed record UpdatePropertyInput(string Name, string Address, string? Description, bool IsActive, string RowVersion);
 public sealed record CreateRoomInput(string RoomNumber, string? RoomName, int? Floor, decimal? Area, decimal BasePrice, int MaxOccupants, string? Description);
 public sealed record UpdateRoomInput(string RoomNumber, string? RoomName, int? Floor, decimal? Area, decimal BasePrice, int MaxOccupants, string? Description, RoomStatus Status, string RowVersion);
-public sealed record RoomFilter(int Page, int PageSize, string? Search, RoomStatus? Status);
+public sealed record RoomFilter(int Page, int PageSize, string? Search, RoomStatus? Status, Guid? RowId = null, int? Floor = null);
 public sealed record RoomResult(Room Room, RoomStatus Status);
