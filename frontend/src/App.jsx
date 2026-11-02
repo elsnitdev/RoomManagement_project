@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { ReceiptText } from "lucide-react";
+import { Bell, Check, ChevronRight, CircleAlert, FileText, House, LayoutDashboard, LogOut, Menu, MessageSquareText, ReceiptText, UserRound, X } from "lucide-react";
 import { useAuth } from "./contexts/AuthContext";
 import Admin from "./Admin";
 import Auth from "./Auth";
 import Landlord from "./Landlord";
+import Tenant from "./Tenant";
 import Profile from "./Profile";
 import PropertyManagement from "./components/PropertyManagement";
 import RoomManagementPage from "./pages/RoomManagementPage";
 import CreateRoomPage from "./pages/CreateRoomPage";
 import {
   initialApprovals,
+  contracts,
   invoices as initialInvoices,
+  invoiceHistory,
   initialProperties,
   initialRequests,
   initialRooms,
@@ -28,10 +31,20 @@ const adminNav = [
 const landlordNav = [
   { id: "overview", label: "Tổng quan", icon: "grid" },
   { id: "properties", label: "Khu trọ", icon: "building" },
+  { id: "tenants", label: "Người ở", icon: "users" },
   { id: "contracts", label: "Hợp đồng", icon: "file" },
   { id: "billing", label: "Hóa đơn", icon: "receipt" },
   { id: "requests", label: "Yêu cầu", icon: "chat" },
   { id: "profile", label: "Hồ sơ", icon: "users" },
+];
+const tenantNav = [
+  { id: "overview", label: "Tổng quan", icon: LayoutDashboard },
+  { id: "room", label: "Chỗ ở của tôi", icon: House },
+  { id: "billing", label: "Hóa đơn", icon: ReceiptText },
+  { id: "contracts", label: "Hợp đồng", icon: FileText },
+  { id: "requests", label: "Yêu cầu", icon: MessageSquareText },
+  { id: "notices", label: "Thông báo", icon: Bell },
+  { id: "profile", label: "Tài khoản", icon: UserRound },
 ];
 const titleMap = {
   overview: "Tổng quan",
@@ -40,6 +53,8 @@ const titleMap = {
   properties: "Khu trọ",
   rooms: "Danh sách phòng",
   room: "Chi tiết phòng",
+  tenants: "Hồ sơ người ở",
+  notices: "Thông báo quan trọng",
   contracts: "Hợp đồng",
   billing: "Hóa đơn & công nợ",
   requests: "Yêu cầu người thuê",
@@ -62,13 +77,15 @@ export default function App() {
   const toastTimer = useRef(null);
   const [routeRole, rawPage, roomId, propertySection, roomAction] =
     route.split("/");
-  const protectedRoute = routeRole === "admin" || routeRole === "landlord";
+  const protectedRoute = ["admin", "landlord", "tenant"].includes(routeRole);
   const userRoute =
     user?.role === "Admin"
       ? "admin"
       : user?.role === "Landlord"
         ? "landlord"
-        : null;
+        : user?.role === "Tenant"
+          ? "tenant"
+          : null;
   const canAccess = isAuthenticated && routeRole === userRoute;
   const isPublic = !protectedRoute;
   useEffect(() => {
@@ -91,7 +108,7 @@ export default function App() {
           ? "Chi tiết hóa đơn"
         : titleMap[page] ||
           (route === "register" ? "Đăng ký chủ trọ" : "Đăng nhập");
-    document.title = `${title} | Nhà Trọ Xanh`;
+    document.title = `${route.startsWith('tenant/room') ? 'Chỗ ở của tôi' : title} | Nhà Trọ Xanh`;
   }, [route]);
   useEffect(() => {
     if (protectedRoute && !canAccess) {
@@ -145,7 +162,7 @@ export default function App() {
         ? "Tạo phòng"
         : "Quản lý phòng"
       : titleMap[page];
-  const items = activeRole === "admin" ? adminNav : landlordNav;
+  const items = activeRole === "admin" ? adminNav : activeRole === "tenant" ? tenantNav : landlordNav;
   return (
     <div className="app-shell">
       <button
@@ -175,13 +192,13 @@ export default function App() {
             onClick={() => setMobileNav(false)}
             aria-label="Đóng menu"
           >
-            <Icon name="close" />
+            {activeRole === "tenant" ? <X size={19} aria-hidden="true" /> : <Icon name="close" />}
           </button>
         </div>
         <div className="sidebar-section-label">KHÔNG GIAN LÀM VIỆC</div>
         <nav
           className="nav-list"
-          aria-label={activeRole === "admin" ? "Menu quản trị" : "Menu chủ trọ"}
+          aria-label={activeRole === "admin" ? "Menu quản trị" : activeRole === "tenant" ? "Menu người thuê" : "Menu chủ trọ"}
         >
           {items.map((item) => (
             <button
@@ -195,7 +212,9 @@ export default function App() {
               }
               onClick={() => navigate(`${activeRole}/${item.id}`)}
             >
-              {item.id === "billing" ? (
+              {activeRole === "tenant" ? (
+                <item.icon size={19} aria-hidden="true" />
+              ) : item.id === "billing" ? (
                 <ReceiptText size={19} aria-hidden="true" />
               ) : (
                 <Icon name={item.icon} size={19} />
@@ -218,7 +237,7 @@ export default function App() {
           {page !== "properties" && (
             <div className="sidebar-help">
               <span className="help-icon">
-                <Icon name="alert" size={18} />
+                {activeRole === "tenant" ? <CircleAlert size={18} aria-hidden="true" /> : <Icon name="alert" size={18} />}
               </span>
               <strong>Đang xem giao diện mẫu</strong>
               <p>Mọi thao tác chỉ thay đổi dữ liệu trong phiên này.</p>
@@ -229,7 +248,7 @@ export default function App() {
             type="button"
             onClick={logout}
           >
-            <Icon name="logout" size={19} />
+            {activeRole === "tenant" ? <LogOut size={19} aria-hidden="true" /> : <Icon name="logout" size={19} />}
             <span>Đăng xuất</span>
           </button>
         </div>
@@ -244,12 +263,12 @@ export default function App() {
               aria-expanded={mobileNav}
               onClick={() => setMobileNav(true)}
             >
-              <Icon name="menu" />
+              {activeRole === "tenant" ? <Menu size={19} aria-hidden="true" /> : <Icon name="menu" />}
             </button>
             <span className="breadcrumb">
-              Không gian làm việc <Icon name="chevron" size={15} />{" "}
+              Không gian làm việc {activeRole === "tenant" ? <ChevronRight size={15} aria-hidden="true" /> : <Icon name="chevron" size={15} />} {" "}
               <strong>
-                {page === "properties" ? propertyPageTitle : page === "billing" && roomId ? "Chi tiết hóa đơn" : titleMap[page]}
+                {activeRole === "tenant" && page === "room" ? "Chỗ ở của tôi" : page === "properties" ? propertyPageTitle : page === "billing" && roomId ? "Chi tiết hóa đơn" : titleMap[page]}
               </strong>
             </span>
           </div>
@@ -261,11 +280,11 @@ export default function App() {
             )}
             <div className="topbar-profile">
               <span className="avatar">
-                {activeRole === "admin" ? "AD" : "NA"}
+                {activeRole === "admin" ? "AD" : activeRole === "tenant" ? "NT" : "NA"}
               </span>
               <span>
                 <strong>{user?.userName || "Người dùng"}</strong>
-                <small>{activeRole === "admin" ? "Admin" : "Chủ trọ"}</small>
+                <small>{activeRole === "admin" ? "Admin" : activeRole === "tenant" ? "Người thuê" : "Chủ trọ"}</small>
               </span>
             </div>
           </div>
@@ -275,7 +294,21 @@ export default function App() {
           tabIndex="-1"
           className={`main-content${page === "properties" && propertySection === "rooms" && roomAction === "new" ? " main-content--room-batch" : ""}`}
         >
-          {page === "profile" ? (
+          {activeRole === "tenant" ? (
+            <Tenant
+              page={page}
+              user={user}
+              navigate={navigate}
+              notify={notify}
+              rooms={rooms}
+              properties={properties}
+              contracts={contracts}
+              invoices={invoices}
+              invoiceHistory={invoiceHistory}
+              requests={requests}
+              setRequests={setRequests}
+            />
+          ) : page === "profile" ? (
             <Profile role={activeRole} notify={notify} />
           ) : activeRole === "admin" ? (
             <Admin
@@ -333,7 +366,7 @@ export default function App() {
       </div>
       {toast && (
         <div className="toast" role="status">
-          <Icon name="check" size={18} />
+          {activeRole === "tenant" ? <Check size={18} aria-hidden="true" /> : <Icon name="check" size={18} />}
           {toast}
         </div>
       )}

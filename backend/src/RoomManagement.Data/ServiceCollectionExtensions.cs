@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
     services.AddDbContext<RoomManagementDbContext>(options => options.UseSqlServer(connectionString));
     services.AddScoped<IUserStore, UserStore>();
     services.AddScoped<ILandlordApprovalStore, LandlordApprovalStore>();
+    services.AddScoped<ITenantProfileStore, TenantProfileStore>();
 
     // Lấy thông tin admin từ appsettings
     services.Configure<Seeders.InitialAdminOptions>(configuration.GetSection(Seeders.InitialAdminOptions.SectionName));

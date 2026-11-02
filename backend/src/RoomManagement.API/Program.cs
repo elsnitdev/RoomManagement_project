@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using RoomManagement.API.Authentication;
+using RoomManagement.API.Filters;
 using RoomManagement.API.Infrastructure;
 using RoomManagement.API.Infrastructure.Errors;
 using RoomManagement.Business;
@@ -26,7 +27,8 @@ builder.Services.AddScoped<PropertyService>();
 builder.Services.AddScoped<RoomService>();
 builder.Services.AddScoped<RoomBatchService>();
 
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+    options.Filters.Add<GlobalExceptionFilter>())
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter(allowIntegerValues: false)));

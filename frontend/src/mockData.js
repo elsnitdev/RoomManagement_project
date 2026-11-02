@@ -34,7 +34,7 @@ export const contracts = [
 ]
 
 export const invoices = [
-  { id: 'INV-1026-101', room: 'A101', tenant: 'Võ Ngọc Linh', month: '10/2026', amount: 3890000, paid: 3890000, status: 'paid', due: '05/11/2026' },
+  { id: 'INV-1026-101', room: 'A101', tenant: 'Võ Ngọc Linh', month: '10/2026', amount: 3890000, paid: 2000000, status: 'partial', due: '05/11/2026' },
   { id: 'INV-1026-102', room: 'A102', tenant: 'Nguyễn Gia Hân', month: '10/2026', amount: 3620000, paid: 2000000, status: 'partial', due: '05/11/2026' },
   { id: 'INV-1026-201', room: 'A201', tenant: 'Trần Minh Khôi', month: '10/2026', amount: 3970000, paid: 0, status: 'unpaid', due: '05/11/2026' },
   { id: 'INV-1026-B01', room: 'B01', tenant: 'Đặng Thu Thảo', month: '10/2026', amount: 3280000, paid: 3280000, status: 'paid', due: '10/11/2026' },
@@ -49,7 +49,8 @@ export const invoiceHistory = [
 ]
 
 export const initialRequests = [
-  { id: 'YC-1204', title: 'Máy lạnh không hoạt động', room: 'A101', tenant: 'Võ Ngọc Linh', date: '24/10/2026', priority: 'Cao', status: 'new' },
+  { id: 'YC-1204', title: 'Máy lạnh không hoạt động', description: 'Máy lạnh trong phòng A101 không làm mát từ tối 23/10.', category: 'Sửa chữa', room: 'A101', tenant: 'Võ Ngọc Linh', date: '24/10/2026', priority: 'Cao', status: 'progress' },
+  { id: 'YC-1117', title: 'Kiểm tra khóa cửa phòng', description: 'Ổ khóa cửa phòng bị kẹt nhẹ khi mở.', category: 'Sửa chữa', room: 'A101', tenant: 'Võ Ngọc Linh', date: '15/09/2026', priority: 'Trung bình', status: 'done' },
   { id: 'YC-1203', title: 'Vòi nước bị rò rỉ', room: 'A201', tenant: 'Trần Minh Khôi', date: '22/10/2026', priority: 'Trung bình', status: 'progress' },
   { id: 'YC-1202', title: 'Đăng ký thêm thẻ xe', room: 'B01', tenant: 'Đặng Thu Thảo', date: '20/10/2026', priority: 'Thấp', status: 'done' },
 ]

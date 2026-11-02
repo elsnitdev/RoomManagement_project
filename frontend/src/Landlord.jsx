@@ -3,6 +3,7 @@ import { contracts, formatCurrency, invoiceHistory, todayLabel } from "./mockDat
 import { Badge, Button, Empty, Field, Heading, Icon, Stat } from "./ui";
 import RoomDetail from "./RoomDetail";
 import InvoicePaymentPage from "./components/billing/InvoicePaymentPage";
+import TenantManager from "./TenantManager";
 
 const roomStatus = {
   occupied: "Đã thuê",
@@ -470,6 +471,14 @@ export default function Landlord({
           )}
         </section>
       </>
+    );
+  if (page === "tenants")
+    return (
+      <TenantManager
+        contracts={contracts}
+        navigate={navigate}
+        notify={notify}
+      />
     );
   if (page === "contracts")
     return (

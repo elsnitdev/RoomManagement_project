@@ -49,6 +49,8 @@ export default function Auth({ route, navigate }) {
         navigate("admin/overview");
       } else if (result.user.role === "Landlord") {
         navigate("landlord/overview");
+      } else if (result.user.role === "Tenant") {
+        navigate("tenant/overview");
       } else {
         signOut();
         setError("Giao diện cho vai trò này chưa được hỗ trợ.");

@@ -36,6 +36,40 @@ public sealed class PropertyRoomServiceTests
     }
 
     [Fact]
+    public async Task CreateRoom_AddsAvailableRoomToOwnedProperty()
+    {
+        var propertyId = Guid.NewGuid();
+        var properties = new FakeProperties { Property = new Property { Id = propertyId, OwnerUserId = OwnerId, IsActive = true } };
+        var rooms = new FakeRooms();
+        var service = new RoomManagementRoomService(new Current(), new ActiveLandlord(), properties, rooms);
+
+        var result = await service.CreateAsync(propertyId,
+            new CreateRoomInput(" A1 ", " Phòng góc ", 1, 25, 2_500_000, 2, null), Ct);
+
+        Assert.Equal(OwnerId, properties.LastOwnerId);
+        Assert.Equal(propertyId, result.Room.PropertyId);
+        Assert.Equal("A1", result.Room.RoomNumber);
+        Assert.Equal("Phòng góc", result.Room.RoomName);
+        Assert.Equal(RoomStatus.Available, result.Status);
+        Assert.Same(result.Room, rooms.Added);
+    }
+
+    [Fact]
+    public async Task CreateRoom_RejectsDuplicateNumberBeforeSaving()
+    {
+        var propertyId = Guid.NewGuid();
+        var properties = new FakeProperties { Property = new Property { Id = propertyId, OwnerUserId = OwnerId, IsActive = true } };
+        var rooms = new FakeRooms { NumberExists = true };
+        var service = new RoomManagementRoomService(new Current(), new ActiveLandlord(), properties, rooms);
+
+        var error = await Assert.ThrowsAsync<BusinessException>(() => service.CreateAsync(propertyId,
+            new CreateRoomInput("A1", null, null, null, 100, 1, null), Ct));
+
+        Assert.Equal("ROOM_NUMBER_ALREADY_EXISTS", error.Code);
+        Assert.Null(rooms.Added);
+    }
+
+    [Fact]
     public async Task RoomUpdate_RejectsOccupiedEvenWhenRoomExists()
     {
         var propertyId = Guid.NewGuid();
@@ -137,11 +171,13 @@ public sealed class PropertyRoomServiceTests
     private sealed class FakeRooms : IRoomStore
     {
         public Room? Room { get; init; }
+        public Room? Added { get; private set; }
+        public bool NumberExists { get; init; }
         public string? Blocker { get; init; }
         public string? LastOwnerId { get; private set; }
         public bool Saved { get; private set; }
         public bool Deleted { get; private set; }
-        public Task AddAsync(Room room, CancellationToken ct) => Task.CompletedTask;
+        public Task AddAsync(Room room, CancellationToken ct) { Added = room; return Task.CompletedTask; }
         public Task<Room?> GetAsync(Guid propertyId, Guid roomId, string ownerId, CancellationToken ct)
         {
             LastOwnerId = ownerId;
@@ -151,7 +187,7 @@ public sealed class PropertyRoomServiceTests
             Task.FromResult<RoomResult?>(null);
         public Task<(IReadOnlyList<RoomResult> Items, long TotalItems)> ListAsync(Guid propertyId, string ownerId, string? search, RoomStatus? status, Guid? rowId, int? floor, int skip, int take, CancellationToken ct) =>
             Task.FromResult(((IReadOnlyList<RoomResult>)Array.Empty<RoomResult>(), 0L));
-        public Task<bool> NumberExistsAsync(Guid propertyId, string number, Guid? exceptRoomId, CancellationToken ct) => Task.FromResult(false);
+        public Task<bool> NumberExistsAsync(Guid propertyId, string number, Guid? exceptRoomId, CancellationToken ct) => Task.FromResult(NumberExists);
         public Task<bool> HasActiveContractAsync(Guid roomId, CancellationToken ct) => Task.FromResult(false);
         public Task<string?> GetDeleteBlockerAsync(Guid roomId, CancellationToken ct) => Task.FromResult(Blocker);
         public Task SaveAsync(CancellationToken ct) { Saved = true; return Task.CompletedTask; }

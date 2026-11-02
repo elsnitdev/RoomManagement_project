@@ -61,11 +61,13 @@ public sealed class UserService : IUserService
         // -------------------------------------------------------------------------
         var trimmedRole = dto.Role?.Trim() ?? string.Empty;
 
-        // Nếu cố tình tạo thêm Admin qua luồng này thì từ chối ngay lập tức
+        // Nếu cố tình tạo thêm Admin qua luồng này thì từ chối ngay lập tức theo quy tắc phân quyền (HTTP 422)
         if (string.Equals(trimmedRole, UserRoles.Admin, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning("Admin cố tình tạo thêm tài khoản có quyền Admin thông qua API tạo người dùng thường.");
-            throw new AppValidationException("Không được phép tạo thêm tài khoản Admin qua chức năng này. Chỉ cho phép chỉ định vai trò 'Landlord' hoặc 'Tenant'.");
+            throw new BusinessRuleException(
+                "Không được phép tạo thêm tài khoản Admin qua chức năng này. Chỉ cho phép chỉ định vai trò 'Landlord' hoặc 'Tenant'.",
+                code: "CANNOT_CREATE_ADMIN_ACCOUNT");
         }
 
         // Kiểm tra xem vai trò có khớp với Landlord hoặc Tenant không
@@ -80,7 +82,9 @@ public sealed class UserService : IUserService
         }
         else
         {
-            throw new AppValidationException($"Vai trò '{dto.Role}' không hợp lệ. Vui lòng chỉ chọn một trong hai vai trò: '{UserRoles.Landlord}' (Chủ trọ) hoặc '{UserRoles.Tenant}' (Khách thuê).");
+            throw new BusinessRuleException(
+                $"Vai trò '{dto.Role}' không hợp lệ. Vui lòng chỉ chọn một trong hai vai trò: '{UserRoles.Landlord}' (Chủ trọ) hoặc '{UserRoles.Tenant}' (Khách thuê).",
+                code: "INVALID_ASSIGNED_ROLE");
         }
 
         // -------------------------------------------------------------------------
