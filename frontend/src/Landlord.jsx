@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { contracts, formatCurrency, invoices, todayLabel } from "./mockData";
+import { contracts, formatCurrency, invoiceHistory, todayLabel } from "./mockData";
 import { Badge, Button, Empty, Field, Heading, Icon, Stat } from "./ui";
 import RoomDetail from "./RoomDetail";
 import InvoicePaymentPage from "./components/billing/InvoicePaymentPage";
@@ -19,6 +19,8 @@ export default function Landlord({
   setRooms,
   requests,
   setRequests,
+  invoices,
+  setInvoices,
   selectedProperty,
   setSelectedProperty,
   navigate,
@@ -75,6 +77,23 @@ export default function Landlord({
     (sum, item) => sum + item.amount - item.paid,
     0,
   );
+  function addInvoiceAdjustment({ invoiceIds, direction, amount, reason }) {
+    const targets = new Set(invoiceIds);
+    const batchId = Date.now();
+    setInvoices((current) => current.map((invoice) => {
+      if (!targets.has(invoice.id)) return invoice;
+      const delta = direction === "add" ? amount : -amount;
+      return {
+        ...invoice,
+        amount: invoice.amount + delta,
+        adjustments: [
+          ...(invoice.adjustments || []),
+          { id: `ADJ-${batchId}-${invoice.id}`, direction, amount, reason, createdAt: new Date().toISOString() },
+        ],
+      };
+    }));
+    notify(`Đã thêm điều chỉnh cho ${invoiceIds.length} hóa đơn mẫu.`);
+  }
   const propertyName = (id) =>
     properties.find((item) => item.id === id)?.name || "—";
   const propertySelect = (
@@ -508,7 +527,7 @@ export default function Landlord({
       </>
     );
   if (page === "billing")
-    return <InvoicePaymentPage invoices={invoices} />;
+    return <InvoicePaymentPage invoices={scopedInvoices} historyInvoices={invoiceHistory} invoiceId={roomId} navigate={navigate} onAddAdjustment={addInvoiceAdjustment} />;
   if (page === "requests")
     return (
       <>

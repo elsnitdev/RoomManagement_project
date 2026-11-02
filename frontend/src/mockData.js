@@ -40,6 +40,14 @@ export const invoices = [
   { id: 'INV-1026-B01', room: 'B01', tenant: 'Đặng Thu Thảo', month: '10/2026', amount: 3280000, paid: 3280000, status: 'paid', due: '10/11/2026' },
 ]
 
+export const invoiceHistory = [
+  { id: 'INV-0926-101', room: 'A101', tenant: 'Võ Ngọc Linh', month: '09/2026', amount: 3810000, paid: 3810000, status: 'paid', due: '05/10/2026' },
+  { id: 'INV-0826-101', room: 'A101', tenant: 'Võ Ngọc Linh', month: '08/2026', amount: 3760000, paid: 3760000, status: 'paid', due: '05/09/2026' },
+  { id: 'INV-0926-102', room: 'A102', tenant: 'Nguyễn Gia Hân', month: '09/2026', amount: 3550000, paid: 3550000, status: 'paid', due: '05/10/2026' },
+  { id: 'INV-0926-201', room: 'A201', tenant: 'Trần Minh Khôi', month: '09/2026', amount: 3910000, paid: 3910000, status: 'paid', due: '05/10/2026' },
+  { id: 'INV-0926-B01', room: 'B01', tenant: 'Đặng Thu Thảo', month: '09/2026', amount: 3210000, paid: 3210000, status: 'paid', due: '10/10/2026' },
+]
+
 export const initialRequests = [
   { id: 'YC-1204', title: 'Máy lạnh không hoạt động', room: 'A101', tenant: 'Võ Ngọc Linh', date: '24/10/2026', priority: 'Cao', status: 'new' },
   { id: 'YC-1203', title: 'Vòi nước bị rò rỉ', room: 'A201', tenant: 'Trần Minh Khôi', date: '22/10/2026', priority: 'Trung bình', status: 'progress' },

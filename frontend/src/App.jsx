@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ReceiptText } from "lucide-react";
 import { useAuth } from "./contexts/AuthContext";
 import Admin from "./Admin";
 import Auth from "./Auth";
@@ -9,6 +10,7 @@ import RoomManagementPage from "./pages/RoomManagementPage";
 import CreateRoomPage from "./pages/CreateRoomPage";
 import {
   initialApprovals,
+  invoices as initialInvoices,
   initialProperties,
   initialRequests,
   initialRooms,
@@ -55,6 +57,7 @@ export default function App() {
   const [properties, setProperties] = useState(initialProperties);
   const [rooms, setRooms] = useState(initialRooms);
   const [requests, setRequests] = useState(initialRequests);
+  const [invoices, setInvoices] = useState(initialInvoices);
   const [selectedProperty, setSelectedProperty] = useState("all");
   const toastTimer = useRef(null);
   const [routeRole, rawPage, roomId, propertySection, roomAction] =
@@ -78,12 +81,14 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
   useEffect(() => {
-    const [, page, , section, action] = route.split("/");
+    const [, page, detailId, section, action] = route.split("/");
     const title =
       page === "properties" && section === "rooms"
         ? action === "new"
           ? "Tạo phòng"
           : "Quản lý phòng"
+        : page === "billing" && detailId
+          ? "Chi tiết hóa đơn"
         : titleMap[page] ||
           (route === "register" ? "Đăng ký chủ trọ" : "Đăng nhập");
     document.title = `${title} | Nhà Trọ Xanh`;
@@ -190,7 +195,11 @@ export default function App() {
               }
               onClick={() => navigate(`${activeRole}/${item.id}`)}
             >
-              <Icon name={item.icon} size={19} />
+              {item.id === "billing" ? (
+                <ReceiptText size={19} aria-hidden="true" />
+              ) : (
+                <Icon name={item.icon} size={19} />
+              )}
               <span>{item.label}</span>
               {item.id === "approvals" &&
                 approvals.filter((entry) => entry.status === "pending").length >
@@ -240,7 +249,7 @@ export default function App() {
             <span className="breadcrumb">
               Không gian làm việc <Icon name="chevron" size={15} />{" "}
               <strong>
-                {page === "properties" ? propertyPageTitle : titleMap[page]}
+                {page === "properties" ? propertyPageTitle : page === "billing" && roomId ? "Chi tiết hóa đơn" : titleMap[page]}
               </strong>
             </span>
           </div>
@@ -312,6 +321,8 @@ export default function App() {
               setRooms={setRooms}
               requests={requests}
               setRequests={setRequests}
+              invoices={invoices}
+              setInvoices={setInvoices}
               selectedProperty={selectedProperty}
               setSelectedProperty={setSelectedProperty}
               navigate={navigate}
