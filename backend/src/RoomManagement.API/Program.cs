@@ -26,6 +26,10 @@ builder.Services.AddScoped<ICurrentLandlord, AuthenticatedLandlord>();
 builder.Services.AddScoped<PropertyService>();
 builder.Services.AddScoped<RoomService>();
 builder.Services.AddScoped<RoomBatchService>();
+builder.Services.AddScoped<ContractService>();
+builder.Services.AddScoped<BillingInputService>();
+builder.Services.AddScoped<MonthlyInvoiceCalculator>();
+builder.Services.AddScoped<InvoiceService>();
 
 builder.Services.AddControllers(options =>
     options.Filters.Add<GlobalExceptionFilter>())

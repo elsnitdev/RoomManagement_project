@@ -74,10 +74,6 @@ export default function Landlord({
   const maintenance = scopedRooms.filter(
     (room) => room.status === "maintenance",
   ).length;
-  const unpaid = scopedInvoices.reduce(
-    (sum, item) => sum + item.amount - item.paid,
-    0,
-  );
   function addInvoiceAdjustment({ invoiceIds, direction, amount, reason }) {
     const targets = new Set(invoiceIds);
     const batchId = Date.now();
@@ -627,13 +623,6 @@ export default function Landlord({
           note="Sẵn sàng cho thuê"
           tint="purple"
         />
-        <Stat
-          icon="wallet"
-          label="Còn phải thu"
-          value={formatCurrency(unpaid)}
-          note="Kỳ 10/2026"
-          tint="amber"
-        />
       </div>
       <div className="dashboard-grid landlord-dashboard-grid">
         <section className="content-card">
@@ -719,10 +708,7 @@ export default function Landlord({
             </span>
             <span>
               <strong>Hóa đơn chưa thanh toán</strong>
-              <small>
-                {scopedInvoices.filter((item) => item.status !== "paid").length}{" "}
-                hóa đơn kỳ 10/2026
-              </small>
+              <small>Xem hóa đơn và công nợ mới nhất</small>
             </span>
             <Icon name="chevron" size={17} />
           </button>
@@ -769,7 +755,7 @@ export default function Landlord({
         <div className="card-title-row">
           <div>
             <h2>Hóa đơn gần đây</h2>
-            <p>Tình trạng thu tiền của kỳ hiện tại.</p>
+            <p>Dữ liệu hóa đơn được cập nhật trong mục Hóa đơn.</p>
           </div>
           <button
             className="text-link"
@@ -779,47 +765,7 @@ export default function Landlord({
             Xem tất cả <Icon name="arrow" size={16} />
           </button>
         </div>
-        <div className="responsive-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Phòng / người thuê</th>
-                <th>Số tiền</th>
-                <th>Hạn thanh toán</th>
-                <th>Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scopedInvoices.slice(0, 3).map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <strong>Phòng {item.room}</strong>
-                    <small className="table-sub">{item.tenant}</small>
-                  </td>
-                  <td className="nowrap">{formatCurrency(item.amount)}</td>
-                  <td>{item.due}</td>
-                  <td>
-                    <Badge
-                      kind={
-                        item.status === "paid"
-                          ? "approved"
-                          : item.status === "partial"
-                            ? "pending"
-                            : "rejected"
-                      }
-                    >
-                      {item.status === "paid"
-                        ? "Đã thanh toán"
-                        : item.status === "partial"
-                          ? "Thanh toán một phần"
-                          : "Chưa thanh toán"}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <p>Vào mục Hóa đơn để xem danh sách và số dư từ máy chủ.</p>
       </section>
     </>
   );

@@ -80,7 +80,7 @@ function Overview({ name, room, property, currentInvoice, openRequests, notices,
       <section className="tn-card tn-attention-card">
         <div className="tn-card-kicker"><Bell size={16} aria-hidden="true" /> VIỆC CẦN CHÚ Ý</div>
         {currentInvoice && balanceOf(currentInvoice) > 0 ? <div className="tn-attention-item"><span>Hóa đơn kỳ {currentInvoice.month}</span><strong>{money(balanceOf(currentInvoice))}</strong><small>Hạn thanh toán {currentInvoice.due}</small></div>
-          : <div className="tn-attention-item tn-attention-item--clear">{currentInvoice ? <CheckCircle2 size={18} aria-hidden="true" /> : <ReceiptText size={18} aria-hidden="true" />}<span>{currentInvoice ? 'Không có hóa đơn còn phải thu.' : 'Chưa có dữ liệu hóa đơn.'}</span></div>}
+          : <div className="tn-attention-item tn-attention-item--clear">{currentInvoice ? <CheckCircle2 size={18} aria-hidden="true" /> : <ReceiptText size={18} aria-hidden="true" />}<span>{currentInvoice ? 'Không có hóa đơn còn phải thu.' : 'Mở mục Hóa đơn để xem số dư mới nhất.'}</span></div>}
         <div className="tn-attention-bottom"><span>{openRequests} yêu cầu đang theo dõi</span><span>{notices.length} thông tin cần chú ý</span></div>
         <LinkButton secondary onClick={() => navigate('tenant/notices')}>Xem thông báo</LinkButton>
       </section>

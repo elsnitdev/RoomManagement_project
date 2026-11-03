@@ -9,6 +9,9 @@ import Profile from "./Profile";
 import PropertyManagement from "./components/PropertyManagement";
 import RoomManagementPage from "./pages/RoomManagementPage";
 import CreateRoomPage from "./pages/CreateRoomPage";
+import LandlordBilling from "./components/billing/LandlordBilling";
+import TenantBilling from "./components/billing/TenantBilling";
+import AdminServices from "./components/billing/AdminServices";
 import {
   initialApprovals,
   contracts,
@@ -26,6 +29,7 @@ const adminNav = [
   { id: "overview", label: "Tổng quan", icon: "grid" },
   { id: "approvals", label: "Duyệt chủ trọ", icon: "users" },
   { id: "users", label: "Tài khoản", icon: "file" },
+  { id: "services", label: "Dịch vụ", icon: "file" },
   { id: "profile", label: "Hồ sơ", icon: "users" },
 ];
 const landlordNav = [
@@ -50,6 +54,7 @@ const titleMap = {
   overview: "Tổng quan",
   approvals: "Duyệt chủ trọ",
   users: "Tài khoản người dùng",
+  services: "Danh mục dịch vụ",
   properties: "Khu trọ",
   rooms: "Danh sách phòng",
   room: "Chi tiết phòng",
@@ -234,7 +239,7 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          {page !== "properties" && (
+          {page !== "properties" && page !== "billing" && page !== "services" && (
             <div className="sidebar-help">
               <span className="help-icon">
                 {activeRole === "tenant" ? <CircleAlert size={18} aria-hidden="true" /> : <Icon name="alert" size={18} />}
@@ -273,7 +278,7 @@ export default function App() {
             </span>
           </div>
           <div className="topbar-right">
-            {page !== "properties" && (
+            {page !== "properties" && page !== "billing" && page !== "services" && (
               <span className="demo-chip">
                 <span className="preview-dot" /> Dữ liệu mẫu
               </span>
@@ -294,7 +299,9 @@ export default function App() {
           tabIndex="-1"
           className={`main-content${page === "properties" && propertySection === "rooms" && roomAction === "new" ? " main-content--room-batch" : ""}`}
         >
-          {activeRole === "tenant" ? (
+          {activeRole === "tenant" && page === "billing" ? (
+            <TenantBilling />
+          ) : activeRole === "tenant" ? (
             <Tenant
               page={page}
               user={user}
@@ -303,13 +310,15 @@ export default function App() {
               rooms={rooms}
               properties={properties}
               contracts={contracts}
-              invoices={invoices}
-              invoiceHistory={invoiceHistory}
+              invoices={[]}
+              invoiceHistory={[]}
               requests={requests}
               setRequests={setRequests}
             />
           ) : page === "profile" ? (
             <Profile role={activeRole} notify={notify} />
+          ) : activeRole === "admin" && page === "services" ? (
+            <AdminServices />
           ) : activeRole === "admin" ? (
             <Admin
               page={page}
@@ -320,6 +329,8 @@ export default function App() {
               navigate={navigate}
               notify={notify}
             />
+          ) : activeRole === "landlord" && page === "billing" ? (
+            <LandlordBilling invoiceId={roomId} navigate={navigate} />
           ) : page === "properties" ? (
             propertySection === "rooms" && roomId ? (
               roomAction === "new" ? (
@@ -354,7 +365,7 @@ export default function App() {
               setRooms={setRooms}
               requests={requests}
               setRequests={setRequests}
-              invoices={invoices}
+              invoices={[]}
               setInvoices={setInvoices}
               selectedProperty={selectedProperty}
               setSelectedProperty={setSelectedProperty}
