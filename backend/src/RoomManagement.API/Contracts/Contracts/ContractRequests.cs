@@ -24,3 +24,8 @@ public sealed record AddContractTenantRequest(
 {
   public AddContractTenantInput ToInput() => new(TenantId, JoinDate);
 }
+
+public sealed record AddContractUserRequest([property: Required, EmailAddress] string Email,
+    [property: JsonRequired] DateOnly JoinDate);
+public sealed record LeaveContractRequest([property: JsonRequired] DateOnly LeaveDate);
+public sealed record TerminateContractRequest([property: Required, StringLength(1000)] string Reason);

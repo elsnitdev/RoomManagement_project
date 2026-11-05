@@ -24,3 +24,9 @@ Các test SQL chỉ chạy khi cấu hình ROOMMANAGEMENT_TEST_SQLSERVER trỏ t
 Sơ đồ luồng và trách nhiệm từng file: [account-and-approval-flow.md](docs/account-and-approval-flow.md).
 
 Collection và environment Postman để thử các API hiện có: [postman/README.md](postman/README.md).
+
+## Hợp đồng thuê phòng
+
+Sau khi cập nhật database bằng lệnh EF ở trên, chủ trọ dùng `POST /api/properties/{propertyId}/contracts` để tạo bản nháp, rồi `POST /api/properties/{propertyId}/contracts/{contractId}/users` với `{ "email": "tenant@example.com", "joinDate": "2026-11-03" }` để gắn tài khoản Tenant đã hoàn thiện họ tên và số điện thoại. `POST .../{contractId}/activate` kích hoạt hợp đồng. Chủ trọ xem danh sách/chi tiết qua `GET /api/properties/{propertyId}/contracts` và `GET .../{contractId}`; người thuê xem hợp đồng của chính mình qua `GET /api/me/contracts` và `GET /api/me/contracts/{contractId}`.
+
+Chủ trọ có thể ghi nhận người rời phòng bằng `POST .../{contractId}/tenants/{linkId}/leave`, hủy bản nháp bằng `POST .../{contractId}/cancel`, hoặc kết thúc hợp đồng đang hoạt động bằng `POST .../{contractId}/terminate`. Phản hồi chi tiết có danh sách người thuê, số dư chưa thanh toán, cọc đang giữ và trạng thái bản ghi tất toán. Phòng trả `contractId` và `occupants` suy ra từ hợp đồng đang có hiệu lực theo ngày Việt Nam. Hợp đồng hết hạn được cập nhật tự động; công nợ và hóa đơn vẫn giữ trên hợp đồng cũ.

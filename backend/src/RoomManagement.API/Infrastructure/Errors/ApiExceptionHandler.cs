@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using RoomManagement.Business.Errors;
@@ -29,6 +30,8 @@ public sealed class ApiExceptionHandler : IExceptionHandler
           (StatusCodes.Status422UnprocessableEntity, "Không thể thực hiện thao tác", business.Code),
       BusinessException { Type: BusinessErrorType.Validation } business =>
           (StatusCodes.Status400BadRequest, "Dữ liệu yêu cầu không hợp lệ", business.Code),
+      SqlException { Number: 1205 } =>
+          (StatusCodes.Status409Conflict, "Dữ liệu bị xung đột", "CONCURRENT_UPDATE_CONFLICT"),
       _ => (StatusCodes.Status500InternalServerError, "Lỗi hệ thống", "INTERNAL_ERROR")
     };
 

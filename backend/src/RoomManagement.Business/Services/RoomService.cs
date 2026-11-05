@@ -105,7 +105,8 @@ public sealed class RoomService
         room.Status = input.Status;
         room.UpdatedAt = DateTime.UtcNow;
         await _rooms.SaveAsync(ct);
-        return new RoomResult(room, hasActiveContract ? RoomStatus.Occupied : room.Status);
+        return await _rooms.GetResultAsync(propertyId, roomId, ownerId, ct)
+            ?? new RoomResult(room, room.Status);
     }
 
     public async Task DeleteAsync(Guid propertyId, Guid roomId, CancellationToken ct)

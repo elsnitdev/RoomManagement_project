@@ -15,13 +15,16 @@ public sealed class BillingInputStore : IBillingInputStore
     private readonly RoomManagementDbContext _db;
     public BillingInputStore(RoomManagementDbContext db) => _db = db;
 
+    /// <inheritdoc />
     public Task<bool> PropertyOwnedAsync(Guid propertyId, string ownerId, CancellationToken ct) =>
         _db.Properties.AnyAsync(p => p.Id == propertyId && p.OwnerUserId == ownerId && p.IsActive, ct);
 
+    /// <inheritdoc />
     public Task<bool> RoomOwnedAsync(Guid propertyId, Guid roomId, string ownerId, CancellationToken ct) =>
         _db.Rooms.AnyAsync(r => r.Id == roomId && r.PropertyId == propertyId &&
             _db.Properties.Any(p => p.Id == propertyId && p.OwnerUserId == ownerId && p.IsActive), ct);
 
+    /// <inheritdoc />
     public async Task<IReadOnlyList<UtilityRate>> ListRatesAsync(Guid propertyId, UtilityType? type, CancellationToken ct)
     {
         var query = _db.UtilityRates.AsNoTracking().Where(x => x.PropertyId == propertyId);
@@ -29,11 +32,13 @@ public sealed class BillingInputStore : IBillingInputStore
         return await query.OrderBy(x => x.UtilityType).ThenByDescending(x => x.EffectiveFrom).ToListAsync(ct);
     }
 
+    /// <inheritdoc />
     public Task<UtilityRate?> RateAtAsync(Guid propertyId, UtilityType type, DateOnly date, CancellationToken ct) =>
         _db.UtilityRates.AsNoTracking().SingleOrDefaultAsync(x => x.PropertyId == propertyId &&
             x.UtilityType == type && x.EffectiveFrom <= date &&
             (x.EffectiveTo == null || x.EffectiveTo >= date), ct);
 
+    /// <inheritdoc />
     public async Task AddRateAsync(UtilityRate rate, CancellationToken ct)
     {
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
@@ -47,6 +52,7 @@ public sealed class BillingInputStore : IBillingInputStore
         await tx.CommitAsync(ct);
     }
 
+    /// <inheritdoc />
     public async Task<IReadOnlyList<MeterReading>> ListReadingsAsync(Guid roomId, UtilityType? type, CancellationToken ct)
     {
         var query = _db.MeterReadings.AsNoTracking().Where(x => x.RoomId == roomId);
@@ -54,20 +60,24 @@ public sealed class BillingInputStore : IBillingInputStore
         return await query.OrderByDescending(x => x.Year).ThenByDescending(x => x.Month).ToListAsync(ct);
     }
 
+    /// <inheritdoc />
     public Task<MeterReading?> ReadingAtAsync(Guid roomId, UtilityType type, short year, byte month, CancellationToken ct) =>
         _db.MeterReadings.AsNoTracking().SingleOrDefaultAsync(x => x.RoomId == roomId &&
             x.MeterType == type && x.Year == year && x.Month == month, ct);
 
+    /// <inheritdoc />
     public Task<MeterReading?> LatestReadingBeforeAsync(Guid roomId, UtilityType type, short year, byte month, CancellationToken ct) =>
         _db.MeterReadings.AsNoTracking().Where(x => x.RoomId == roomId && x.MeterType == type &&
             (x.Year < year || (x.Year == year && x.Month < month)))
             .OrderByDescending(x => x.Year).ThenByDescending(x => x.Month).FirstOrDefaultAsync(ct);
 
+    /// <inheritdoc />
     public Task<MeterReading?> NextReadingAfterAsync(Guid roomId, UtilityType type, short year, byte month, CancellationToken ct) =>
         _db.MeterReadings.AsNoTracking().Where(x => x.RoomId == roomId && x.MeterType == type &&
             (x.Year > year || (x.Year == year && x.Month > month)))
             .OrderBy(x => x.Year).ThenBy(x => x.Month).FirstOrDefaultAsync(ct);
 
+    /// <inheritdoc />
     public async Task AddReadingAsync(MeterReading reading, CancellationToken ct)
     {
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
@@ -85,21 +95,26 @@ public sealed class BillingInputStore : IBillingInputStore
         await tx.CommitAsync(ct);
     }
 
+    /// <inheritdoc />
     public Task<bool> ActiveAdminAsync(string userId, CancellationToken ct) =>
         _db.Users.AnyAsync(x => x.Id == userId && x.Role == UserRoles.Admin && x.IsActive, ct);
 
+    /// <inheritdoc />
     public async Task<IReadOnlyList<Service>> ListServicesAsync(CancellationToken ct) =>
         await _db.Services.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct);
 
+    /// <inheritdoc />
     public Task<Service?> GetServiceAsync(Guid serviceId, CancellationToken ct) =>
         _db.Services.AsNoTracking().SingleOrDefaultAsync(x => x.Id == serviceId, ct);
 
+    /// <inheritdoc />
     public async Task AddServiceAsync(Service service, CancellationToken ct)
     {
         _db.Services.Add(service);
         await SaveAsync("SERVICE_NAME_EXISTS", ct);
     }
 
+    /// <inheritdoc />
     public async Task<IReadOnlyList<RoomServiceResult>> ListRoomServicesAsync(Guid roomId, CancellationToken ct) =>
         await (from assignment in _db.RoomServices.AsNoTracking()
                join service in _db.Services.AsNoTracking() on assignment.ServiceId equals service.Id
@@ -107,6 +122,7 @@ public sealed class BillingInputStore : IBillingInputStore
                orderby assignment.StartDate descending, service.Name
                select new RoomServiceResult(assignment, service)).ToListAsync(ct);
 
+    /// <inheritdoc />
     public async Task AddRoomServiceAsync(RoomService assignment, CancellationToken ct)
     {
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
@@ -120,6 +136,7 @@ public sealed class BillingInputStore : IBillingInputStore
         await tx.CommitAsync(ct);
     }
 
+    /// <summary>Lưu thay đổi và chuyển lỗi trùng dữ liệu thành lỗi nghiệp vụ.</summary>
     private async Task SaveAsync(string code, CancellationToken ct)
     {
         try { await _db.SaveChangesAsync(ct); }
@@ -129,6 +146,7 @@ public sealed class BillingInputStore : IBillingInputStore
         }
     }
 
+    /// <summary>Tạo lỗi nghiệp vụ khi dữ liệu bị xung đột.</summary>
     private static BusinessException Conflict(string code, string message) =>
         new(BusinessErrorType.Conflict, code, message);
 }

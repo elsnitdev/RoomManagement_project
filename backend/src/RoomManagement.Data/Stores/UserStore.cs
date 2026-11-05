@@ -68,6 +68,7 @@ public sealed class UserStore : IUserStore
             .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
     }
 
+    /// <inheritdoc />
     public async Task<AppUser?> FindByLoginAsync(string normalizedLogin, CancellationToken cancellationToken = default)
     {
         var matches = await _dbContext.Users

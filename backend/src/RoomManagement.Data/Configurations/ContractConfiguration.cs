@@ -26,12 +26,14 @@ public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
         builder.Property(e => e.PaymentDueDay).HasColumnType("tinyint");
         builder.Property(e => e.Status).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Draft'", "DF_Contracts_Status");
         builder.Property(e => e.Note).HasColumnType("nvarchar(1000)");
+        builder.Property(e => e.ClosedOn).HasColumnType("date");
+        builder.Property(e => e.ClosureReason).HasColumnType("nvarchar(1000)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_Contracts_CreatedAt");
         builder.Property(e => e.UpdatedAt).HasColumnType("datetime2(0)");
         builder.HasOne<Room>().WithMany().HasForeignKey(e => e.RoomId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Contracts_Rooms");
         builder.HasAlternateKey(e => new { e.Id, e.RoomId }).HasName("UQ_Contracts_Id_Room");
         builder.HasIndex(e => e.ContractCode).HasDatabaseName("UX_Contracts_Code").IsUnique();
-        builder.HasIndex(e => e.RoomId).HasDatabaseName("UX_Contracts_OneActivePerRoom").IsUnique().HasFilter(@"Status = N'Active'");
+        builder.HasIndex(e => e.RoomId).HasDatabaseName("IX_Contracts_ActiveRoom").HasFilter(@"Status = N'Active'");
         builder.HasIndex(e => new { e.RoomId, e.StartDate, e.EndDate }).HasDatabaseName("IX_Contracts_Room_Dates");
     }
 }

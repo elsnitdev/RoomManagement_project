@@ -30,6 +30,7 @@ builder.Services.AddScoped<ContractService>();
 builder.Services.AddScoped<BillingInputService>();
 builder.Services.AddScoped<MonthlyInvoiceCalculator>();
 builder.Services.AddScoped<InvoiceService>();
+builder.Services.AddHostedService<ContractExpiryWorker>();
 
 builder.Services.AddControllers(options =>
     options.Filters.Add<GlobalExceptionFilter>())

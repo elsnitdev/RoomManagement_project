@@ -4,6 +4,7 @@ import { Badge, Button, Empty, Field, Heading, Icon, Stat } from "./ui";
 import RoomDetail from "./RoomDetail";
 import InvoicePaymentPage from "./components/billing/InvoicePaymentPage";
 import TenantManager from "./TenantManager";
+import LandlordContracts from "./components/contracts/LandlordContracts";
 
 const roomStatus = {
   occupied: "Đã thuê",
@@ -14,6 +15,7 @@ const roomStatus = {
 export default function Landlord({
   page,
   roomId,
+  contractId,
   properties,
   setProperties,
   rooms,
@@ -477,60 +479,7 @@ export default function Landlord({
       />
     );
   if (page === "contracts")
-    return (
-      <>
-        <Heading
-          eyebrow="NGƯỜI THUÊ & HỢP ĐỒNG"
-          title="Hợp đồng thuê"
-          description="Nắm rõ hợp đồng đang hiệu lực và hợp đồng sắp hết hạn."
-        />
-        <section className="content-card">
-          <div className="card-title-row">
-            <h2>Hợp đồng gần đây</h2>
-            <span className="subtle-count">
-              {contracts.length} hợp đồng mẫu
-            </span>
-          </div>
-          <div className="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Mã hợp đồng</th>
-                  <th>Phòng / người thuê</th>
-                  <th>Thời hạn</th>
-                  <th>Tiền thuê</th>
-                  <th>Trạng thái</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contracts.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <strong>{item.id}</strong>
-                    </td>
-                    <td>
-                      <strong>{item.room}</strong>
-                      <small className="table-sub">{item.tenant}</small>
-                    </td>
-                    <td>
-                      {item.start} – {item.end}
-                    </td>
-                    <td className="nowrap">{formatCurrency(item.rent)}</td>
-                    <td>
-                      <Badge
-                        kind={item.status === "active" ? "approved" : "pending"}
-                      >
-                        {item.status === "active" ? "Hiệu lực" : "Sắp hết hạn"}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </>
-    );
+    return <LandlordContracts notify={notify} initialPropertyId={roomId} initialContractId={contractId} />;
   if (page === "billing")
     return <InvoicePaymentPage invoices={scopedInvoices} historyInvoices={invoiceHistory} invoiceId={roomId} navigate={navigate} onAddAdjustment={addInvoiceAdjustment} />;
   if (page === "requests")

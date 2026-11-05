@@ -14,15 +14,18 @@ public sealed class PropertyStore : IPropertyStore
   {
     _db = db;
   }
+  /// <inheritdoc />
   public async Task AddAsync(Property property, CancellationToken cancellationToken)
   {
     _db.Properties.Add(property);
     await _db.SaveChangesAsync(cancellationToken);
   }
 
+  /// <inheritdoc />
   public Task<Property?> GetAsync(Guid propertyId, string ownerId, CancellationToken ct) =>
     _db.Properties.SingleOrDefaultAsync(p => p.Id == propertyId && p.OwnerUserId == ownerId, ct);
 
+  /// <inheritdoc />
   public async Task<(IReadOnlyList<Property> Items, long TotalItems)> ListAsync(string ownerId, string? search, bool? isActive, int skip, int take, CancellationToken ct)
   {
     var query = _db.Properties.AsNoTracking().Where(p => p.OwnerUserId == ownerId);
@@ -36,6 +39,7 @@ public sealed class PropertyStore : IPropertyStore
     return (items, total);
   }
 
+  /// <inheritdoc />
   public async Task SaveAsync(CancellationToken ct)
   {
     try { await _db.SaveChangesAsync(ct); }
@@ -45,6 +49,7 @@ public sealed class PropertyStore : IPropertyStore
     }
   }
 
+  /// <inheritdoc />
   public async Task<string?> GetDeleteBlockerAsync(Guid propertyId, CancellationToken ct)
   {
     if (await _db.Rooms.AnyAsync(r => r.PropertyId == propertyId, ct))
@@ -54,6 +59,7 @@ public sealed class PropertyStore : IPropertyStore
     return null;
   }
 
+  /// <inheritdoc />
   public async Task DeleteAsync(Property property, CancellationToken ct)
   {
     _db.Properties.Remove(property);

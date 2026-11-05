@@ -239,7 +239,7 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          {page !== "properties" && page !== "billing" && page !== "services" && (
+          {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && (
             <div className="sidebar-help">
               <span className="help-icon">
                 {activeRole === "tenant" ? <CircleAlert size={18} aria-hidden="true" /> : <Icon name="alert" size={18} />}
@@ -278,7 +278,7 @@ export default function App() {
             </span>
           </div>
           <div className="topbar-right">
-            {page !== "properties" && page !== "billing" && page !== "services" && (
+            {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && (
               <span className="demo-chip">
                 <span className="preview-dot" /> Dữ liệu mẫu
               </span>
@@ -359,6 +359,7 @@ export default function App() {
             <Landlord
               page={page}
               roomId={roomId}
+              contractId={page === 'contracts' ? propertySection : undefined}
               properties={properties}
               setProperties={setProperties}
               rooms={rooms}

@@ -5,6 +5,7 @@ using RoomManagement.Business.Errors;
 using RoomManagement.Business.Interfaces;
 using RoomManagement.Domain.Entities;
 using RoomManagement.Domain.Enums;
+using RoomManagement.Business.Services;
 
 namespace RoomManagement.Data;
 
@@ -13,36 +14,56 @@ public sealed class RoomStore : IRoomStore
     private readonly RoomManagementDbContext _db;
     public RoomStore(RoomManagementDbContext db) => _db = db;
 
+    /// <summary>Tạo truy vấn phòng thuộc khu trọ của chủ trọ.</summary>
     private IQueryable<Room> OwnedRooms(Guid propertyId, string ownerId) =>
         from room in _db.Rooms
         join property in _db.Properties on room.PropertyId equals property.Id
         where room.PropertyId == propertyId && property.OwnerUserId == ownerId
         select room;
 
+    /// <inheritdoc />
     public async Task AddAsync(Room room, CancellationToken ct)
     {
         _db.Rooms.Add(room);
         await SaveAsync(ct);
     }
 
+    /// <inheritdoc />
     public Task<Room?> GetAsync(Guid propertyId, Guid roomId, string ownerId, CancellationToken ct) =>
         OwnedRooms(propertyId, ownerId).SingleOrDefaultAsync(r => r.Id == roomId, ct);
 
+    /// <inheritdoc />
     public async Task<RoomResult?> GetResultAsync(Guid propertyId, Guid roomId, string ownerId, CancellationToken ct)
     {
+        var today = VietnamDate.Today;
         var row = await OwnedRooms(propertyId, ownerId).AsNoTracking()
             .Where(r => r.Id == roomId)
             .Select(r => new
             {
                 Room = r,
-                HasActiveContract = _db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active)
+                ContractId = _db.Contracts.Where(c => c.RoomId == r.Id && c.Status == ContractStatus.Active &&
+                    c.StartDate <= today && (c.EndDate == null || c.EndDate >= today))
+                    .Select(c => (Guid?)c.Id).FirstOrDefault()
             })
             .SingleOrDefaultAsync(ct);
-        return row is null ? null : new RoomResult(row.Room, EffectiveStatus(row.Room.Status, row.HasActiveContract));
+        if (row is null) return null;
+        var occupants = row.ContractId.HasValue ? await OccupantsAsync(row.ContractId.Value, today, ct) : [];
+        return new RoomResult(row.Room, EffectiveStatus(row.Room.Status, row.ContractId.HasValue), row.ContractId, occupants);
     }
 
+    /// <summary>Lấy danh sách người đang ở theo hợp đồng của phòng.</summary>
+    private async Task<IReadOnlyList<RoomOccupant>> OccupantsAsync(Guid contractId, DateOnly today, CancellationToken ct) =>
+        await (from link in _db.ContractTenants.AsNoTracking()
+               join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
+               where link.ContractId == contractId && link.JoinDate <= today &&
+                     (link.LeaveDate == null || link.LeaveDate >= today)
+               orderby profile.FullName
+               select new RoomOccupant(profile.Id, profile.FullName, link.JoinDate)).ToListAsync(ct);
+
+    /// <inheritdoc />
     public async Task<(IReadOnlyList<RoomResult> Items, long TotalItems)> ListAsync(Guid propertyId, string ownerId, string? search, RoomStatus? status, Guid? rowId, int? floor, int skip, int take, CancellationToken ct)
     {
+        var today = VietnamDate.Today;
         var query = OwnedRooms(propertyId, ownerId).AsNoTracking();
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(r => r.RoomNumber.Contains(search) || (r.RoomName != null && r.RoomName.Contains(search)));
@@ -52,11 +73,11 @@ public sealed class RoomStore : IRoomStore
         {
             query = status.Value switch
             {
-                RoomStatus.Occupied => query.Where(r => _db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active)),
-                RoomStatus.Available => query.Where(r => !_db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active)
+                RoomStatus.Occupied => query.Where(r => _db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active && c.StartDate <= today && (c.EndDate == null || c.EndDate >= today))),
+                RoomStatus.Available => query.Where(r => !_db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active && c.StartDate <= today && (c.EndDate == null || c.EndDate >= today))
                     && (r.Status == RoomStatus.Available || r.Status == RoomStatus.Occupied)),
                 _ => query.Where(r => r.Status == status.Value
-                    && !_db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active))
+                    && !_db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active && c.StartDate <= today && (c.EndDate == null || c.EndDate >= today)))
             };
         }
         var total = await query.LongCountAsync(ct);
@@ -65,22 +86,32 @@ public sealed class RoomStore : IRoomStore
             .Select(r => new
             {
                 Room = r,
-                HasActiveContract = _db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active)
+                ContractId = _db.Contracts.Where(c => c.RoomId == r.Id && c.Status == ContractStatus.Active && c.StartDate <= today &&
+                    (c.EndDate == null || c.EndDate >= today)).Select(c => (Guid?)c.Id).FirstOrDefault()
             })
             .ToListAsync(ct);
-        return (rows.Select(row => new RoomResult(row.Room, EffectiveStatus(row.Room.Status, row.HasActiveContract))).ToList(), total);
+        var results = new List<RoomResult>();
+        foreach (var row in rows)
+            results.Add(new RoomResult(row.Room, EffectiveStatus(row.Room.Status, row.ContractId.HasValue), row.ContractId,
+                row.ContractId.HasValue ? await OccupantsAsync(row.ContractId.Value, today, ct) : []));
+        return (results, total);
     }
 
+    /// <summary>Xác định trạng thái phòng theo hợp đồng đang hoạt động.</summary>
     private static RoomStatus EffectiveStatus(RoomStatus stored, bool hasActiveContract) =>
         hasActiveContract ? RoomStatus.Occupied
             : stored == RoomStatus.Occupied ? RoomStatus.Available : stored;
 
+    /// <inheritdoc />
     public Task<bool> NumberExistsAsync(Guid propertyId, string number, Guid? exceptRoomId, CancellationToken ct) =>
         _db.Rooms.AnyAsync(r => r.PropertyId == propertyId && r.RoomNumber == number && (!exceptRoomId.HasValue || r.Id != exceptRoomId.Value), ct);
 
+    /// <inheritdoc />
     public Task<bool> HasActiveContractAsync(Guid roomId, CancellationToken ct) =>
-        _db.Contracts.AnyAsync(c => c.RoomId == roomId && c.Status == ContractStatus.Active, ct);
+        _db.Contracts.AnyAsync(c => c.RoomId == roomId && c.Status == ContractStatus.Active &&
+            (c.EndDate == null || c.EndDate >= VietnamDate.Today), ct);
 
+    /// <inheritdoc />
     public async Task<string?> GetDeleteBlockerAsync(Guid roomId, CancellationToken ct)
     {
         if (await _db.Contracts.AnyAsync(c => c.RoomId == roomId, ct)) return "ROOM_HAS_CONTRACTS";
@@ -89,6 +120,7 @@ public sealed class RoomStore : IRoomStore
         return null;
     }
 
+    /// <inheritdoc />
     public async Task SaveAsync(CancellationToken ct)
     {
         try { await _db.SaveChangesAsync(ct); }
@@ -103,6 +135,7 @@ public sealed class RoomStore : IRoomStore
         }
     }
 
+    /// <inheritdoc />
     public async Task DeleteAsync(Room room, CancellationToken ct)
     {
         _db.Rooms.Remove(room);

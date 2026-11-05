@@ -183,6 +183,11 @@ namespace RoomManagement.Data.Migrations
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.Contract", b =>
                 {
+                      b.Property<DateOnly?>("ClosedOn")
+                          .HasColumnType("date");
+
+                      b.Property<string>("ClosureReason")
+                          .HasColumnType("nvarchar(1000)");
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
@@ -238,8 +243,7 @@ namespace RoomManagement.Data.Migrations
                         .HasDatabaseName("UX_Contracts_Code");
 
                     b.HasIndex("RoomId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_Contracts_OneActivePerRoom")
+                          .HasDatabaseName("IX_Contracts_ActiveRoom")
                         .HasFilter("Status = N'Active'");
 
                     b.HasIndex("RoomId", "StartDate", "EndDate")

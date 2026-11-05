@@ -32,24 +32,40 @@ public sealed class ContractsController : ControllerBase
       [FromQuery] Guid? roomId = null, [FromQuery] ContractStatus? status = null,
       CancellationToken ct = default)
   {
-    var result = await _service.ListAsync(propertyId,
+    var result = await _service.ListDetailsAsync(propertyId,
         new ContractFilter(page, pageSize, roomId, status), ct);
-    return Ok(new PageResponse<ContractResponse>(
-        result.Items.Select(ContractResponse.From).ToList(),
+    return Ok(new PageResponse<ContractDetailResponse>(
+        result.Items.Select(ContractDetailResponse.From).ToList(),
         new PageMeta(page, pageSize, result.TotalItems,
             (int)Math.Ceiling((double)result.TotalItems / pageSize))));
   }
 
   [HttpGet("{contractId:guid}")]
   public async Task<IActionResult> Get(Guid propertyId, Guid contractId, CancellationToken ct) =>
-      Ok(new ApiResponse<ContractResponse>(
-          ContractResponse.From(await _service.GetAsync(propertyId, contractId, ct))));
+      Ok(new ApiResponse<ContractDetailResponse>(
+          ContractDetailResponse.From(await _service.GetDetailAsync(propertyId, contractId, ct))));
 
-  [HttpPost("{contractId:guid}/tenants")]
-  public async Task<IActionResult> AddTenant(Guid propertyId, Guid contractId,
-      [FromBody] AddContractTenantRequest request, CancellationToken ct) =>
+  [HttpPost("{contractId:guid}/users")]
+  public async Task<IActionResult> AddUser(Guid propertyId, Guid contractId,
+      [FromBody] AddContractUserRequest request, CancellationToken ct) =>
       StatusCode(201, new ApiResponse<ContractTenantResponse>(ContractTenantResponse.From(
-          await _service.AddTenantAsync(propertyId, contractId, request.ToInput(), ct))));
+          await _service.AddUserAsync(propertyId, contractId, new(request.Email, request.JoinDate), ct))));
+
+  [HttpPost("{contractId:guid}/cancel")]
+  public async Task<IActionResult> Cancel(Guid propertyId, Guid contractId, CancellationToken ct) =>
+      Ok(new ApiResponse<ContractResponse>(ContractResponse.From(await _service.CancelAsync(propertyId, contractId, ct))));
+
+  [HttpPost("{contractId:guid}/terminate")]
+  public async Task<IActionResult> Terminate(Guid propertyId, Guid contractId,
+      [FromBody] TerminateContractRequest request, CancellationToken ct) =>
+      Ok(new ApiResponse<ContractResponse>(ContractResponse.From(
+          await _service.TerminateAsync(propertyId, contractId, request.Reason, ct))));
+
+  [HttpPost("{contractId:guid}/tenants/{linkId:guid}/leave")]
+  public async Task<IActionResult> Leave(Guid propertyId, Guid contractId, Guid linkId,
+      [FromBody] LeaveContractRequest request, CancellationToken ct) =>
+      Ok(new ApiResponse<ContractTenantResponse>(ContractTenantResponse.From(
+          await _service.LeaveAsync(propertyId, contractId, linkId, request.LeaveDate, ct))));
 
   [HttpPost("{contractId:guid}/activate")]
   public async Task<IActionResult> Activate(Guid propertyId, Guid contractId, CancellationToken ct) =>

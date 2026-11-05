@@ -14,6 +14,8 @@ public sealed class Contract
     public byte? PaymentDueDay { get; set; }
     public ContractStatus Status { get; set; } = ContractStatus.Draft;
     public string? Note { get; set; }
+    public DateOnly? ClosedOn { get; set; }
+    public string? ClosureReason { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

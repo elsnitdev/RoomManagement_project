@@ -19,10 +19,12 @@ public sealed class RoomBatchStore : IRoomBatchStore
     private readonly RoomManagementDbContext _db;
     public RoomBatchStore(RoomManagementDbContext db) => _db = db;
 
+    /// <inheritdoc />
     public async Task<IReadOnlyList<RoomRow>> ListRowsAsync(Guid propertyId, CancellationToken ct) =>
         await _db.RoomRows.AsNoTracking().Where(x => x.PropertyId == propertyId)
             .OrderBy(x => x.Code).ToListAsync(ct);
 
+    /// <inheritdoc />
     public async Task<RoomRow> AddRowAsync(Guid propertyId, string code, string name, CancellationToken ct)
     {
         var row = new RoomRow { Id = Guid.NewGuid(), PropertyId = propertyId, Code = code, Name = name };
@@ -35,6 +37,7 @@ public sealed class RoomBatchStore : IRoomBatchStore
         return row;
     }
 
+    /// <inheritdoc />
     public async Task<RoomRow> UpdateRowAsync(Guid propertyId, Guid rowId, string name, bool isActive, CancellationToken ct)
     {
         var row = await _db.RoomRows.SingleOrDefaultAsync(x => x.PropertyId == propertyId && x.Id == rowId, ct)
@@ -45,9 +48,11 @@ public sealed class RoomBatchStore : IRoomBatchStore
         return row;
     }
 
+    /// <summary>Tạo lỗi khi dãy phòng không hợp lệ hoặc đã ngừng hoạt động.</summary>
     private static BusinessException InvalidRow() =>
         new(BusinessErrorType.Validation, "ROOM_ROW_INVALID", "Dãy trọ không thuộc khu trọ hoặc đã ngừng hoạt động.");
 
+    /// <summary>Tính số phòng dự kiến và tạo dấu xác nhận bản xem trước.</summary>
     private async Task<RoomBatchPreviewResult> BuildPreviewAsync(Guid propertyId, RoomBatchPlan plan, CancellationToken ct)
     {
         var rowIds = plan.Groups.Where(g => g.RowId.HasValue).Select(g => g.RowId!.Value).Distinct().ToArray();
@@ -87,11 +92,14 @@ public sealed class RoomBatchStore : IRoomBatchStore
         return new RoomBatchPreviewResult(result, hash);
     }
 
+    /// <summary>Tạo mã băm SHA-256 cho dữ liệu đầu vào.</summary>
     private static string Hash(string input) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input)));
 
+    /// <inheritdoc />
     public Task<RoomBatchPreviewResult> PreviewAsync(Guid propertyId, RoomBatchPlan plan, CancellationToken ct) =>
         BuildPreviewAsync(propertyId, plan, ct);
 
+    /// <summary>Khóa việc cấp số phòng cho khu trọ trong transaction.</summary>
     private async Task AcquirePropertyLockAsync(Guid propertyId, CancellationToken ct)
     {
         var connection = _db.Database.GetDbConnection();
@@ -107,6 +115,7 @@ public sealed class RoomBatchStore : IRoomBatchStore
             throw new BusinessException(BusinessErrorType.Conflict, "ROOM_BATCH_BUSY", "Khu trọ đang được cấp số phòng. Vui lòng thử lại.");
     }
 
+    /// <inheritdoc />
     public async Task<RoomBatchCreateResult> CreateAsync(Guid propertyId, string ownerId, RoomBatchPlan plan, string fingerprint, Guid idempotencyKey, CancellationToken ct)
     {
         var requestHash = Hash(JsonSerializer.Serialize(new { plan, fingerprint }));

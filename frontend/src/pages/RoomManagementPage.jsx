@@ -123,7 +123,7 @@ export default function RoomManagementPage({ propertyId, navigate, notify }) {
               {roomsQuery.isLoading ? <div className="pm-loading" role="status">Đang tải danh sách phòng...</div>
                 : roomsQuery.error ? <Feedback error={roomsQuery.error} onRetry={roomsQuery.reload} />
                   : rooms.length === 0 ? <div className="pm-empty"><span className="pm-empty-icon"><DoorOpen size={28} aria-hidden="true" /></span><strong>{filtering ? 'Không tìm thấy phòng phù hợp' : 'Khu trọ chưa có phòng'}</strong><p>{filtering ? 'Thử thay đổi từ khóa hoặc bộ lọc.' : property.isActive ? 'Tạo phòng đầu tiên để bắt đầu quản lý.' : 'Kích hoạt khu trọ để có thể tạo phòng.'}</p>{!filtering && property.isActive && <IconButton label="Tạo phòng đầu tiên" icon={Plus} tone="primary" onClick={() => navigate(`landlord/properties/${propertyId}/rooms/new`)} />}</div>
-                    : <RoomTable rooms={rooms} busy={busy} onEdit={openRoomEdit} onDelete={askDeleteRoom} />}
+                    : <RoomTable rooms={rooms} busy={busy} onEdit={openRoomEdit} onDelete={askDeleteRoom} onContracts={room => navigate(`landlord/contracts/${propertyId}/${room.contractId}`)} />}
               <Pagination page={page} meta={meta} onChange={setPage} />
             </section>
             <RoomRowManager propertyId={propertyId} rows={roomRows} queryError={rowsQuery.error} onRetry={rowsQuery.reload} onChanged={rowsQuery.reload} notify={notify} disabled={!property.isActive} />

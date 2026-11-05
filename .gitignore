@@ -8,7 +8,7 @@ architecture_and_workflow_frontend.md
 # Backend
 bin/
 obj/
-docs/
+backend/docs/
 plans/
 # Frontend
 node_modules/

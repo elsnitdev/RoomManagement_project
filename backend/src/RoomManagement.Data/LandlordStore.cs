@@ -13,6 +13,7 @@ public sealed class LandlordStore : ILandlordStore
         _db = db;
     }
 
+    /// <inheritdoc />
     public Task<bool> IsActiveLandlordAsync(
         string userId,
         CancellationToken cancellationToken)
