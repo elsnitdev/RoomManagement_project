@@ -32,7 +32,7 @@ public interface ITenantProfileStore
     /// <param name="excludeId">ID của hồ sơ cần loại trừ (khi cập nhật), null khi tạo mới.</param>
     /// <param name="ct">Token hủy thao tác không đồng bộ.</param>
     /// <returns>True nếu đã tồn tại ở hồ sơ khác, False nếu hợp lệ.</returns>
-    Task<bool> ExistsByCitizenIdAsync(string citizenId, Guid? excludeId = null, CancellationToken ct = default);
+    Task<bool> ExistsByCitizenIdAsync(string landlordId, string citizenId, Guid? excludeId = null, CancellationToken ct = default);
 
     /// <summary>
     /// Kiểm tra quyền truy cập của chủ trọ đối với hồ sơ người thuê:
@@ -44,6 +44,7 @@ public interface ITenantProfileStore
     /// <param name="ct">Token hủy thao tác không đồng bộ.</param>
     /// <returns>True nếu chủ trọ có quyền truy cập, False nếu không.</returns>
     Task<bool> HasAccessPermissionAsync(string landlordId, Guid tenantProfileId, CancellationToken ct = default);
+    Task<bool> IsContractContactAsync(Guid tenantProfileId, CancellationToken ct = default);
 
     /// <summary>
     /// Lấy danh sách hồ sơ người thuê thuộc quyền quản lý của chủ trọ có phân trang và tìm kiếm theo từ khóa.

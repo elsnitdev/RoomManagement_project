@@ -37,7 +37,8 @@ public sealed class ContractService
           "ROOM_NOT_FOUND", "Không tìm thấy phòng trong khu trọ.");
     var code = input.ContractCode?.Trim().ToUpperInvariant() ?? "";
     if (!Regex.IsMatch(code, "^[A-Z0-9._-]{1,50}$") ||
-        (input.EndDate is { } end && end < input.StartDate) ||
+        input.EndDate is not { } end || end < input.StartDate ||
+        end.Day != DateTime.DaysInMonth(end.Year, end.Month) ||
         input.MonthlyRent < 0 || input.DepositAmount < 0 ||
         input.PaymentDueDay is < 1 or > 31 || input.Note is { Length: > 1000 })
       throw new BusinessException(BusinessErrorType.Validation,
@@ -124,21 +125,25 @@ public sealed class ContractService
     return contract;
   }
 
+  public async Task<Contract> SetLegacyEndDateAsync(Guid propertyId, Guid contractId,
+      DateOnly endDate, CancellationToken ct)
+  {
+    var contract = await GetAsync(propertyId, contractId, ct);
+    var today = VietnamDate.Today;
+    if (contract.EndDate is not null || contract.Status is not (ContractStatus.Draft or ContractStatus.Active))
+      throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_END_DATE_NOT_EDITABLE",
+          "Chỉ hợp đồng cũ chưa có ngày kết thúc mới được chốt ngày.");
+    if (endDate < contract.StartDate || endDate.Day != DateTime.DaysInMonth(endDate.Year, endDate.Month) ||
+        contract.Status == ContractStatus.Active && endDate < today)
+      throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_END_DATE_INVALID",
+          "Ngày kết thúc phải là cuối tháng và không trước thời gian hợp đồng đang hiệu lực.");
+    return await _store.SetLegacyEndDateAsync(contract, endDate, today, ct);
+  }
+
   public async Task<ContractTenant> LeaveAsync(Guid propertyId, Guid contractId, Guid linkId, DateOnly leaveDate, CancellationToken ct)
   {
     var contract = await GetAsync(propertyId, contractId, ct);
-    var link = await _store.GetTenantAsync(contractId, linkId, ct)
-        ?? throw new BusinessException(BusinessErrorType.NotFound, "CONTRACT_TENANT_NOT_FOUND", "Không tìm thấy người thuê.");
-    if (contract.Status != ContractStatus.Active || link.LeaveDate != null || leaveDate < link.JoinDate ||
-        (contract.EndDate is { } end && leaveDate > end))
-      throw new BusinessException(BusinessErrorType.Validation, "LEAVE_DATE_INVALID", "Ngày rời hợp đồng không hợp lệ.");
-    var detail = await GetDetailAsync(propertyId, contractId, ct);
-    if (!detail.Tenants.Any(t => t.Id != linkId && t.JoinDate <= leaveDate &&
-        (t.LeaveDate == null || t.LeaveDate >= leaveDate)))
-      throw new BusinessException(BusinessErrorType.InvalidOperation, "LAST_TENANT_CANNOT_LEAVE", "Hãy kết thúc hợp đồng khi người thuê cuối cùng rời phòng.");
-    link.LeaveDate = leaveDate;
-    await _store.SaveAsync(ct);
-    return link;
+    return await _store.LeaveSafelyAsync(contract, linkId, leaveDate, ct);
   }
 
   public async Task<PageResult<Contract>> ListAsync(Guid propertyId, ContractFilter filter, CancellationToken ct)
@@ -173,21 +178,21 @@ public sealed class ContractService
     var contract = await GetAsync(propertyId, contractId, ct);
     if (contract.Status is not (ContractStatus.Draft or ContractStatus.Active) ||
         input.JoinDate < contract.StartDate ||
-        (contract.EndDate is { } end && input.JoinDate > end) ||
-        !await _store.TenantProfileOwnedAsync(input.TenantId, owner, ct) ||
-        await _store.TenantAlreadyCurrentAsync(contractId, input.TenantId, ct))
+        (contract.EndDate is { } end && input.JoinDate > end))
       throw new BusinessException(BusinessErrorType.Validation,
           "CONTRACT_TENANT_INVALID", "Người thuê hoặc ngày tham gia không hợp lệ.");
-    var row = new ContractTenant
-    {
-      Id = Guid.NewGuid(),
-      ContractId = contractId,
-      TenantId = input.TenantId,
-      JoinDate = input.JoinDate,
-      CreatedAt = DateTime.UtcNow
-    };
-    await _store.AddTenantAsync(row, ct);
-    return row;
+    return await _store.AddProfileAsync(contract, input.TenantId, owner,
+        input.JoinDate, input.IsContactPerson, ct);
+  }
+
+  public async Task<ContractTenant> SetContactAsync(Guid propertyId, Guid contractId,
+      Guid linkId, CancellationToken ct)
+  {
+    var contract = await GetAsync(propertyId, contractId, ct);
+    if (contract.Status is not (ContractStatus.Draft or ContractStatus.Active))
+      throw new BusinessException(BusinessErrorType.InvalidOperation,
+          "CONTRACT_CANNOT_CHANGE_CONTACT", "Không thể đổi người liên hệ của hợp đồng này.");
+    return await _store.SetContactAsync(contract, linkId, ct);
   }
 
   public async Task<Contract> ActivateAsync(Guid propertyId, Guid contractId, CancellationToken ct)
@@ -204,5 +209,67 @@ public sealed class ContractService
           "CONTRACT_CANNOT_ACTIVATE", "Hợp đồng chưa sẵn sàng kích hoạt.");
     await _store.ActivateSafelyAsync(contract, ct);
     return contract;
+  }
+
+  public async Task<MemberCommitment> ConfirmCommitmentAsync(Guid propertyId, Guid contractId,
+      Guid linkId, ConfirmMemberCommitmentInput input, CancellationToken ct)
+  {
+    var owner = await OwnerAsync(ct);
+    var contract = await GetAsync(propertyId, contractId, ct);
+    if (input.CommitmentType != CommitmentType.RoomRulesAgreement ||
+        input.SignedOn > VietnamDate.Today ||
+        string.IsNullOrWhiteSpace(input.SignerName) || input.SignerName.Length > 200 ||
+        string.IsNullOrWhiteSpace(input.TermsSnapshot) || input.TermsSnapshot.Length > 10_000 ||
+        input.SignerRelation is { Length: > 100 } ||
+        (input.SignerTenantProfileId.HasValue && string.IsNullOrWhiteSpace(input.SignerRelation)))
+      throw new BusinessException(BusinessErrorType.Validation, "COMMITMENT_INVALID", "Thông tin cam kết không hợp lệ.");
+    return await _store.ConfirmCommitmentAsync(contract, linkId, input, owner, ct);
+  }
+
+  public async Task<IReadOnlyList<MemberCommitment>> ListCommitmentsAsync(Guid propertyId,
+      Guid contractId, Guid linkId, CancellationToken ct)
+  {
+    await GetAsync(propertyId, contractId, ct);
+    if (await _store.GetTenantAsync(contractId, linkId, ct) is null)
+      throw new BusinessException(BusinessErrorType.NotFound, "CONTRACT_TENANT_NOT_FOUND", "Không tìm thấy thành viên trong hợp đồng.");
+    return await _store.ListCommitmentsAsync(contractId, linkId, ct);
+  }
+
+  public async Task<TenantRequest> CreateMoveOutNoticeAsync(Guid propertyId, Guid contractId,
+      CreateMoveOutNoticeInput input, CancellationToken ct)
+  {
+    var owner = await OwnerAsync(ct);
+    var contract = await GetAsync(propertyId, contractId, ct);
+    if (string.IsNullOrWhiteSpace(input.Title) || input.Title.Length > 200 ||
+        string.IsNullOrWhiteSpace(input.Description) || input.Description.Length > 2000)
+      throw new BusinessException(BusinessErrorType.Validation, "MOVE_OUT_NOTICE_INVALID", "Nội dung thông báo không hợp lệ.");
+    return await _store.CreateMoveOutNoticeAsync(contract, input, owner, ct);
+  }
+
+  public async Task<IReadOnlyList<TenantRequest>> ListMoveOutNoticesAsync(Guid propertyId,
+      Guid contractId, CancellationToken ct)
+  {
+    await GetAsync(propertyId, contractId, ct);
+    return await _store.ListMoveOutNoticesAsync(contractId, ct);
+  }
+
+  public async Task<TenantRequest> ResolveMoveOutNoticeAsync(Guid propertyId, Guid contractId,
+      Guid requestId, string resolutionNote, CancellationToken ct)
+  {
+    var owner = await OwnerAsync(ct);
+    var contract = await GetAsync(propertyId, contractId, ct);
+    if (string.IsNullOrWhiteSpace(resolutionNote) || resolutionNote.Length > 1000)
+      throw new BusinessException(BusinessErrorType.Validation, "RESOLUTION_NOTE_INVALID", "Ghi chú xử lý không hợp lệ.");
+    return await _store.ResolveMoveOutNoticeAsync(contract, requestId, resolutionNote, owner, ct);
+  }
+
+  public async Task<IReadOnlyList<ContractTenureSpan>> GetTenureAsync(Guid propertyId,
+      Guid contractId, Guid linkId, CancellationToken ct)
+  {
+    var contract = await GetAsync(propertyId, contractId, ct);
+    var link = await _store.GetTenantAsync(contractId, linkId, ct)
+        ?? throw new BusinessException(BusinessErrorType.NotFound, "CONTRACT_TENANT_NOT_FOUND", "Không tìm thấy thành viên trong hợp đồng.");
+    var periods = await _store.ListTenurePeriodsAsync(link.TenantId, contract.RoomId, VietnamDate.Today, ct);
+    return ContractTenureCalculator.Calculate(periods);
   }
 }

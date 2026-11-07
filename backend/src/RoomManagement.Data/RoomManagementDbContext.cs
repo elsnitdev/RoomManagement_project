@@ -11,6 +11,7 @@ public sealed class RoomManagementDbContext : DbContext
     }
 
     public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<TenantPhoneChallenge> TenantPhoneChallenges => Set<TenantPhoneChallenge>();
 public DbSet<TenantProfile> TenantProfiles => Set<TenantProfile>();
 public DbSet<Property> Properties => Set<Property>();
 public DbSet<Room> Rooms => Set<Room>();
@@ -23,6 +24,7 @@ public DbSet<UtilityRate> UtilityRates => Set<UtilityRate>();
 public DbSet<MeterReading> MeterReadings => Set<MeterReading>();
 public DbSet<Contract> Contracts => Set<Contract>();
 public DbSet<ContractTenant> ContractTenants => Set<ContractTenant>();
+public DbSet<MemberCommitment> MemberCommitments => Set<MemberCommitment>();
 public DbSet<ContractDocument> ContractDocuments => Set<ContractDocument>();
 public DbSet<Invoice> Invoices => Set<Invoice>();
 public DbSet<InvoiceItem> InvoiceItems => Set<InvoiceItem>();

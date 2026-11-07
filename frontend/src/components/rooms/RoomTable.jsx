@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react'
 import { IconButton, Status, moneyText } from '../property/ManagementUi'
 
-export default function RoomTable({ rooms, busy, onEdit, onDelete, onContracts }) {
+export default function RoomTable({ rooms, busy, onView, onEdit, onDelete, onContracts, onCreateContract }) {
   return (
     <div className="pm-room-table-wrap">
       <table className="pm-room-table">
@@ -15,6 +15,8 @@ export default function RoomTable({ rooms, busy, onEdit, onDelete, onContracts }
             <td>{room.occupants?.length ? <>{room.occupants.map(person => person.fullName).join(', ')}{room.contractId && <button type="button" onClick={() => onContracts(room)}>Xem hợp đồng</button>}</> : '—'}</td>
             <td><Status roomStatus={room.status} /></td>
             <td><div className="pm-row-actions">
+              <button type="button" className="pm-contract-create-link" onClick={() => onView(room.id)}>Chi tiết</button>
+              {room.status === 'Available' && <button type="button" className="pm-contract-create-link" onClick={() => onCreateContract(room)}>Tạo hợp đồng</button>}
               <IconButton label={`Sửa phòng ${room.roomNumber}`} icon={Pencil} onClick={() => onEdit(room.id)} disabled={busy} />
               <IconButton label={`Xóa phòng ${room.roomNumber}`} icon={Trash2} tone="danger" onClick={event => onDelete(event, room)} disabled={busy} />
             </div></td>

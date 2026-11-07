@@ -73,7 +73,7 @@ public sealed class TenantProfileRulesTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Missing_or_whitespace_phone_throws_validation_exception(string? invalidPhone)
+    public void Missing_or_whitespace_phone_is_allowed_for_household_members(string? invalidPhone)
     {
         var dto = new CreateTenantProfileDto
         {
@@ -81,8 +81,7 @@ public sealed class TenantProfileRulesTests
             PhoneNumber = invalidPhone!
         };
 
-        var ex = Assert.Throws<AppValidationException>(() => TenantProfileRules.Validate(dto));
-        Assert.Contains("Số điện thoại là bắt buộc", ex.Message);
+        TenantProfileRules.Validate(dto);
     }
 
     [Theory]

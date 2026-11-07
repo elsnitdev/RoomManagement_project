@@ -18,10 +18,13 @@ public sealed class ContractTenantConfiguration : IEntityTypeConfiguration<Contr
         builder.Property(e => e.TenantId).HasColumnType("uniqueidentifier").IsRequired();
         builder.Property(e => e.JoinDate).HasColumnType("date").IsRequired();
         builder.Property(e => e.LeaveDate).HasColumnType("date");
+        builder.Property(e => e.IsContactPerson).HasColumnType("bit").IsRequired().HasDefaultValue(false);
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_ContractTenants_CreatedAt");
         builder.HasOne<Contract>().WithMany().HasForeignKey(e => e.ContractId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_ContractTenants_Contracts");
         builder.HasOne<TenantProfile>().WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_ContractTenants_Tenants");
         builder.HasIndex(e => new { e.ContractId, e.TenantId, e.JoinDate }).HasDatabaseName("UX_ContractTenants_Join").IsUnique();
         builder.HasIndex(e => e.TenantId).HasDatabaseName("IX_ContractTenants_TenantId");
+        builder.HasIndex(e => e.ContractId).HasDatabaseName("UX_ContractTenants_ContactPerson")
+            .IsUnique().HasFilter("IsContactPerson = 1 AND LeaveDate IS NULL");
     }
 }

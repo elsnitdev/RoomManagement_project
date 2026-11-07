@@ -28,8 +28,8 @@ public sealed class TenantProfile // từ khóa sealed: ngăn không cho class k
     /// </summary>
     public string FullName { get; set; } = null!;
 
-    /// <summary>Số điện thoại liên hệ của người thuê (Bắt buộc).</summary>
-    public string PhoneNumber { get; set; } = null!;
+    /// <summary>Số điện thoại liên hệ của người thuê (tùy chọn).</summary>
+    public string? PhoneNumber { get; set; }
 
     /// <summary>Địa chỉ email (Tùy chọn, có thể null).</summary>
     public string? Email { get; set; }

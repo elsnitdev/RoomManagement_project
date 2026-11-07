@@ -16,6 +16,7 @@ public static class UserMappings
         Id = user.Id,
         UserName = user.UserName,
         Email = user.Email,
+        LandlordCode = user.LandlordCode,
         Role = user.Role,
         IsActive = user.IsActive,
         ApprovalStatus = user.ApprovalStatus,

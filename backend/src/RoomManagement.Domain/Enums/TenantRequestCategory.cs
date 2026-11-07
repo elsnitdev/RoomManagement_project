@@ -6,5 +6,6 @@ public enum TenantRequestCategory
     Billing,
     Question,
     Complaint,
-    Other
+    Other,
+    MoveOutNotice
 }

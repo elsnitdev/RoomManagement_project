@@ -4,6 +4,7 @@ import { Badge, Button, Empty, Field, Heading, Icon, Stat } from "./ui";
 import RoomDetail from "./RoomDetail";
 import InvoicePaymentPage from "./components/billing/InvoicePaymentPage";
 import TenantManager from "./TenantManager";
+import TenantDetailPage from "./pages/TenantDetailPage";
 import LandlordContracts from "./components/contracts/LandlordContracts";
 
 const roomStatus = {
@@ -471,9 +472,10 @@ export default function Landlord({
       </>
     );
   if (page === "tenants")
+    if (roomId) return <TenantDetailPage tenantId={roomId} navigate={navigate} />;
+  if (page === "tenants")
     return (
       <TenantManager
-        contracts={contracts}
         navigate={navigate}
         notify={notify}
       />

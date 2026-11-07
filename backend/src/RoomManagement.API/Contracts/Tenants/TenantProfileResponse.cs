@@ -20,7 +20,7 @@ public sealed class TenantProfileResponse
     public string FullName { get; init; } = string.Empty;
 
     /// <summary>Số điện thoại liên hệ.</summary>
-    public string PhoneNumber { get; init; } = string.Empty;
+    public string? PhoneNumber { get; init; }
 
     /// <summary>Địa chỉ email.</summary>
     public string? Email { get; init; }

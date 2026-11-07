@@ -142,6 +142,9 @@ namespace RoomManagement.Data.Migrations
                     b.Property<string>("PhoneNumber")
                         .HasColumnType("varchar(20)");
 
+                    b.Property<string>("LandlordCode")
+                        .HasColumnType("varchar(10)");
+
                     b.Property<string>("RejectionReason")
                         .HasColumnType("nvarchar(500)");
 
@@ -173,6 +176,11 @@ namespace RoomManagement.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_Users_NormalizedUserName");
 
+                    b.HasIndex("LandlordCode")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Users_LandlordCode")
+                        .HasFilter("LandlordCode IS NOT NULL");
+
                     b.ToTable("Users", "dbo", t =>
                         {
                             t.HasCheckConstraint("CK_Users_ApprovalStatus", "(ApprovalStatus IN (N'Pending', N'Approved', N'Rejected'))");
@@ -183,13 +191,14 @@ namespace RoomManagement.Data.Migrations
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.Contract", b =>
                 {
-                      b.Property<DateOnly?>("ClosedOn")
-                          .HasColumnType("date");
-
-                      b.Property<string>("ClosureReason")
-                          .HasColumnType("nvarchar(1000)");
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("ClosedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ClosureReason")
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("ContractCode")
                         .IsRequired()
@@ -243,7 +252,7 @@ namespace RoomManagement.Data.Migrations
                         .HasDatabaseName("UX_Contracts_Code");
 
                     b.HasIndex("RoomId")
-                          .HasDatabaseName("IX_Contracts_ActiveRoom")
+                        .HasDatabaseName("IX_Contracts_ActiveRoom")
                         .HasFilter("Status = N'Active'");
 
                     b.HasIndex("RoomId", "StartDate", "EndDate")
@@ -369,6 +378,11 @@ namespace RoomManagement.Data.Migrations
                         .HasColumnType("datetime2(0)")
                         .HasDefaultValueSql("SYSUTCDATETIME()", "DF_ContractTenants_CreatedAt");
 
+                    b.Property<bool>("IsContactPerson")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<DateOnly>("JoinDate")
                         .HasColumnType("date");
 
@@ -380,6 +394,11 @@ namespace RoomManagement.Data.Migrations
 
                     b.HasKey("Id")
                         .HasName("PK_ContractTenants");
+
+                    b.HasIndex("ContractId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ContractTenants_ContactPerson")
+                        .HasFilter("IsContactPerson = 1 AND LeaveDate IS NULL");
 
                     b.HasIndex("TenantId")
                         .HasDatabaseName("IX_ContractTenants_TenantId");
@@ -648,6 +667,75 @@ namespace RoomManagement.Data.Migrations
                             t.HasCheckConstraint("CK_InvoiceItems_Amounts", "(Quantity > 0 AND UnitPrice >= 0 AND Amount = CASE WHEN ItemType = N'Discount' THEN -CONVERT(decimal(18,2), ROUND(Quantity * UnitPrice, 2)) ELSE CONVERT(decimal(18,2), ROUND(Quantity * UnitPrice, 2)) END)");
 
                             t.HasCheckConstraint("CK_InvoiceItems_Type", "(ItemType IN (N'Rent', N'Deposit', N'Electricity', N'Water', N'Service', N'Damage', N'Penalty', N'Discount', N'Other'))");
+                        });
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.MemberCommitment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommitmentType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("ConfirmedByUserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid>("ContractTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("EvidenceStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateOnly?>("SignedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("SignerName")
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SignerRelation")
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("SignerTenantProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("SupersededAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("TermsSnapshot")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id")
+                        .HasName("PK_MemberCommitments");
+
+                    b.HasIndex("ConfirmedByUserId")
+                        .HasDatabaseName("IX_MemberCommitments_ConfirmedByUserId");
+
+                    b.HasIndex("SignerTenantProfileId")
+                        .HasDatabaseName("IX_MemberCommitments_SignerTenantProfileId");
+
+                    b.HasIndex("ContractTenantId", "CommitmentType")
+                        .IsUnique()
+                        .HasDatabaseName("UX_MemberCommitments_Current")
+                        .HasFilter("SupersededAt IS NULL");
+
+                    b.ToTable("MemberCommitments", "dbo", t =>
+                        {
+                            t.HasCheckConstraint("CK_MemberCommitments_Evidence", "EvidenceStatus IN (N'PendingUpload', N'Uploaded', N'LegacyPendingEvidence')");
+
+                            t.HasCheckConstraint("CK_MemberCommitments_Confirmation", "(EvidenceStatus = N'LegacyPendingEvidence' AND ConfirmedAt IS NULL AND ConfirmedByUserId IS NULL AND SignedOn IS NULL) OR (EvidenceStatus <> N'LegacyPendingEvidence' AND ConfirmedAt IS NOT NULL AND ConfirmedByUserId IS NOT NULL AND SignedOn IS NOT NULL AND SignerName IS NOT NULL AND TermsSnapshot IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_MemberCommitments_Superseded", "SupersededAt IS NULL OR ConfirmedAt IS NULL OR SupersededAt >= ConfirmedAt");
+
+                            t.HasCheckConstraint("CK_MemberCommitments_Type", "CommitmentType IN (N'RoomRulesAgreement')");
                         });
                 });
 
@@ -1192,6 +1280,23 @@ namespace RoomManagement.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("RoomManagement.Domain.Entities.TenantPhoneChallenge", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uniqueidentifier");
+                    b.Property<int>("Attempts").HasColumnType("int");
+                    b.Property<string>("CodeHash").IsRequired().HasColumnType("nvarchar(max)");
+                    b.Property<DateTime?>("ConsumedAt").HasColumnType("datetime2");
+                    b.Property<DateTime>("CreatedAt").HasColumnType("datetime2");
+                    b.Property<DateTime>("ExpiresAt").HasColumnType("datetime2");
+                    b.Property<string>("LandlordId").IsRequired().HasMaxLength(450).HasColumnType("nvarchar(450)");
+                    b.Property<string>("PhoneNumber").IsRequired().HasMaxLength(20).HasColumnType("nvarchar(20)");
+                    b.Property<byte[]>("RowVersion").IsConcurrencyToken().ValueGeneratedOnAddOrUpdate().HasColumnType("rowversion");
+                    b.Property<DateTime?>("VerifiedAt").HasColumnType("datetime2");
+                    b.HasKey("Id");
+                    b.HasIndex("LandlordId", "PhoneNumber", "CreatedAt");
+                    b.ToTable("TenantPhoneChallenges", "dbo");
+                });
+
             modelBuilder.Entity("RoomManagement.Domain.Entities.TenantProfile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1225,7 +1330,6 @@ namespace RoomManagement.Data.Migrations
                         .HasColumnType("nvarchar(300)");
 
                     b.Property<string>("PhoneNumber")
-                        .IsRequired()
                         .HasColumnType("varchar(20)");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -1237,13 +1341,16 @@ namespace RoomManagement.Data.Migrations
                     b.HasKey("Id")
                         .HasName("PK_TenantProfiles");
 
-                    b.HasIndex("CitizenId")
+                    b.HasIndex("CreatedByUserId", "CitizenId")
                         .IsUnique()
-                        .HasDatabaseName("UX_TenantProfiles_CitizenId")
-                        .HasFilter("CitizenId IS NOT NULL");
+                        .HasDatabaseName("UX_TenantProfiles_Landlord_CitizenId")
+                        .HasFilter("CreatedByUserId IS NOT NULL AND CitizenId IS NOT NULL");
 
                     b.HasIndex("CreatedByUserId")
                         .HasDatabaseName("IX_TenantProfiles_CreatedByUserId");
+
+                    b.HasIndex("PhoneNumber")
+                        .HasDatabaseName("IX_TenantProfiles_PhoneNumber");
 
                     b.HasIndex("UserId")
                         .IsUnique()
@@ -1328,7 +1435,7 @@ namespace RoomManagement.Data.Migrations
 
                     b.ToTable("TenantRequests", "dbo", t =>
                         {
-                            t.HasCheckConstraint("CK_TenantRequests_Category", "(Category IN (N'Repair', N'Billing', N'Question', N'Complaint', N'Other'))");
+                            t.HasCheckConstraint("CK_TenantRequests_Category", "(Category IN (N'Repair', N'Billing', N'Question', N'Complaint', N'Other', N'MoveOutNotice'))");
 
                             t.HasCheckConstraint("CK_TenantRequests_Priority", "(Priority IN (N'Low', N'Medium', N'High'))");
 
@@ -1506,6 +1613,28 @@ namespace RoomManagement.Data.Migrations
                         .HasConstraintName("FK_InvoiceItems_Invoices");
                 });
 
+            modelBuilder.Entity("RoomManagement.Domain.Entities.MemberCommitment", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ConfirmedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("FK_MemberCommitments_ConfirmedBy");
+
+                    b.HasOne("RoomManagement.Domain.Entities.ContractTenant", null)
+                        .WithMany()
+                        .HasForeignKey("ContractTenantId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_MemberCommitments_ContractTenants");
+
+                    b.HasOne("RoomManagement.Domain.Entities.TenantProfile", null)
+                        .WithMany()
+                        .HasForeignKey("SignerTenantProfileId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("FK_MemberCommitments_SignerTenantProfiles");
+                });
+
             modelBuilder.Entity("RoomManagement.Domain.Entities.MeterReading", b =>
                 {
                     b.HasOne("RoomManagement.Domain.Entities.Room", null)
@@ -1633,6 +1762,15 @@ namespace RoomManagement.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_RoomServices_Services");
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.TenantPhoneChallenge", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("LandlordId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.TenantProfile", b =>

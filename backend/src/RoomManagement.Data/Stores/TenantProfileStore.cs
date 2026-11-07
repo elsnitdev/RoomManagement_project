@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using RoomManagement.Business.Exceptions;
 using RoomManagement.Business.Interfaces;
 using RoomManagement.Domain.Entities;
+using RoomManagement.Domain.Enums;
 
 namespace RoomManagement.Data.Stores;
 
@@ -46,12 +47,12 @@ public sealed class TenantProfileStore : ITenantProfileStore
     /// <summary>
     /// Kiểm tra số CCCD/CMND đã tồn tại trong hệ thống hay chưa (chống trùng lặp CCCD toàn hệ thống).
     /// </summary>
-    public async Task<bool> ExistsByCitizenIdAsync(string citizenId, Guid? excludeId = null, CancellationToken ct = default)
+    public async Task<bool> ExistsByCitizenIdAsync(string landlordId, string citizenId, Guid? excludeId = null, CancellationToken ct = default)
     {
         // AnyAsync: tương đương câu lệnh IF EXISTS trong SQL, trả về true nếu có ít nhất 1 bản ghi thỏa mãn
         // (excludeId == null || p.Id != excludeId.Value): nếu đang sửa hồ sơ thì bỏ qua chính hồ sơ đang sửa đó
         return await _dbContext.TenantProfiles
-            .AnyAsync(p => p.CitizenId == citizenId && (excludeId == null || p.Id != excludeId.Value), ct);
+            .AnyAsync(p => p.CreatedByUserId == landlordId && p.CitizenId == citizenId && (excludeId == null || p.Id != excludeId.Value), ct);
     }
 
     /// <summary>
@@ -61,34 +62,15 @@ public sealed class TenantProfileStore : ITenantProfileStore
     /// </summary>
     public async Task<bool> HasAccessPermissionAsync(string landlordId, Guid tenantProfileId, CancellationToken ct = default)
     {
-        // Bước 1: Tìm hồ sơ người thuê theo ID (chỉ đọc nên dùng AsNoTracking)
-        var profile = await _dbContext.TenantProfiles
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == tenantProfileId, ct);
-
-        // Nếu hồ sơ không tồn tại trong DB -> không có quyền (trả về false)
-        if (profile == null)
-        {
-            return false;
-        }
-
-        // Bước 2: Nếu hồ sơ này do chính chủ trọ đang đăng nhập tạo ra -> có quyền (trả về true)
-        if (profile.CreatedByUserId == landlordId)
-        {
-            return true;
-        }
-
-        // Bước 3: Nếu không phải người tạo, kiểm tra xem người thuê này có nằm trong hợp đồng nào
-        // thuộc phòng và khu trọ của chủ trọ này hay không (cú pháp LINQ Query Syntax nối 4 bảng giống SQL JOIN)
-        return await (
-            from ctItem in _dbContext.ContractTenants
-            join c in _dbContext.Contracts on ctItem.ContractId equals c.Id
-            join r in _dbContext.Rooms on c.RoomId equals r.Id
-            join p in _dbContext.Properties on r.PropertyId equals p.Id
-            where ctItem.TenantId == tenantProfileId && p.OwnerUserId == landlordId
-            select ctItem.Id
-        ).AnyAsync(ct); // Trả về true nếu tồn tại ít nhất 1 dòng kết quả
+        return await _dbContext.TenantProfiles.AsNoTracking()
+            .AnyAsync(p => p.Id == tenantProfileId && p.CreatedByUserId == landlordId, ct);
     }
+
+    public Task<bool> IsContractContactAsync(Guid tenantProfileId, CancellationToken ct = default) =>
+        _dbContext.ContractTenants.AnyAsync(link => link.TenantId == tenantProfileId &&
+            link.IsContactPerson && link.LeaveDate == null &&
+            _dbContext.Contracts.Any(c => c.Id == link.ContractId &&
+                (c.Status == ContractStatus.Draft || c.Status == ContractStatus.Active)), ct);
 
     /// <summary>
     /// Lấy danh sách hồ sơ người thuê thuộc quyền quản lý của chủ trọ có phân trang và tìm kiếm theo từ khóa.
@@ -96,21 +78,10 @@ public sealed class TenantProfileStore : ITenantProfileStore
     public async Task<(IReadOnlyList<TenantProfile> Items, int TotalCount)> GetByLandlordAsync(
         string landlordId, string? keyword, int pageIndex, int pageSize, CancellationToken ct = default)
     {
-        // Tạo truy vấn con (Subquery) lấy danh sách các TenantId đã từng ký hợp đồng tại khu trọ của chủ trọ này
-        // Lưu ý: Câu lệnh này chưa chạy xuống DB ngay mà sẽ được EF Core gộp chung vào câu SQL chính bên dưới
-        var contractTenantProfileIds =
-            from ctItem in _dbContext.ContractTenants
-            join c in _dbContext.Contracts on ctItem.ContractId equals c.Id
-            join r in _dbContext.Rooms on c.RoomId equals r.Id
-            join prop in _dbContext.Properties on r.PropertyId equals prop.Id
-            where prop.OwnerUserId == landlordId
-            select ctItem.TenantId;
-
-        // Khởi tạo câu truy vấn lọc hồ sơ thuộc phạm vi quản lý của chủ trọ:
-        // Do chủ trọ tạo (CreatedByUserId == landlordId) HOẶC nằm trong danh sách hợp đồng (contractTenantProfileIds.Contains)
+        // Mỗi chủ trọ chỉ nhìn thấy hồ sơ do mình tạo.
         var query = _dbContext.TenantProfiles
             .AsNoTracking()
-            .Where(p => p.CreatedByUserId == landlordId || contractTenantProfileIds.Contains(p.Id));
+            .Where(p => p.CreatedByUserId == landlordId);
 
         // Nếu người dùng có nhập từ khóa tìm kiếm (khác null và không phải toàn khoảng trắng)
         if (!string.IsNullOrWhiteSpace(keyword))
@@ -121,7 +92,7 @@ public sealed class TenantProfileStore : ITenantProfileStore
             // Nối thêm điều kiện WHERE LIKE '%trimmed%' cho Họ tên, Số điện thoại hoặc Số CCCD
             query = query.Where(p =>
                 p.FullName.Contains(trimmed) ||
-                p.PhoneNumber.Contains(trimmed) ||
+                (p.PhoneNumber != null && p.PhoneNumber.Contains(trimmed)) ||
                 (p.CitizenId != null && p.CitizenId.Contains(trimmed)));
         }
 

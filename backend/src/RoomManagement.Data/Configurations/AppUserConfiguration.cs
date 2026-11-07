@@ -32,6 +32,8 @@ public sealed class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
         // --- Thông tin cá nhân (cho phép null vì tài khoản Admin tạo hộ chưa có) ---
         builder.Property(e => e.FullName).HasColumnType("nvarchar(150)");
         builder.Property(e => e.PhoneNumber).HasColumnType("varchar(20)");
+        builder.Property(e => e.LandlordCode).HasColumnType("varchar(10)");
+        builder.HasIndex(e => e.LandlordCode).HasDatabaseName("UX_Users_LandlordCode").IsUnique().HasFilter("LandlordCode IS NOT NULL");
         builder.Property(e => e.CitizenId).HasColumnType("varchar(20)");
         builder.Property(e => e.DateOfBirth).HasColumnType("date");
         builder.Property(e => e.Address).HasColumnType("nvarchar(300)");

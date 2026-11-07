@@ -26,10 +26,17 @@ public sealed class BillingInvoiceStoreTests
             {
                 var profileId = Guid.NewGuid();
                 seed.TenantProfiles.Add(new TenantProfile { Id = profileId, CreatedByUserId = ownerId,
-                    FullName = $"Người thuê {index}", PhoneNumber = $"090000003{index}", CreatedAt = DateTime.UtcNow });
-                seed.ContractTenants.Add(new ContractTenant { Id = Guid.NewGuid(),
+                    FullName = $"Người thuê {index}", PhoneNumber = $"090000003{index}",
+                    DateOfBirth = new DateOnly(1990, 1, 1), CreatedAt = DateTime.UtcNow });
+                var linkId = Guid.NewGuid();
+                seed.ContractTenants.Add(new ContractTenant { Id = linkId,
                     ContractId = index == 0 ? firstId : secondId, TenantId = profileId,
-                    JoinDate = first.StartDate, CreatedAt = DateTime.UtcNow });
+                    JoinDate = first.StartDate, IsContactPerson = true, CreatedAt = DateTime.UtcNow });
+                seed.MemberCommitments.Add(new MemberCommitment { Id = Guid.NewGuid(),
+                    ContractTenantId = linkId, CommitmentType = CommitmentType.RoomRulesAgreement,
+                    SignedOn = first.StartDate, SignerName = $"Người thuê {index}", TermsSnapshot = "Nội quy.",
+                    ConfirmedAt = DateTime.UtcNow, ConfirmedByUserId = ownerId,
+                    EvidenceStatus = CommitmentEvidenceStatus.PendingUpload, CreatedAt = DateTime.UtcNow });
             }
             await seed.SaveChangesAsync();
         }
@@ -67,11 +74,23 @@ public sealed class BillingInvoiceStoreTests
                     FullName = $"Người thuê {index}", PhoneNumber = $"090000002{index}",
                     PasswordHash = "test-hash", Role = UserRoles.Tenant,
                     IsActive = true, CreatedAt = DateTime.UtcNow });
+            foreach (var (id, email, name) in new[] {
+                (tenantId, "tenant-contract@example.test", "Người thuê thử"),
+                ("contract-test-tenant-2", "tenant2@example.test", "Người thuê 2"),
+                ("contract-test-tenant-3", "tenant3@example.test", "Người thuê 3") })
+                context.TenantProfiles.Add(new TenantProfile { Id = Guid.NewGuid(), UserId = id,
+                    CreatedByUserId = ownerId, FullName = name, Email = email,
+                    PhoneNumber = "0900000019", DateOfBirth = new DateOnly(1990, 1, 1),
+                    CreatedAt = DateTime.UtcNow });
             await context.SaveChangesAsync();
             var store = new ContractStore(context);
             var contract = await context.Contracts.SingleAsync(x => x.Id == contractId);
-            await store.AddUserAsync(contract, "tenant-contract@example.test", today, CancellationToken.None);
-            await store.AddUserAsync(contract, "tenant2@example.test", today, CancellationToken.None);
+            var firstLink = await store.AddUserAsync(contract, "tenant-contract@example.test", today, CancellationToken.None);
+            var secondLink = await store.AddUserAsync(contract, "tenant2@example.test", today, CancellationToken.None);
+            foreach (var link in new[] { firstLink, secondLink })
+                await store.ConfirmCommitmentAsync(contract, link.Id,
+                    new(CommitmentType.RoomRulesAgreement, today, "Người thuê", null, null, "Nội quy."),
+                    ownerId, CancellationToken.None);
             var capacityError = await Assert.ThrowsAsync<BusinessException>(() =>
                 store.AddUserAsync(contract, "tenant3@example.test", today, CancellationToken.None));
             Assert.Equal("TENANT_OCCUPANCY_CONFLICT", capacityError.Code);
@@ -213,9 +232,17 @@ public sealed class BillingInvoiceStoreTests
             contract.EndDate = today.AddDays(-1);
             var tenantId = Guid.NewGuid();
             context.TenantProfiles.Add(new TenantProfile { Id = tenantId, CreatedByUserId = ownerId,
-                FullName = "Người thuê", PhoneNumber = "0900000088", CreatedAt = DateTime.UtcNow });
-            context.ContractTenants.Add(new ContractTenant { Id = Guid.NewGuid(), ContractId = contractId,
-                TenantId = tenantId, JoinDate = contract.StartDate, CreatedAt = DateTime.UtcNow });
+                FullName = "Người thuê", PhoneNumber = "0900000088",
+                DateOfBirth = new DateOnly(1990, 1, 1), CreatedAt = DateTime.UtcNow });
+            var linkId = Guid.NewGuid();
+            context.ContractTenants.Add(new ContractTenant { Id = linkId, ContractId = contractId,
+                TenantId = tenantId, JoinDate = contract.StartDate,
+                IsContactPerson = true, CreatedAt = DateTime.UtcNow });
+            context.MemberCommitments.Add(new MemberCommitment { Id = Guid.NewGuid(),
+                ContractTenantId = linkId, CommitmentType = CommitmentType.RoomRulesAgreement,
+                SignedOn = contract.StartDate, SignerName = "Người thuê", TermsSnapshot = "Nội quy.",
+                ConfirmedAt = DateTime.UtcNow, ConfirmedByUserId = ownerId,
+                EvidenceStatus = CommitmentEvidenceStatus.PendingUpload, CreatedAt = DateTime.UtcNow });
             await context.SaveChangesAsync();
             var error = await Assert.ThrowsAsync<BusinessException>(() =>
                 new ContractStore(context).ActivateSafelyAsync(contract, CancellationToken.None));

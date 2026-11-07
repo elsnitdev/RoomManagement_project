@@ -5,13 +5,20 @@ import '../../styles/billing-live.css'
 
 const money = value => new Intl.NumberFormat('vi-VN').format(Number(value || 0)) + ' ₫'
 const errorOf = error => error?.message || 'Không thể hoàn tất thao tác.'
-const monthLabel = invoice => invoice.billingMonth ? `${invoice.billingMonth}/${invoice.billingYear}` : 'Tiền cọc'
+const monthLabel = invoice => invoice.billingMonth ? `${invoice.billingMonth}/${invoice.billingYear}` : invoice.type === 'Deposit' ? 'Tiền cọc' : 'Hóa đơn khác'
 const statusLabel = { Draft: 'Bản nháp', Issued: 'Đã phát hành', Cancelled: 'Đã hủy', Paid: 'Đã thanh toán', Partial: 'Đã thu một phần', Unpaid: 'Chưa thanh toán', Overdue: 'Quá hạn', Credit: 'Dư tiền' }
 
-export default function LandlordBilling({ invoiceId, navigate }) {
+export default function LandlordBilling({ invoiceId, initialPropertyId, initialRoomId, navigate }) {
+  return invoiceId
+    ? <InvoiceDetailPage key={invoiceId} invoiceId={invoiceId} navigate={navigate} />
+    : <LandlordBillingList key={`${initialPropertyId || ''}:${initialRoomId || ''}`} initialPropertyId={initialPropertyId} initialRoomId={initialRoomId} navigate={navigate} />
+}
+
+function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
   const [properties, setProperties] = useState([])
-  const [propertyId, setPropertyId] = useState('')
+  const [propertyId, setPropertyId] = useState(initialPropertyId || '')
   const [rooms, setRooms] = useState([])
+  const [roomId, setRoomId] = useState(initialRoomId || '')
   const [contracts, setContracts] = useState([])
   const [tab, setTab] = useState('invoices')
   const [month, setMonth] = useState(() => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 7))
@@ -20,7 +27,6 @@ export default function LandlordBilling({ invoiceId, navigate }) {
   const [invoices, setInvoices] = useState([])
   const [meta, setMeta] = useState(null)
   const [page, setPage] = useState(1)
-  const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -44,7 +50,7 @@ export default function LandlordBilling({ invoiceId, navigate }) {
     Promise.all([
       billingApi.rooms(propertyId, controller.signal),
       billingApi.contracts(propertyId, controller.signal),
-      billingApi.invoices(propertyId, page, controller.signal),
+      billingApi.invoices(propertyId, page, controller.signal, roomId || undefined),
     ]).then(([roomResponse, contractResponse, invoiceResponse]) => {
       setRooms(roomResponse.data || [])
       setContracts(contractResponse.data || [])
@@ -53,19 +59,10 @@ export default function LandlordBilling({ invoiceId, navigate }) {
     }).catch(cause => { if (cause.name !== 'AbortError') setError(errorOf(cause)) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [propertyId, page, revision])
-  useEffect(() => {
-    if (!invoiceId) { setDetail(null); return }
-    const controller = new AbortController()
-    setError('')
-    billingApi.invoice(invoiceId, controller.signal).then(setDetail)
-      .catch(cause => { if (cause.name !== 'AbortError') setError(errorOf(cause)) })
-    return () => controller.abort()
-  }, [invoiceId, revision])
+  }, [propertyId, roomId, page, revision])
 
   function changeProperty(value) {
-    setPropertyId(value); setPage(1); setPreview(null); setContractId('')
-    if (invoiceId) navigate('landlord/billing')
+    setPropertyId(value); setRoomId(''); setPage(1); setPreview(null); setContractId('')
   }
   const period = month.split('-').map(Number)
   const monthlyPayload = { contractId, year: period[0], month: period[1] }
@@ -107,14 +104,69 @@ export default function LandlordBilling({ invoiceId, navigate }) {
           {!depositContracts.some(item => Number(item.depositAmount) > 0) && <p className="bill-empty">Chưa có hợp đồng phù hợp.</p>}
         </section>
       </div>
-      <section className="bill-card"><h2>Danh sách hóa đơn</h2>{loading ? <p role="status">Đang tải...</p> : invoices.length ? <div className="bill-table-wrap"><table className="bill-table"><thead><tr><th>Mã / Kỳ</th><th>Phòng</th><th>Hạn thanh toán</th><th>Trạng thái</th><th>Còn phải thu</th><th></th></tr></thead><tbody>{invoices.map(item => <tr key={item.id}><td><strong>{item.code}</strong><small>{monthLabel(item)}</small></td><td>{roomName(item.roomId)}</td><td>{item.dueDate}</td><td>{statusLabel[item.displayStatus] || item.displayStatus}</td><td>{money(item.amountDue)}</td><td><button className="bill-link" type="button" onClick={() => navigate(`landlord/billing/${item.id}`)}>Xem chi tiết</button></td></tr>)}</tbody></table></div> : <p className="bill-empty">Chưa có hóa đơn.</p>}
+      <section className="bill-card"><div className="bill-list-heading"><div><h2>Danh sách hóa đơn</h2>{roomId && <p>Đang xem hóa đơn phòng {roomName(roomId)}.</p>}</div><label>Phòng<select value={roomId} onChange={event => { setRoomId(event.target.value); setPage(1) }}><option value="">Tất cả phòng</option>{rooms.map(room => <option key={room.id} value={room.id}>{room.roomNumber}{room.roomName ? ` · ${room.roomName}` : ''}</option>)}</select></label></div>{loading ? <p role="status">Đang tải...</p> : invoices.length ? <div className="bill-table-wrap"><table className="bill-table"><thead><tr><th>Mã / Kỳ</th><th>Phòng</th><th>Hạn thanh toán</th><th>Trạng thái</th><th>Còn phải thu</th><th></th></tr></thead><tbody>{invoices.map(item => <tr key={item.id}><td><strong>{item.code}</strong><small>{monthLabel(item)}</small></td><td>{roomName(item.roomId)}</td><td>{item.dueDate}</td><td>{statusLabel[item.displayStatus] || item.displayStatus}</td><td>{money(item.amountDue)}</td><td><button className="bill-link" type="button" onClick={() => navigate(`landlord/billing/${item.id}`)}>Xem chi tiết</button></td></tr>)}</tbody></table></div> : <p className="bill-empty">{roomId ? 'Phòng này chưa có hóa đơn.' : 'Chưa có hóa đơn.'}</p>}
         <div className="bill-pagination"><button type="button" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Trang trước</button><span>Trang {page} / {Math.max(1, meta?.totalPages || 1)}</span><button type="button" disabled={page >= (meta?.totalPages || 1)} onClick={() => setPage(value => value + 1)}>Trang sau</button></div>
       </section>
-      {invoiceId && <section className="bill-card bill-detail"><div className="bill-detail-head"><h2>Chi tiết hóa đơn</h2><button type="button" className="bill-link" onClick={() => navigate('landlord/billing')}>Đóng</button></div>{detail ? <><InvoiceSummary summary={detail.summary} roomName={roomName} /><InvoiceItems items={detail.items} /><div className="bill-actions">{detail.summary.status === 'Draft' && <button type="button" className="bill-button" disabled={busy} onClick={() => { if (window.confirm('Phát hành hóa đơn này? Người thuê sẽ nhìn thấy hóa đơn.')) action(() => billingApi.issue(invoiceId), 'Đã phát hành hóa đơn.') }}>Phát hành</button>}{detail.summary.status !== 'Cancelled' && <button type="button" className="bill-button bill-button--danger" disabled={busy} onClick={() => { if (window.confirm('Hủy hóa đơn này? Thao tác không thể hoàn tác.')) action(() => billingApi.cancel(invoiceId), 'Đã hủy hóa đơn.') }}>Hủy hóa đơn</button>}</div></> : <p role="status">Đang tải chi tiết...</p>}</section>}
     </>}
     {error && <p className="bill-error" role="alert">{error}</p>}
     {success && <p className="bill-success" role="status">{success}</p>}
     {selectedContract && <span className="sr-only">Hợp đồng đã chọn: {selectedContract.contractCode}</span>}
+  </div>
+}
+
+function InvoiceDetailPage({ invoiceId, navigate }) {
+  const [detail, setDetail] = useState(null)
+  const [location, setLocation] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [revision, setRevision] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    setError('')
+    billingApi.invoice(invoiceId, controller.signal)
+      .then(response => { if (!controller.signal.aborted) setDetail(response) })
+      .catch(cause => { if (!controller.signal.aborted) setError(errorOf(cause)) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [invoiceId, revision])
+
+  useEffect(() => {
+    if (!detail?.summary?.roomId) return
+    const controller = new AbortController()
+    billingApi.properties(controller.signal).then(async response => {
+      const results = await Promise.allSettled((response.data || []).map(async property => {
+        const rooms = await billingApi.rooms(property.id, controller.signal)
+        const room = (rooms.data || []).find(item => item.id === detail.summary.roomId)
+        return room ? { property, room } : null
+      }))
+      if (!controller.signal.aborted) setLocation(results.find(result => result.status === 'fulfilled' && result.value)?.value || null)
+    }).catch(() => { if (!controller.signal.aborted) setLocation(null) })
+    return () => controller.abort()
+  }, [detail?.summary?.roomId])
+
+  async function action(request, message) {
+    setBusy(true); setError(''); setSuccess('')
+    try { await request(); setSuccess(message); setRevision(value => value + 1) }
+    catch (cause) { setError(errorOf(cause)) }
+    finally { setBusy(false) }
+  }
+
+  const summary = detail?.summary
+  return <div className="bill-page bill-page--detail">
+    <button className="bill-back" type="button" onClick={() => navigate('landlord/billing')}>← Danh sách hóa đơn</button>
+    <header className="bill-header"><div><span>CHI TIẾT HÓA ĐƠN</span><h1>{summary ? summary.code : 'Hóa đơn'}</h1><p>{summary ? `${location?.property.name || 'Khu trọ'} · Phòng ${location?.room.roomNumber || summary.roomId.slice(0, 8)} · ${monthLabel(summary)}` : 'Xem các khoản tiền và trạng thái thanh toán.'}</p></div>{summary && <strong className="bill-detail-status">{statusLabel[summary.displayStatus] || summary.displayStatus}</strong>}</header>
+    {loading && <p className="bill-card" role="status">Đang tải chi tiết hóa đơn…</p>}
+    {error && <p className="bill-error" role="alert">{error} {!summary && <button className="bill-link" type="button" onClick={() => setRevision(value => value + 1)}>Thử lại</button>}</p>}
+    {success && <p className="bill-success" role="status">{success}</p>}
+    {!loading && summary && <>
+      <section className="bill-card" aria-labelledby="bill-detail-title"><div className="bill-detail-head"><h2 id="bill-detail-title">Thông tin hóa đơn</h2>{location && <button className="bill-link" type="button" onClick={() => navigate(`landlord/billing/rooms/${location.property.id}/${location.room.id}`)}>Xem hóa đơn của phòng này</button>}</div><InvoiceSummary summary={summary} roomName={id => id === location?.room.id ? location.room.roomNumber : id} /></section>
+      <section className="bill-card"><h2>Các khoản trên hóa đơn</h2><InvoiceItems items={detail.items} /></section>
+      <div className="bill-actions">{summary.status === 'Draft' && <button type="button" className="bill-button" disabled={busy} onClick={() => { if (window.confirm('Phát hành hóa đơn này? Người thuê sẽ nhìn thấy hóa đơn.')) action(() => billingApi.issue(invoiceId), 'Đã phát hành hóa đơn.') }}>Phát hành</button>}{summary.status !== 'Cancelled' && <button type="button" className="bill-button bill-button--danger" disabled={busy} onClick={() => { if (window.confirm('Hủy hóa đơn này? Thao tác không thể hoàn tác.')) action(() => billingApi.cancel(invoiceId), 'Đã hủy hóa đơn.') }}>Hủy hóa đơn</button>}</div>
+    </>}
   </div>
 }
 

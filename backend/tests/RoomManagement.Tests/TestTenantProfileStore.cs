@@ -16,6 +16,10 @@ internal sealed class TestTenantProfileStore : ITenantProfileStore
 
     // Tập hợp lưu các cặp (LandlordId, ProfileId) giả lập việc người thuê đã ký hợp đồng tại khu trọ của chủ trọ đó
     public HashSet<(string LandlordId, Guid ProfileId)> ContractAccessList { get; } = [];
+    public HashSet<Guid> ContractContactProfiles { get; } = [];
+
+    public Task<bool> IsContractContactAsync(Guid tenantProfileId, CancellationToken ct = default) =>
+        Task.FromResult(ContractContactProfiles.Contains(tenantProfileId));
 
     // Tìm hồ sơ theo ID trong bộ nhớ RAM (Task.FromResult giúp bọc kết quả thường thành kết quả bất đồng bộ Task)
     public Task<TenantProfile?> FindByIdAsync(Guid id, CancellationToken ct = default)
@@ -29,10 +33,10 @@ internal sealed class TestTenantProfileStore : ITenantProfileStore
     }
 
     // Kiểm tra xem có hồ sơ nào trong bộ nhớ đang dùng số CCCD này hay chưa (bỏ qua hồ sơ có Id == excludeId)
-    public Task<bool> ExistsByCitizenIdAsync(string citizenId, Guid? excludeId = null, CancellationToken ct = default)
+    public Task<bool> ExistsByCitizenIdAsync(string landlordId, string citizenId, Guid? excludeId = null, CancellationToken ct = default)
     {
         var exists = Profiles.Values.Any(p =>
-            string.Equals(p.CitizenId, citizenId, StringComparison.OrdinalIgnoreCase) &&
+            p.CreatedByUserId == landlordId && string.Equals(p.CitizenId, citizenId, StringComparison.OrdinalIgnoreCase) &&
             (excludeId == null || p.Id != excludeId.Value));
         return Task.FromResult(exists);
     }
@@ -72,7 +76,7 @@ internal sealed class TestTenantProfileStore : ITenantProfileStore
             var trimmed = keyword.Trim();
             accessible = accessible.Where(p =>
                 p.FullName.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
-                p.PhoneNumber.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                (p.PhoneNumber?.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 (p.CitizenId != null && p.CitizenId.Contains(trimmed, StringComparison.OrdinalIgnoreCase)));
         }
 

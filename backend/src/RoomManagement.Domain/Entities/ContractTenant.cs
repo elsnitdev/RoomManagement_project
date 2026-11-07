@@ -7,5 +7,6 @@ public sealed class ContractTenant
     public Guid TenantId { get; set; }
     public DateOnly JoinDate { get; set; }
     public DateOnly? LeaveDate { get; set; }
+    public bool IsContactPerson { get; set; }
     public DateTime CreatedAt { get; set; }
 }

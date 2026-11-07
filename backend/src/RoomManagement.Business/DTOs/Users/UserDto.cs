@@ -20,6 +20,7 @@ public sealed class UserDto
     /// Email của người dùng.
     /// </summary>
     public string? Email { get; set; }
+    public string? LandlordCode { get; set; }
 
     /// <summary>
     /// Vai trò của người dùng trong hệ thống (Landlord hoặc Tenant).

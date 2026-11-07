@@ -21,6 +21,36 @@ public sealed class TenantProfileServiceTests
     }
 
     [Fact]
+    public async Task CreateProfile_AllowsFamilyMemberWithoutAccountOrContactDetails()
+    {
+        var owner = "family-landlord";
+        var result = await _service.CreateProfileAsync(owner, new CreateTenantProfileDto
+        {
+            FullName = "Thành viên gia đình"
+        });
+        Assert.Null(result.UserId);
+        Assert.Null(result.PhoneNumber);
+        Assert.Null(result.Email);
+        Assert.Equal(owner, result.CreatedByUserId);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_CannotRemoveLastContactMethodFromContractContact()
+    {
+        var owner = "family-landlord";
+        var profile = new TenantProfile
+        {
+            Id = Guid.NewGuid(), CreatedByUserId = owner, FullName = "Đầu mối",
+            PhoneNumber = "0901234567", CreatedAt = DateTime.UtcNow
+        };
+        await _store.AddAsync(profile);
+        _store.ContractContactProfiles.Add(profile.Id);
+        await Assert.ThrowsAsync<AppValidationException>(() => _service.UpdateProfileAsync(owner,
+            profile.Id, new UpdateTenantProfileDto { FullName = "Đầu mối" }));
+        Assert.Equal("0901234567", profile.PhoneNumber);
+    }
+
+    [Fact]
     public async Task CreateProfile_Succeeds_With_UserIdNull_And_CreatedByUserId_Set()
     {
         var landlordId = Guid.NewGuid().ToString();

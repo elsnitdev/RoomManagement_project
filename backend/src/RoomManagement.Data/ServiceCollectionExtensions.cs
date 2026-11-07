@@ -22,6 +22,8 @@ public static class ServiceCollectionExtensions
     services.AddScoped<IUserStore, UserStore>();
     services.AddScoped<ILandlordApprovalStore, LandlordApprovalStore>();
     services.AddScoped<ITenantProfileStore, TenantProfileStore>();
+    services.AddScoped<ITenantRegistrationStore, TenantRegistrationStore>();
+    services.AddScoped<ISmsOtpSender, SmsOtpSender>();
 
     // Lấy thông tin admin từ appsettings
     services.Configure<Seeders.InitialAdminOptions>(configuration.GetSection(Seeders.InitialAdminOptions.SectionName));

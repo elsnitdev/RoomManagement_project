@@ -49,7 +49,7 @@ public sealed class TenantProfileService : ITenantProfileService
         if (trimmedCitizenId != null)
         {
             // Gọi xuống Store kiểm tra xem đã có hồ sơ nào mang số CCCD này chưa
-            var isDuplicate = await _store.ExistsByCitizenIdAsync(trimmedCitizenId, null, ct);
+            var isDuplicate = await _store.ExistsByCitizenIdAsync(landlordId, trimmedCitizenId, null, ct);
             if (isDuplicate)
             {
                 // Ném ngoại lệ xung đột dữ liệu (sẽ trả về HTTP 409 Conflict cho Frontend)
@@ -66,7 +66,7 @@ public sealed class TenantProfileService : ITenantProfileService
             UserId = null, // Tiêu chí quan trọng: Không tạo tài khoản đăng nhập, để UserId = null
             CreatedByUserId = landlordId, // Ghi nhận chủ trọ nào đã tạo hồ sơ này để phân quyền
             FullName = dto.FullName.Trim(),
-            PhoneNumber = dto.PhoneNumber.Trim(),
+            PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber) ? null : dto.PhoneNumber.Trim(),
             // Toán tử 3 ngôi (điều_kiện ? giá_trị_đúng : giá_trị_sai): chuẩn hóa các chuỗi tùy chọn rỗng về null
             Email = string.IsNullOrWhiteSpace(dto.Email) ? null : dto.Email.Trim(),
             CitizenId = trimmedCitizenId,
@@ -169,13 +169,16 @@ public sealed class TenantProfileService : ITenantProfileService
 
         // Bước 2: Kiểm tra tính hợp lệ của dữ liệu cập nhật mới
         TenantProfileRules.Validate(dto);
+        if (string.IsNullOrWhiteSpace(dto.PhoneNumber) && string.IsNullOrWhiteSpace(dto.Email) &&
+            await _store.IsContractContactAsync(id, ct))
+            throw new AppValidationException("Người liên hệ của hợp đồng cần có số điện thoại hoặc email.");
 
         var trimmedCitizenId = string.IsNullOrWhiteSpace(dto.CitizenId) ? null : dto.CitizenId.Trim();
 
         // Bước 3: Chống trùng số CCCD với các hồ sơ khác (truyền 'id' vào tham số excludeId để loại trừ chính hồ sơ đang sửa)
         if (trimmedCitizenId != null)
         {
-            var isDuplicate = await _store.ExistsByCitizenIdAsync(trimmedCitizenId, id, ct);
+            var isDuplicate = await _store.ExistsByCitizenIdAsync(landlordId, trimmedCitizenId, id, ct);
             if (isDuplicate)
             {
                 throw new AppConflictException(
@@ -190,9 +193,13 @@ public sealed class TenantProfileService : ITenantProfileService
                 $"Không tìm thấy hồ sơ người thuê với mã '{id}'.",
                 "TENANT_PROFILE_NOT_FOUND");
 
+        if (profile.UserId is not null &&
+            profile.PhoneNumber != (string.IsNullOrWhiteSpace(dto.PhoneNumber) ? null : dto.PhoneNumber.Trim()))
+            throw new AppValidationException("Không thể đổi số điện thoại của hồ sơ đã có tài khoản. Cần xác minh lại số mới.");
+
         // Bước 5: Gán các giá trị mới vào thực thể (không tự ý tạo tài khoản hay sửa chứng từ hợp đồng)
         profile.FullName = dto.FullName.Trim();
-        profile.PhoneNumber = dto.PhoneNumber.Trim();
+        profile.PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber) ? null : dto.PhoneNumber.Trim();
         profile.Email = string.IsNullOrWhiteSpace(dto.Email) ? null : dto.Email.Trim();
         profile.CitizenId = trimmedCitizenId;
         profile.DateOfBirth = dto.DateOfBirth;

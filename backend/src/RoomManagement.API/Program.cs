@@ -19,6 +19,10 @@ if (builder.Environment.IsDevelopment())
 }
 
 builder.Services.AddRoomManagementData(builder.Configuration);
+if (builder.Environment.IsDevelopment())
+{
+  builder.Services.AddScoped<RoomManagement.Business.Interfaces.ISmsOtpSender, RoomManagement.Data.DevelopmentSmsOtpSender>();
+}
 builder.Services.AddRoomManagementBusiness();
 builder.Services.AddRoomManagementAuthentication(builder.Configuration);
 builder.Services.AddHttpContextAccessor();

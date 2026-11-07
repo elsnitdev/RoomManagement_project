@@ -1,0 +1,1551 @@
+{
+  "info": {
+    "name": "RoomManagement - Hợp đồng gia đình và trạng thái phòng",
+    "description": "Chạy theo thứ tự sau khi đăng nhập bằng chủ trọ đã được duyệt. Collection tự tạo dữ liệu mẫu và lưu ID vào collection variables. Không cần tài khoản Tenant cho các thành viên. Dùng database thử nghiệm.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5185",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "runTag",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "today",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "monthEnd",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "propertyId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "familyRoomId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "emptyRoomId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "contactProfileId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "spouseProfileId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "childProfileId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "extraProfileId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "contractId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "contactLinkId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "spouseLinkId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "childLinkId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nextMonthStart",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nextMonth8",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nextMonth9",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nextMonthEnd",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "renewContractId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "renewContactLinkId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "renewSpouseLinkId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "renewChildLinkId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "moveOutNoticeId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "legacyContractId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Family occupancy flow",
+      "item": [
+        {
+          "name": "01 Tạo khu trọ mẫu",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Khu gia đình Postman {{runTag}}\",\n  \"address\": \"123 Đường Mẫu, TP.HCM\",\n  \"description\": \"Dữ liệu mẫu API hợp đồng nhiều người\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"runTag\", String(Date.now()));",
+                  "pm.collectionVariables.set(\"today\", new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10));",
+                  "pm.collectionVariables.set(\"monthEnd\", new Date(Date.UTC(new Date(Date.now() + 7 * 3600000).getUTCFullYear(), new Date(Date.now() + 7 * 3600000).getUTCMonth() + 1, 0)).toISOString().slice(0, 10));",
+                  "const localNow = new Date(Date.now() + 7 * 3600000);",
+                  "const nextDate = day => new Date(Date.UTC(localNow.getUTCFullYear(), localNow.getUTCMonth() + 1, day)).toISOString().slice(0, 10);",
+                  "pm.collectionVariables.set(\"nextMonthStart\", nextDate(1));",
+                  "pm.collectionVariables.set(\"nextMonth8\", nextDate(8));",
+                  "pm.collectionVariables.set(\"nextMonth9\", nextDate(9));",
+                  "pm.collectionVariables.set(\"nextMonthEnd\", new Date(Date.UTC(localNow.getUTCFullYear(), localNow.getUTCMonth() + 2, 0)).toISOString().slice(0, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"propertyId\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Tạo phòng gia đình tối đa 3 người",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomNumber\": \"GD-{{runTag}}\",\n  \"roomName\": \"Phòng gia đình\",\n  \"floor\": 1,\n  \"area\": 28,\n  \"basePrice\": 3500000,\n  \"maxOccupants\": 3,\n  \"description\": \"Một hợp đồng cho ba người\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"familyRoomId\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Tạo phòng đối chứng còn trống",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomNumber\": \"TR-{{runTag}}\",\n  \"roomName\": \"Phòng chưa có hợp đồng\",\n  \"floor\": 1,\n  \"area\": 20,\n  \"basePrice\": 2500000,\n  \"maxOccupants\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"emptyRoomId\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Tạo profile người liên hệ, không có tài khoản",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/landlord/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Nguyễn Văn Minh\",\n  \"phoneNumber\": \"0901234501\",\n  \"email\": null,\n  \"dateOfBirth\": \"1988-04-12\",\n  \"gender\": \"Male\",\n  \"permanentAddress\": \"Địa chỉ mẫu, TP.HCM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"contactProfileId\", pm.response.json().data.id);",
+                  "if (pm.response.code === 201) pm.test(\"Profile không cần tài khoản\", function () { pm.expect(pm.response.json().data.userId).to.be.null; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 Tạo profile thành viên có email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/landlord/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Trần Thị Lan\",\n  \"email\": \"family.{{runTag}}@example.test\",\n  \"dateOfBirth\": \"1990-08-02\",\n  \"gender\": \"Female\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"spouseProfileId\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 Tạo profile trẻ em không có liên hệ riêng",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/landlord/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Nguyễn Gia An\",\n  \"dateOfBirth\": \"2015-05-10\",\n  \"gender\": \"Other\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"childProfileId\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 Tạo profile người thứ tư để thử vượt sức chứa",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/landlord/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Lê Thị Hà\",\n  \"phoneNumber\": \"0901234502\",\n  \"dateOfBirth\": \"1985-03-14\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"extraProfileId\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 Tạo hợp đồng nháp cho phòng gia đình",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{familyRoomId}}\",\n  \"contractCode\": \"GD-{{runTag}}\",\n  \"startDate\": \"{{today}}\",\n  \"endDate\": \"{{monthEnd}}\",\n  \"monthlyRent\": 3500000,\n  \"depositAmount\": 3500000,\n  \"paymentDueDay\": 5,\n  \"note\": \"Ba người, không yêu cầu tài khoản đăng nhập\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"contractId\", pm.response.json().data.id);",
+                  "if (pm.response.code === 201) pm.test(\"Hợp đồng là bản nháp\", function () { pm.expect(pm.response.json().data.status).to.eql(\"Draft\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 Xem phòng khi hợp đồng còn nháp",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms/{{familyRoomId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Hợp đồng nháp chưa chiếm phòng\", function () { const d = pm.response.json().data; pm.expect(d.status).to.eql(\"Available\"); pm.expect(d.occupants).to.have.length(0); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 Thêm người liên hệ vào hợp đồng",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{contactProfileId}}\",\n  \"joinDate\": \"{{today}}\",\n  \"isContactPerson\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"contactLinkId\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 Thêm thành viên thứ hai",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{spouseProfileId}}\",\n  \"joinDate\": \"{{today}}\",\n  \"isContactPerson\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"spouseLinkId\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12 Thêm thành viên thứ ba không có liên hệ riêng",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{childProfileId}}\",\n  \"joinDate\": \"{{today}}\",\n  \"isContactPerson\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"childLinkId\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13 Xem hợp đồng và số người",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Một hợp đồng có ba profile\", function () { const d = pm.response.json().data; pm.expect(d.memberCount).to.eql(3); pm.expect(d.tenants).to.have.length(3); pm.expect(d.tenants.filter(t => t.isContactPerson)).to.have.length(1); });",
+                  "if (pm.response.code === 200) pm.test(\"Commitments pending\", function () { pm.expect(pm.response.json().data.tenants.every(t => !t.hasConfirmedCommitment)).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13A Kích hoạt thiếu cam kết phải bị từ chối",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/activate"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422\", function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13B Ghi cam kết người liên hệ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/tenants/{{contactLinkId}}/commitments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commitmentType\": \"RoomRulesAgreement\",\n  \"signedOn\": \"{{today}}\",\n  \"signerName\": \"Nguyễn Văn Minh\",\n  \"signerTenantProfileId\": null,\n  \"signerRelation\": null,\n  \"termsSnapshot\": \"Tôi đã đọc và đồng ý nội quy phòng trọ; tiền thuê và hóa đơn tính chung cho phòng.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.test(\"Evidence upload pending\", function () { pm.expect(pm.response.json().data.evidenceStatus).to.eql(\"PendingUpload\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13C Ghi cam kết thành viên thứ hai",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/tenants/{{spouseLinkId}}/commitments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commitmentType\": \"RoomRulesAgreement\",\n  \"signedOn\": \"{{today}}\",\n  \"signerName\": \"Trần Thị Lan\",\n  \"signerTenantProfileId\": null,\n  \"signerRelation\": null,\n  \"termsSnapshot\": \"Tôi đã đọc và đồng ý nội quy phòng trọ; tiền thuê và hóa đơn tính chung cho phòng.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.test(\"Evidence upload pending\", function () { pm.expect(pm.response.json().data.evidenceStatus).to.eql(\"PendingUpload\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13D Cam kết trẻ em do cha ký thay",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/tenants/{{childLinkId}}/commitments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commitmentType\": \"RoomRulesAgreement\",\n  \"signedOn\": \"{{today}}\",\n  \"signerName\": \"Nguyễn Văn Minh\",\n  \"signerTenantProfileId\": \"{{contactProfileId}}\",\n  \"signerRelation\": \"Cha\",\n  \"termsSnapshot\": \"Tôi đã đọc và đồng ý nội quy phòng trọ; tiền thuê và hóa đơn tính chung cho phòng.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.test(\"Evidence upload pending\", function () { pm.expect(pm.response.json().data.evidenceStatus).to.eql(\"PendingUpload\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13E Xem cam kết của trẻ em",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/tenants/{{childLinkId}}/commitments"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Member commitment exists\", function () { pm.expect(pm.response.json().data.length).to.be.above(0); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14 Kích hoạt hợp đồng",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/activate"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Hợp đồng đang hiệu lực\", function () { pm.expect(pm.response.json().data.status).to.eql(\"Active\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15 Xem phòng gia đình đã có ba người",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms/{{familyRoomId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Phòng Occupied với ba người\", function () { const d = pm.response.json().data; pm.expect(d.status).to.eql(\"Occupied\"); pm.expect(d.contractId).to.eql(pm.collectionVariables.get(\"contractId\")); pm.expect(d.occupants).to.have.length(3); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16 Xem phòng đối chứng vẫn trống",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/rooms/{{emptyRoomId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Phòng không hợp đồng vẫn Available\", function () { const d = pm.response.json().data; pm.expect(d.status).to.eql(\"Available\"); pm.expect(d.occupants).to.have.length(0); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17 Thử thêm người thứ tư, phải bị từ chối",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{extraProfileId}}\",\n  \"joinDate\": \"{{today}}\",\n  \"isContactPerson\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409\", function () { pm.response.to.have.status(409); });",
+                  "if (pm.response.code === 409) pm.test(\"Vượt sức chứa\", function () { pm.expect(pm.response.json().code).to.be.a(\"string\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18 Xem danh sách hợp đồng của phòng",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts?roomId={{familyRoomId}}&page=1&pageSize=20"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Danh sách có hợp đồng ba người\", function () { const rows = pm.response.json().data; pm.expect(rows.some(c => c.id === pm.collectionVariables.get(\"contractId\") && c.memberCount === 3)).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19 Gửi report thông báo rời trọ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/move-out-notices",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{contactProfileId}}\",\n  \"title\": \"Thông báo rời phòng\",\n  \"description\": \"Người liên hệ sẽ rời phòng; chủ trọ ghi nhận để xử lý.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) { const d=pm.response.json().data; pm.collectionVariables.set(\"moveOutNoticeId\",d.id); pm.test(\"Server timestamp exists\", function () { pm.expect(d.requestedAt).to.exist; }); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20 Xem danh sách report rời trọ",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/move-out-notices"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Move-out report exists\", function () { pm.expect(pm.response.json().data.some(x => x.id === pm.collectionVariables.get(\"moveOutNoticeId\"))).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21 Chủ trọ xử lý report",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/move-out-notices/{{moveOutNoticeId}}/resolve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resolutionNote\": \"Đã nhận thông báo; hoàn phí và cọc sẽ đối chiếu thủ công.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Report resolved\", function () { pm.expect(pm.response.json().data.status).to.eql(\"Resolved\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22 Đổi người liên hệ ưu tiên",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/contact/{{spouseLinkId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "23 Ghi người liên hệ cũ rời phòng",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}/tenants/{{contactLinkId}}/leave",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leaveDate\": \"{{today}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "24 Xem ngày rời trên hợp đồng",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{contractId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Leave date recorded\", function () { const member = pm.response.json().data.tenants.find(x => x.id === pm.collectionVariables.get(\"contactLinkId\")); pm.expect(member.leaveDate).to.eql(pm.collectionVariables.get(\"today\")); });",
+                  "if (pm.response.code === 200) pm.test(\"Move-out report visible in contract detail\", function () { pm.expect(pm.response.json().data.moveOutNotices.some(x => x.id === pm.collectionVariables.get(\"moveOutNoticeId\"))).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "25 Tạo hợp đồng kỳ sau",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{familyRoomId}}\",\n  \"contractCode\": \"GD2-{{runTag}}\",\n  \"startDate\": \"{{nextMonthStart}}\",\n  \"endDate\": \"{{nextMonthEnd}}\",\n  \"monthlyRent\": 3500000,\n  \"depositAmount\": 3500000,\n  \"paymentDueDay\": 5,\n  \"note\": \"Kỳ mới, tiếp tục ở cùng phòng\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"renewContractId\",pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "26 Thêm người liên hệ kỳ sau",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{renewContractId}}/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{extraProfileId}}\",\n  \"joinDate\": \"{{nextMonthStart}}\",\n  \"isContactPerson\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"renewContactLinkId\",pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27 Người tiếp tục ở sau 7 ngày trống",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{renewContractId}}/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{spouseProfileId}}\",\n  \"joinDate\": \"{{nextMonth8}}\",\n  \"isContactPerson\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"renewSpouseLinkId\",pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "28 Người tiếp tục ở sau 8 ngày trống",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{renewContractId}}/tenants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{childProfileId}}\",\n  \"joinDate\": \"{{nextMonth9}}\",\n  \"isContactPerson\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.collectionVariables.set(\"renewChildLinkId\",pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "29 Cam kết người liên hệ kỳ sau",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{renewContractId}}/tenants/{{renewContactLinkId}}/commitments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commitmentType\": \"RoomRulesAgreement\",\n  \"signedOn\": \"{{today}}\",\n  \"signerName\": \"Lê Thị Hà\",\n  \"signerTenantProfileId\": null,\n  \"signerRelation\": null,\n  \"termsSnapshot\": \"Tôi đã đọc và đồng ý nội quy phòng trọ; tiền thuê và hóa đơn tính chung cho phòng.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.test(\"Ch?ng t? ch? b? sung\", function () { pm.expect(pm.response.json().data.evidenceStatus).to.eql(\"PendingUpload\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "30 Cam kết thành viên kỳ sau",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{renewContractId}}/tenants/{{renewSpouseLinkId}}/commitments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commitmentType\": \"RoomRulesAgreement\",\n  \"signedOn\": \"{{today}}\",\n  \"signerName\": \"Trần Thị Lan\",\n  \"signerTenantProfileId\": null,\n  \"signerRelation\": null,\n  \"termsSnapshot\": \"Tôi đã đọc và đồng ý nội quy phòng trọ; tiền thuê và hóa đơn tính chung cho phòng.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.test(\"Ch?ng t? ch? b? sung\", function () { pm.expect(pm.response.json().data.evidenceStatus).to.eql(\"PendingUpload\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "31 Cam kết trẻ em kỳ sau",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{renewContractId}}/tenants/{{renewChildLinkId}}/commitments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commitmentType\": \"RoomRulesAgreement\",\n  \"signedOn\": \"{{today}}\",\n  \"signerName\": \"Lê Thị Hà\",\n  \"signerTenantProfileId\": \"{{extraProfileId}}\",\n  \"signerRelation\": \"Người giám hộ\",\n  \"termsSnapshot\": \"Tôi đã đọc và đồng ý nội quy phòng trọ; tiền thuê và hóa đơn tính chung cho phòng.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) pm.test(\"Ch?ng t? ch? b? sung\", function () { pm.expect(pm.response.json().data.evidenceStatus).to.eql(\"PendingUpload\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "32 Kích hoạt hợp đồng kỳ sau",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{renewContractId}}/activate"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Renewal is active\", function () { pm.expect(pm.response.json().data.status).to.eql(\"Active\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "33 Xem thời gian ở liên tiếp sau 7 ngày trống",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{renewContractId}}/tenants/{{renewSpouseLinkId}}/tenure"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "34 Xem thời gian ở sau 8 ngày trống",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{renewContractId}}/tenants/{{renewChildLinkId}}/tenure"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "35 Xem hợp đồng kỳ sau",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{renewContractId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Tenure spans included in detail\", function () { const d=pm.response.json().data; pm.expect(d.tenants).to.have.length(3); pm.expect(d.tenants.every(t => Array.isArray(t.tenureSpans))).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Legacy open-ended contract",
+      "description": "Set legacyContractId to an existing Draft or Active contract with endDate=null. Run only against a test database.",
+      "item": [
+        {
+          "name": "Set month-end date on a legacy contract",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/properties/{{propertyId}}/contracts/{{legacyContractId}}/end-date",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endDate\": \"{{monthEnd}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const localNow = new Date(Date.now() + 7 * 3600000);",
+                  "pm.collectionVariables.set(\"monthEnd\", new Date(Date.UTC(localNow.getUTCFullYear(), localNow.getUTCMonth() + 1, 0)).toISOString().slice(0, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) pm.test(\"Month-end date saved\", function () { pm.expect(pm.response.json().data.endDate).to.eql(pm.collectionVariables.get(\"monthEnd\")); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

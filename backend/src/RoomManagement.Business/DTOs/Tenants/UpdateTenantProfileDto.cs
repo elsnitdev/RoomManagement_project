@@ -9,7 +9,7 @@ public sealed class UpdateTenantProfileDto
     public string FullName { get; set; } = string.Empty;
 
     /// <summary>Số điện thoại liên hệ (Bắt buộc, 10 chữ số bắt đầu bằng số 0).</summary>
-    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
 
     /// <summary>Địa chỉ email (Tùy chọn, tối đa 150 ký tự).</summary>
     public string? Email { get; set; }

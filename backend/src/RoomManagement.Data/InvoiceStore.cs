@@ -123,6 +123,8 @@ public sealed class InvoiceStore : IInvoiceStore
             items.Any(x => x.InvoiceId != invoice.Id || x.Quantity <= 0 || x.UnitPrice < 0))
             throw Validation("INVOICE_TOTAL_MISMATCH", "Hóa đơn và các dòng tiền không hợp lệ.");
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {invoice.RoomId}")
+            .AsNoTracking().SingleAsync(ct);
         var owned = await (from contract in _db.Contracts
                            join room in _db.Rooms on contract.RoomId equals room.Id
                            join property in _db.Properties on room.PropertyId equals property.Id
@@ -133,6 +135,12 @@ public sealed class InvoiceStore : IInvoiceStore
                                      : contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active)
                            select contract.Id).AnyAsync(ct);
         if (!owned) throw NotFound();
+        if (invoice.InvoiceType == InvoiceType.Monthly &&
+            await _db.Invoices.AnyAsync(x => x.RoomId == invoice.RoomId &&
+                x.InvoiceType == InvoiceType.Monthly && x.BillingYear == invoice.BillingYear &&
+                x.BillingMonth == invoice.BillingMonth && x.Status != InvoiceStatus.Cancelled, ct))
+            throw new BusinessException(BusinessErrorType.Conflict, "ROOM_MONTH_INVOICE_EXISTS",
+                "Phòng đã có hóa đơn tháng chưa hủy cho kỳ này.");
         _db.Invoices.Add(invoice);
         _db.InvoiceItems.AddRange(items);
         try
@@ -162,6 +170,12 @@ public sealed class InvoiceStore : IInvoiceStore
             ?? throw NotFound();
         if (invoice.Status != InvoiceStatus.Draft)
             throw Invalid("INVOICE_INVALID_STATUS", "Chỉ hóa đơn nháp mới được phát hành.");
+        if (invoice.InvoiceType == InvoiceType.Monthly &&
+            await _db.Invoices.AnyAsync(x => x.Id != invoice.Id && x.RoomId == invoice.RoomId &&
+                x.InvoiceType == InvoiceType.Monthly && x.BillingYear == invoice.BillingYear &&
+                x.BillingMonth == invoice.BillingMonth && x.Status != InvoiceStatus.Cancelled, ct))
+            throw new BusinessException(BusinessErrorType.Conflict, "ROOM_MONTH_INVOICE_EXISTS",
+                "Phòng có hóa đơn tháng khác chưa hủy cho kỳ này.");
         var contract = await _db.Contracts.AsNoTracking().Where(x => x.Id == invoice.ContractId)
             .Select(x => new { x.Status, x.EndDate }).SingleAsync(ct);
         var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(7));

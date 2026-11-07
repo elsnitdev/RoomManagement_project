@@ -41,22 +41,48 @@ public sealed class RoomStore : IRoomStore
             .Select(r => new
             {
                 Room = r,
+                HasCurrentContract = _db.Contracts.Any(c => c.RoomId == r.Id &&
+                    c.Status == ContractStatus.Active && c.StartDate <= today &&
+                    (c.EndDate == null || c.EndDate >= today)),
                 ContractId = _db.Contracts.Where(c => c.RoomId == r.Id && c.Status == ContractStatus.Active &&
-                    c.StartDate <= today && (c.EndDate == null || c.EndDate >= today))
+                    (c.EndDate == null || c.EndDate >= today))
+                    .OrderBy(c => c.StartDate)
                     .Select(c => (Guid?)c.Id).FirstOrDefault()
             })
             .SingleOrDefaultAsync(ct);
         if (row is null) return null;
         var occupants = row.ContractId.HasValue ? await OccupantsAsync(row.ContractId.Value, today, ct) : [];
-        return new RoomResult(row.Room, EffectiveStatus(row.Room.Status, row.ContractId.HasValue), row.ContractId, occupants);
+        var needsContract = !row.HasCurrentContract && await NeedsContractAsync(row.Room.Id, today, ct);
+        return new RoomResult(row.Room, EffectiveStatus(row.Room.Status, occupants.Count > 0), row.ContractId,
+            occupants, OccupancyState(row.ContractId, occupants.Count, needsContract));
     }
+
+    /// <summary>Cảnh báo phòng có thành viên của hợp đồng cũ chưa ghi ngày rời nhưng chưa có hợp đồng hiện hành.</summary>
+    private Task<bool> NeedsContractAsync(Guid roomId, DateOnly today, CancellationToken ct) =>
+        _db.Contracts.AnyAsync(contract => contract.RoomId == roomId &&
+            (contract.Status == ContractStatus.Active || contract.Status == ContractStatus.Expired ||
+             contract.Status == ContractStatus.Terminated) && contract.StartDate <= today &&
+            ((contract.EndDate != null && contract.EndDate < today) ||
+             (contract.ClosedOn != null && contract.ClosedOn < today)) &&
+            _db.ContractTenants.Any(link => link.ContractId == contract.Id && link.LeaveDate == null), ct);
+
+    /// <summary>Chuyển dữ liệu hợp đồng và người thuê thành trạng thái thuê phòng dùng cho API.</summary>
+    private static RoomOccupancyState OccupancyState(Guid? contractId, int occupantCount, bool needsContract) =>
+        occupantCount > 0 ? RoomOccupancyState.Occupied :
+        needsContract ? RoomOccupancyState.NeedsContract :
+        contractId.HasValue ? RoomOccupancyState.ContractedAwaitingMoveIn : RoomOccupancyState.Vacant;
 
     /// <summary>Lấy danh sách người đang ở theo hợp đồng của phòng.</summary>
     private async Task<IReadOnlyList<RoomOccupant>> OccupantsAsync(Guid contractId, DateOnly today, CancellationToken ct) =>
         await (from link in _db.ContractTenants.AsNoTracking()
                join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
                where link.ContractId == contractId && link.JoinDate <= today &&
-                     (link.LeaveDate == null || link.LeaveDate >= today)
+                     (link.LeaveDate == null || link.LeaveDate >= today) &&
+                     _db.MemberCommitments.Any(commitment => commitment.ContractTenantId == link.Id &&
+                         commitment.CommitmentType == CommitmentType.RoomRulesAgreement &&
+                         commitment.SupersededAt == null &&
+                         (commitment.ConfirmedAt != null ||
+                          commitment.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence))
                orderby profile.FullName
                select new RoomOccupant(profile.Id, profile.FullName, link.JoinDate)).ToListAsync(ct);
 
@@ -73,9 +99,22 @@ public sealed class RoomStore : IRoomStore
         {
             query = status.Value switch
             {
-                RoomStatus.Occupied => query.Where(r => _db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active && c.StartDate <= today && (c.EndDate == null || c.EndDate >= today))),
-                RoomStatus.Available => query.Where(r => !_db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active && c.StartDate <= today && (c.EndDate == null || c.EndDate >= today))
-                    && (r.Status == RoomStatus.Available || r.Status == RoomStatus.Occupied)),
+                RoomStatus.Occupied => query.Where(r => _db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active && c.StartDate <= today && (c.EndDate == null || c.EndDate >= today) &&
+                    _db.ContractTenants.Any(t => t.ContractId == c.Id && t.JoinDate <= today &&
+                        (t.LeaveDate == null || t.LeaveDate >= today) &&
+                        _db.MemberCommitments.Any(m => m.ContractTenantId == t.Id &&
+                            m.CommitmentType == CommitmentType.RoomRulesAgreement && m.SupersededAt == null &&
+                            (m.ConfirmedAt != null || m.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence))))),
+                RoomStatus.Available => query.Where(r => !_db.Contracts.Any(c => c.RoomId == r.Id &&
+                    c.Status == ContractStatus.Active &&
+                    (c.EndDate == null || c.EndDate >= today)) &&
+                    !_db.Contracts.Any(c => c.RoomId == r.Id &&
+                        (c.Status == ContractStatus.Active || c.Status == ContractStatus.Expired ||
+                         c.Status == ContractStatus.Terminated) && c.StartDate <= today &&
+                        ((c.EndDate != null && c.EndDate < today) ||
+                         (c.ClosedOn != null && c.ClosedOn < today)) &&
+                        _db.ContractTenants.Any(t => t.ContractId == c.Id && t.LeaveDate == null)) &&
+                    (r.Status == RoomStatus.Available || r.Status == RoomStatus.Occupied)),
                 _ => query.Where(r => r.Status == status.Value
                     && !_db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active && c.StartDate <= today && (c.EndDate == null || c.EndDate >= today)))
             };
@@ -86,14 +125,22 @@ public sealed class RoomStore : IRoomStore
             .Select(r => new
             {
                 Room = r,
-                ContractId = _db.Contracts.Where(c => c.RoomId == r.Id && c.Status == ContractStatus.Active && c.StartDate <= today &&
-                    (c.EndDate == null || c.EndDate >= today)).Select(c => (Guid?)c.Id).FirstOrDefault()
+                HasCurrentContract = _db.Contracts.Any(c => c.RoomId == r.Id &&
+                    c.Status == ContractStatus.Active && c.StartDate <= today &&
+                    (c.EndDate == null || c.EndDate >= today)),
+                ContractId = _db.Contracts.Where(c => c.RoomId == r.Id && c.Status == ContractStatus.Active &&
+                    (c.EndDate == null || c.EndDate >= today)).OrderBy(c => c.StartDate)
+                    .Select(c => (Guid?)c.Id).FirstOrDefault()
             })
             .ToListAsync(ct);
         var results = new List<RoomResult>();
         foreach (var row in rows)
-            results.Add(new RoomResult(row.Room, EffectiveStatus(row.Room.Status, row.ContractId.HasValue), row.ContractId,
-                row.ContractId.HasValue ? await OccupantsAsync(row.ContractId.Value, today, ct) : []));
+        {
+            var occupants = row.ContractId.HasValue ? await OccupantsAsync(row.ContractId.Value, today, ct) : [];
+            var needsContract = !row.HasCurrentContract && await NeedsContractAsync(row.Room.Id, today, ct);
+            results.Add(new RoomResult(row.Room, EffectiveStatus(row.Room.Status, occupants.Count > 0),
+                row.ContractId, occupants, OccupancyState(row.ContractId, occupants.Count, needsContract)));
+        }
         return (results, total);
     }
 

@@ -10,8 +10,8 @@ public sealed class UpdateTenantProfileRequest
     /// <summary>Họ và tên người thuê (Bắt buộc, tối đa 150 ký tự).</summary>
     public string FullName { get; init; } = string.Empty;
 
-    /// <summary>Số điện thoại liên hệ (Bắt buộc, 10 chữ số bắt đầu bằng số 0).</summary>
-    public string PhoneNumber { get; init; } = string.Empty;
+    /// <summary>Số điện thoại liên hệ (tùy chọn; người liên hệ của hợp đồng cần số điện thoại hoặc email).</summary>
+    public string? PhoneNumber { get; init; }
 
     /// <summary>Địa chỉ email (Tùy chọn, tối đa 150 ký tự).</summary>
     public string? Email { get; init; }

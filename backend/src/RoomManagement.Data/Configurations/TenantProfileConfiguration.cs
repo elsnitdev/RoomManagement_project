@@ -32,7 +32,7 @@ public sealed class TenantProfileConfiguration : IEntityTypeConfiguration<Tenant
 
         // IsRequired(): tương đương với NOT NULL trong SQL Server
         builder.Property(e => e.FullName).HasColumnType("nvarchar(150)").IsRequired();
-        builder.Property(e => e.PhoneNumber).HasColumnType("varchar(20)").IsRequired();
+        builder.Property(e => e.PhoneNumber).HasColumnType("varchar(20)");
 
         // Các cột tùy chọn (không có IsRequired -> cho phép NULL trong SQL)
         builder.Property(e => e.Email).HasColumnType("varchar(150)");
@@ -57,9 +57,10 @@ public sealed class TenantProfileConfiguration : IEntityTypeConfiguration<Tenant
         builder.HasIndex(e => e.UserId).HasDatabaseName("UX_TenantProfiles_UserId").IsUnique().HasFilter(@"UserId IS NOT NULL");
 
         // Filtered Unique Index: Chống trùng số CCCD khi CitizenId KHÁC NULL (cho phép nhiều hồ sơ chưa nhập CCCD)
-        builder.HasIndex(e => e.CitizenId).HasDatabaseName("UX_TenantProfiles_CitizenId").IsUnique().HasFilter(@"CitizenId IS NOT NULL");
+        builder.HasIndex(e => new { e.CreatedByUserId, e.CitizenId }).HasDatabaseName("UX_TenantProfiles_Landlord_CitizenId").IsUnique().HasFilter(@"CreatedByUserId IS NOT NULL AND CitizenId IS NOT NULL");
 
         // Index thường trên cột CreatedByUserId để tăng tốc khi lọc danh sách hồ sơ theo từng chủ trọ
         builder.HasIndex(e => e.CreatedByUserId).HasDatabaseName("IX_TenantProfiles_CreatedByUserId");
+        builder.HasIndex(e => e.PhoneNumber).HasDatabaseName("IX_TenantProfiles_PhoneNumber");
     }
 }

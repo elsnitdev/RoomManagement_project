@@ -16,7 +16,7 @@ async function allPages(path, signal) {
   for (let page = 1; ; page += 1) {
     const response = await apiRequest(`${path}?${params({ page, pageSize: 100 })}`, { signal })
     items.push(...(response.data || []))
-    if (page >= (response.meta?.totalPages || 1)) return { data: items }
+    if (response.meta?.totalPages ? page >= response.meta.totalPages : items.length >= (response.meta?.totalItems ?? response.meta?.total ?? items.length) || !response.data?.length) return { data: items }
   }
 }
 
@@ -32,7 +32,7 @@ export const billingApi = {
   createService: (body) => apiRequest('/api/services', { method: 'POST', body }).then(data),
   roomServices: (propertyId, roomId, signal) => apiRequest(`${room(propertyId, roomId)}/services`, { signal }).then(data),
   assignService: (propertyId, roomId, body) => apiRequest(`${room(propertyId, roomId)}/services`, { method: 'POST', body }).then(data),
-  invoices: (propertyId, page = 1, signal) => apiRequest(`${property(propertyId)}/invoices?${params({ page, pageSize: 20 })}`, { signal }),
+  invoices: (propertyId, page = 1, signal, roomId) => apiRequest(`${property(propertyId)}/invoices?${params({ page, pageSize: 20, roomId })}`, { signal }),
   preview: (propertyId, body) => apiRequest(`${property(propertyId)}/invoices/monthly/preview`, { method: 'POST', body }).then(data),
   createMonthly: (propertyId, body) => apiRequest(`${property(propertyId)}/invoices/monthly`, { method: 'POST', body }).then(data),
   createDeposit: (contractId) => apiRequest(`/api/contracts/${id(contractId)}/invoices/deposit`, { method: 'POST' }).then(data),

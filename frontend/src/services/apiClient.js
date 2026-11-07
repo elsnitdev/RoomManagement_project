@@ -1,3 +1,5 @@
+import { readAuthSession } from '../contexts/authSession.js'
+
 const apiBaseUrl = (import.meta.env?.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
 let accessToken = null
@@ -16,6 +18,9 @@ export function setAccessToken(token) {
 }
 
 function errorMessage(data, status) {
+  if (status === 503 && data?.code === 'SMS_NOT_CONFIGURED') {
+    return 'Chưa cấu hình dịch vụ SMS nên chưa thể xác minh số điện thoại. Vui lòng liên hệ quản trị viên.'
+  }
   if (status === 502 || status === 503 || status === 504) {
     return 'Máy chủ chưa sẵn sàng. Vui lòng thử lại sau.'
   }
@@ -44,7 +49,8 @@ export async function apiRequest(path, { method = 'GET', body, headers, signal, 
     }
   }
 
-  if (auth && accessToken) requestHeaders.set('Authorization', `Bearer ${accessToken}`)
+  const token = auth ? readAuthSession()?.accessToken || accessToken : null
+  if (token) requestHeaders.set('Authorization', `Bearer ${token}`)
 
   let response
   try {

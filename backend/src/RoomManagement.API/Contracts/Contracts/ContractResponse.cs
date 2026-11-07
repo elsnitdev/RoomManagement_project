@@ -14,17 +14,20 @@ public sealed record ContractResponse(
       c.PaymentDueDay, c.Status, c.Note);
 }
 
-public sealed record ContractTenantResponse(Guid Id, Guid ContractId, Guid TenantId, DateOnly JoinDate)
+public sealed record ContractTenantResponse(Guid Id, Guid ContractId, Guid TenantId, DateOnly JoinDate,
+    DateOnly? LeaveDate, bool IsContactPerson)
 {
   public static ContractTenantResponse From(ContractTenant tenant) =>
-      new(tenant.Id, tenant.ContractId, tenant.TenantId, tenant.JoinDate);
+      new(tenant.Id, tenant.ContractId, tenant.TenantId, tenant.JoinDate,
+          tenant.LeaveDate, tenant.IsContactPerson);
 }
 
 public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid RoomId, string RoomNumber,
     DateOnly StartDate, DateOnly? EndDate, DateOnly? ClosedOn, string? ClosureReason,
     decimal MonthlyRent, decimal DepositAmount, byte? PaymentDueDay, ContractStatus Status, string? Note,
     IReadOnlyList<ContractTenantInfo> Tenants, decimal OutstandingAmount, decimal DepositHeld, bool HasSettlement,
-    bool HasDraftInvoices)
+    bool HasDraftInvoices, int MemberCount, int CurrentOccupantCount,
+    IReadOnlyList<MoveOutNoticeResponse> MoveOutNotices)
 {
     public static ContractDetailResponse From(ContractDetail detail)
     {
@@ -32,6 +35,37 @@ public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid R
         return new(c.Id, c.ContractCode, c.RoomId, detail.RoomNumber, c.StartDate, c.EndDate,
             c.ClosedOn, c.ClosureReason, c.MonthlyRent, c.DepositAmount, c.PaymentDueDay,
             c.Status, c.Note, detail.Tenants, detail.OutstandingAmount, detail.DepositHeld, detail.HasSettlement,
-            detail.HasDraftInvoices);
+            detail.HasDraftInvoices,
+            detail.Tenants.Count(t => t.LeaveDate == null ||
+                t.LeaveDate >= RoomManagement.Business.Services.VietnamDate.Today),
+            c.Status == ContractStatus.Active && c.StartDate <= RoomManagement.Business.Services.VietnamDate.Today &&
+            (c.EndDate == null || c.EndDate >= RoomManagement.Business.Services.VietnamDate.Today)
+                ? detail.Tenants.Count(t => t.JoinDate <= RoomManagement.Business.Services.VietnamDate.Today &&
+                    (t.LeaveDate == null || t.LeaveDate >= RoomManagement.Business.Services.VietnamDate.Today) &&
+                    (t.HasConfirmedCommitment ||
+                     t.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence)) : 0,
+            (detail.MoveOutNotices ?? []).Select(MoveOutNoticeResponse.From).ToList());
     }
+}
+
+public sealed record MemberCommitmentResponse(Guid Id, Guid ContractTenantId,
+    CommitmentType CommitmentType, DateOnly? SignedOn, string? SignerName,
+    Guid? SignerTenantProfileId, string? SignerRelation, string? TermsSnapshot,
+    DateTime? ConfirmedAt, string? ConfirmedByUserId, CommitmentEvidenceStatus EvidenceStatus,
+    DateTime? SupersededAt, DateTime CreatedAt)
+{
+    public static MemberCommitmentResponse From(MemberCommitment c) =>
+        new(c.Id, c.ContractTenantId, c.CommitmentType, c.SignedOn, c.SignerName,
+            c.SignerTenantProfileId, c.SignerRelation, c.TermsSnapshot,
+            c.ConfirmedAt, c.ConfirmedByUserId, c.EvidenceStatus, c.SupersededAt, c.CreatedAt);
+}
+
+public sealed record MoveOutNoticeResponse(Guid Id, Guid ContractId, Guid RequestedByTenantId,
+    TenantRequestCategory Category, string Title, string Description, TenantRequestStatus Status,
+    DateTime RequestedAt, DateTime? ResolvedAt, string? ResolutionNote)
+{
+    public static MoveOutNoticeResponse From(TenantRequest request) =>
+        new(request.Id, request.ContractId, request.RequestedByTenantId, request.Category,
+            request.Title, request.Description, request.Status, request.RequestedAt,
+            request.ResolvedAt, request.ResolutionNote);
 }

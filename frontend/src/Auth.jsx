@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Brand, Button, Field, Icon } from "./ui";
 import { useAuth } from "./contexts/AuthContext";
+import { checkTenantRegistration, registerTenant, requestTenantOtp, verifyTenantOtp } from "./services/api/authApi";
 
 export default function Auth({ route, navigate }) {
-  const [login, setLogin] = useState({ identity: "", password: "" });
+  const [login, setLogin] = useState({ identity: "", landlordCode: "", password: "" });
   const [registration, setRegistration] = useState({
     userName: "",
     email: "",
@@ -22,11 +23,22 @@ export default function Auth({ route, navigate }) {
   const isPending = route === "pending";
   const { signIn, signOut } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [tenantPhone, setTenantPhone] = useState("");
+  const [tenantLandlordCode, setTenantLandlordCode] = useState("");
+  const [tenantOtp, setTenantOtp] = useState("");
+  const [tenantTestOtp, setTenantTestOtp] = useState("");
+  const [tenantChallengeId, setTenantChallengeId] = useState(null);
+  const [tenantVerified, setTenantVerified] = useState(false);
+  const [tenantPassword, setTenantPassword] = useState("");
+  const [tenantConfirm, setTenantConfirm] = useState("");
+  const [tenantEligible, setTenantEligible] = useState(false);
   const update = (key, value) =>
     setRegistration((current) => ({ ...current, [key]: value }));
   async function submitLogin(event) {
     event.preventDefault();
-    const userNameOrEmail = login.identity.trim();
+    const identity = login.identity.trim();
+    const userNameOrEmail = /^0[0-9]{9}$/.test(identity) && login.landlordCode.trim()
+      ? `${login.landlordCode.trim().toUpperCase()}:${identity}` : identity;
     if (!userNameOrEmail || !login.password) {
       if (!userNameOrEmail && !login.password) {
         setError("Vui lòng nhập tên đăng nhập và mật khẩu.");
@@ -70,6 +82,57 @@ export default function Auth({ route, navigate }) {
     setError("");
     setRegistrationName(registration.fullName);
     navigate("pending");
+  }
+  async function submitTenantRegistration(event) {
+    event.preventDefault();
+    setError("");
+    setIsSubmitting(true);
+    let accountCreated = false;
+    try {
+      if (!tenantEligible) {
+        const code = tenantLandlordCode.trim().toUpperCase();
+        const result = await checkTenantRegistration(code, tenantPhone.trim());
+        if (result.status !== "eligible") {
+          const messages = {
+            profile_not_found: "Chưa có hồ sơ cho số điện thoại này. Vui lòng liên hệ chủ trọ.",
+            ambiguous: "Có nhiều hồ sơ dùng số điện thoại này. Vui lòng liên hệ chủ trọ.",
+            already_registered: "Số điện thoại này đã có tài khoản. Vui lòng đăng nhập.",
+          };
+          setError(messages[result.status] || "Không thể kiểm tra hồ sơ.");
+          return;
+        }
+        const challenge = await requestTenantOtp(code, tenantPhone.trim());
+        setTenantChallengeId(challenge.challengeId);
+        setTenantTestOtp(challenge.testOtp || "");
+        setTenantEligible(true);
+        return;
+      }
+      if (!tenantVerified) {
+        await verifyTenantOtp(tenantLandlordCode.trim().toUpperCase(), tenantPhone.trim(), tenantChallengeId, tenantOtp);
+        setTenantVerified(true);
+        return;
+      }
+      if (tenantPassword !== tenantConfirm) {
+        setError("Mật khẩu nhập lại không khớp.");
+        return;
+      }
+      await registerTenant({ landlordCode: tenantLandlordCode.trim().toUpperCase(), phoneNumber: tenantPhone.trim(),
+        challengeId: tenantChallengeId, password: tenantPassword, confirmPassword: tenantConfirm });
+      accountCreated = true;
+      const result = await signIn({ userNameOrEmail: `${tenantLandlordCode.trim().toUpperCase()}:${tenantPhone.trim()}`, password: tenantPassword });
+      if (result.user.role === "Tenant") navigate("tenant/overview");
+      else setError("Tài khoản được tạo nhưng vai trò trả về không hợp lệ.");
+    } catch (err) {
+      if (accountCreated) {
+        setLogin({ identity: tenantPhone.trim(), landlordCode: tenantLandlordCode.trim().toUpperCase(), password: "" });
+        navigate("login");
+        setError("Tài khoản đã được tạo. Vui lòng đăng nhập bằng số điện thoại và mật khẩu vừa đặt.");
+      } else {
+        setError(err.message || "Không thể đăng ký. Vui lòng thử lại.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   }
   return (
     <div className={`auth-page ${isRegister ? "auth-page--register" : ""}`}>
@@ -143,6 +206,41 @@ export default function Auth({ route, navigate }) {
             >
               Về trang đăng nhập
             </Button>
+          </div>
+        ) : route === "tenant-register" ? (
+          <div className="auth-card">
+            <button className="text-back" type="button" onClick={() => navigate("login")}>← Quay lại đăng nhập</button>
+            <span className="eyebrow">DÀNH CHO NGƯỜI THUÊ</span>
+            <h2>Tạo tài khoản</h2>
+            <p className="auth-subtitle">Nhập mã chủ trọ và số điện thoại trong hồ sơ để xác minh tài khoản.</p>
+            <form onSubmit={submitTenantRegistration}>
+              <Field label="Mã chủ trọ" required>
+                <input required maxLength={10} value={tenantLandlordCode}
+                  onChange={e => { setTenantLandlordCode(e.target.value.toUpperCase()); setTenantEligible(false); setTenantVerified(false); setTenantTestOtp(""); setError(""); }}
+                  placeholder="Ví dụ: L000000001" />
+              </Field>
+              <Field label="Số điện thoại" required>
+                <input required inputMode="tel" autoComplete="tel" pattern="0[0-9]{9}" maxLength={10}
+                  value={tenantPhone} onChange={e => { setTenantPhone(e.target.value); setTenantEligible(false); setTenantVerified(false); setTenantTestOtp(""); setError(""); }}
+                  placeholder="Ví dụ: 0912345678" />
+              </Field>
+              {tenantEligible && !tenantVerified && <Field label={tenantTestOtp ? "Mã thử nghiệm" : "Mã xác minh SMS"} required>
+                <input required inputMode="numeric" pattern={tenantTestOtp ? "[0-9]{4}" : "[0-9]{6}"} maxLength={tenantTestOtp ? 4 : 6} value={tenantOtp}
+                  onChange={e => setTenantOtp(e.target.value)} placeholder={tenantTestOtp ? "Nhập mã 1111" : "Nhập mã 6 chữ số"} />
+              </Field>}
+              {tenantEligible && !tenantVerified && tenantTestOtp &&
+                <p className="notice" role="status">Mã thử nghiệm: <strong>1111</strong>. Chỉ dùng trên máy phát triển; mã này không xác minh quyền sở hữu số điện thoại.</p>}
+              {tenantVerified && <>
+                <Field label="Mật khẩu" required><input required type="password" autoComplete="new-password" minLength={6}
+                  value={tenantPassword} onChange={e => setTenantPassword(e.target.value)} /></Field>
+                <Field label="Nhập lại mật khẩu" required><input required type="password" autoComplete="new-password" minLength={6}
+                  value={tenantConfirm} onChange={e => setTenantConfirm(e.target.value)} /></Field>
+              </>}
+              {error && <p className="form-error" role="alert">{error}</p>}
+              <button className="button button--primary full-width auth-submit" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Đang xử lý..." : tenantVerified ? "Tạo tài khoản và đăng nhập" : tenantEligible ? "Xác nhận mã" : "Kiểm tra hồ sơ"}
+              </button>
+            </form>
           </div>
         ) : isRegister ? (
           <div className="auth-card auth-card--wide">
@@ -284,7 +382,7 @@ export default function Auth({ route, navigate }) {
               Vui lòng nhập thông tin để tiếp tục.
             </p>
             <form onSubmit={submitLogin}>
-              <Field label="Tên đăng nhập hoặc email" required>
+              <Field label="Số điện thoại, tên đăng nhập hoặc email" required>
                 <input
                   required
                   autoComplete="username"
@@ -292,9 +390,13 @@ export default function Auth({ route, navigate }) {
                   onChange={(e) =>
                     setLogin({ ...login, identity: e.target.value })
                   }
-                  placeholder="Nhập tên đăng nhập hoặc email"
+                  placeholder="Nhập số điện thoại, tên đăng nhập hoặc email"
                 />
               </Field>
+              {/^0[0-9]{9}$/.test(login.identity.trim()) && <Field label="Mã chủ trọ" required>
+                <input required value={login.landlordCode} onChange={e => setLogin({ ...login, landlordCode: e.target.value.toUpperCase() })}
+                  placeholder="Nhập mã chủ trọ" />
+              </Field>}
               <Field label="Mật khẩu" required>
                 <div className="password-field">
                   <input
@@ -330,6 +432,10 @@ export default function Auth({ route, navigate }) {
                 {isSubmitting ? "Đang đăng nhập..." : "Đăng nhập"}
               </button>
             </form>
+            <p className="auth-register">
+              Là người thuê?{" "}
+              <button type="button" onClick={() => { setError(""); navigate("tenant-register"); }}>Tạo tài khoản người thuê</button>
+            </p>
             <p className="auth-register">
               Chưa có tài khoản?{" "}
               <button

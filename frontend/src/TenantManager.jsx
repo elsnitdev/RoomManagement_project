@@ -25,7 +25,6 @@ const emptyDraft = {
 
 export default function TenantManager({
   notify,
-  contracts = [],
   navigate,
 }) {
   const [keyword, setKeyword] = useState("");
@@ -110,17 +109,6 @@ export default function TenantManager({
     }
   }, [detailResponse, isEditing, selectedId]);
 
-  // Lấy các hợp đồng liên quan đến hồ sơ người thuê
-  const associatedContracts = selectedTenant
-    ? contracts.filter(
-        (c) =>
-          (c.tenant &&
-            selectedTenant.fullName &&
-            c.tenant.toLowerCase() === selectedTenant.fullName.toLowerCase()) ||
-          c.tenantId === selectedTenant.id,
-      )
-    : [];
-
   function openCreateForm() {
     setSelectedId(null);
     setSelectedSnapshot(null);
@@ -154,6 +142,10 @@ export default function TenantManager({
   }
 
   function openDetail(tenant) {
+    if (navigate) {
+      navigate(`landlord/tenants/${tenant.id}`);
+      return;
+    }
     setShowAddForm(false);
     setIsEditing(false);
     setSelectedId(tenant.id);
@@ -899,56 +891,11 @@ export default function TenantManager({
                     )}
                   </div>
 
-                  {/* DÙNG LẠI KHI LẬP HỢP ĐỒNG (ContractTenants Relationship) */}
-                  <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid #eef1f6" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                      <h3 style={{ fontSize: "14px", margin: 0, color: "#1f2d43", fontWeight: 750 }}>
-                        Hợp đồng đã liên kết ({associatedContracts.length})
-                      </h3>
-                      {navigate && (
-                        <button
-                          className="text-link"
-                          type="button"
-                          onClick={() => navigate("landlord/contracts")}
-                        >
-                          Đi tới danh sách hợp đồng <Icon name="arrow" size={15} />
-                        </button>
-                      )}
-                    </div>
-
-                    {associatedContracts.length > 0 ? (
-                      <div className="responsive-table">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Mã hợp đồng</th>
-                              <th>Phòng</th>
-                              <th>Thời hạn</th>
-                              <th>Trạng thái</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {associatedContracts.map((c) => (
-                              <tr key={c.id}>
-                                <td><strong>{c.id}</strong></td>
-                                <td>{c.room}</td>
-                                <td>{c.start} – {c.end}</td>
-                                <td>
-                                  <Badge kind={c.status === "active" ? "approved" : "pending"}>
-                                    {c.status === "active" ? "Hiệu lực" : "Sắp hết hạn"}
-                                  </Badge>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <p style={{ fontSize: "12px", color: "#64748b", margin: 0 }}>
-                        Hồ sơ này chưa được gán vào hợp đồng nào. Khi lập hợp đồng mới cho bất kỳ phòng nào, bạn có thể chọn hồ sơ này từ danh sách người ở.
-                      </p>
-                    )}
-                  </div>
+                  {navigate && <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid #eef1f6" }}>
+                    <button className="text-link" type="button" onClick={() => navigate(`landlord/tenants/${selectedTenant.id}`)}>
+                      Xem phòng hiện tại và lịch sử hợp đồng <Icon name="arrow" size={15} />
+                    </button>
+                  </div>}
                 </>
               )}
             </>

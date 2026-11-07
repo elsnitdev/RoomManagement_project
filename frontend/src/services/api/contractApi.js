@@ -8,7 +8,7 @@ async function allPages(base, signal) {
   for (let page = 1; ; page += 1) {
     const response = await apiRequest(`${base}?page=${page}&pageSize=100`, { signal })
     items.push(...(response.data || []))
-    if (page >= (response.meta?.totalPages || 1)) return { data: items }
+    if (response.meta?.totalPages ? page >= response.meta.totalPages : items.length >= (response.meta?.totalItems ?? response.meta?.total ?? items.length) || !response.data?.length) return { data: items }
   }
 }
 
@@ -17,6 +17,7 @@ export const contractApi = {
   detail: (propertyId, contractId, signal) => apiRequest(one(propertyId, contractId), { signal }).then(data),
   create: (propertyId, body) => apiRequest(path(propertyId), { method: 'POST', body }).then(data),
   addUser: (propertyId, contractId, body) => apiRequest(`${one(propertyId, contractId)}/users`, { method: 'POST', body }).then(data),
+  addTenant: (propertyId, contractId, body) => apiRequest(`${one(propertyId, contractId)}/tenants`, { method: 'POST', body }).then(data),
   activate: (propertyId, contractId) => apiRequest(`${one(propertyId, contractId)}/activate`, { method: 'POST' }).then(data),
   cancel: (propertyId, contractId) => apiRequest(`${one(propertyId, contractId)}/cancel`, { method: 'POST' }).then(data),
   terminate: (propertyId, contractId, reason) => apiRequest(`${one(propertyId, contractId)}/terminate`, { method: 'POST', body: { reason } }).then(data),

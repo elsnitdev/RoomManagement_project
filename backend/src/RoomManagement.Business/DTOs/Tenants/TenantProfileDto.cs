@@ -18,7 +18,7 @@ public sealed class TenantProfileDto
     public string FullName { get; set; } = string.Empty;
 
     /// <summary>Số điện thoại liên hệ.</summary>
-    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
 
     /// <summary>Địa chỉ email.</summary>
     public string? Email { get; set; }

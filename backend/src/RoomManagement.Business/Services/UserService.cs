@@ -111,6 +111,7 @@ public sealed class UserService : IUserService
             Email = TrimOrNull(dto.Email),
             NormalizedEmail = normalizedEmail,
             Role = assignedRole,
+            LandlordCode = assignedRole == UserRoles.Landlord ? LandlordCodes.New() : null,
             IsActive = true, // Tài khoản do Admin tạo được kích hoạt sẵn để sử dụng ngay
             ApprovalStatus = ApprovalStatuses.Approved, // Admin tạo thì coi như đã được duyệt
             CreatedAt = DateTime.UtcNow
@@ -163,6 +164,7 @@ public sealed class UserService : IUserService
             Email = TrimOrNull(dto.Email),
             NormalizedEmail = Normalize(dto.Email),
             Role = UserRoles.Landlord,                  // Vai trò mong muốn là chủ trọ...
+            LandlordCode = LandlordCodes.New(),
             ApprovalStatus = ApprovalStatuses.Pending,  // ...nhưng phải chờ Admin duyệt
             IsActive = false,                           // Chưa được kích hoạt cho tới khi được duyệt
             CreatedAt = DateTime.UtcNow,

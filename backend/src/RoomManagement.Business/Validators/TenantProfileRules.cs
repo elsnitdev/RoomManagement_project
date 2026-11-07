@@ -9,7 +9,7 @@ namespace RoomManagement.Business.Validators;
 /// <summary>
 /// Nơi định nghĩa các quy tắc kiểm tra tính hợp lệ dữ liệu của Hồ sơ người thuê (TenantProfile):
 /// - FullName: Bắt buộc, không để trống, tối đa 150 ký tự.
-/// - PhoneNumber: Bắt buộc, đúng định dạng số điện thoại Việt Nam (10 chữ số, bắt đầu bằng 0), tối đa 20 ký tự.
+/// - PhoneNumber: Tùy chọn; nếu có phải là số điện thoại Việt Nam hợp lệ.
 /// - Email: Tùy chọn, đúng định dạng email, tối đa 150 ký tự.
 /// - CitizenId: Tùy chọn, đúng 12 chữ số.
 /// - DateOfBirth: Tùy chọn, ngày sinh phải trong quá khứ.
@@ -97,15 +97,9 @@ public static class TenantProfileRules
             throw new AppValidationException($"Họ và tên không được vượt quá {MaxFullNameLength} ký tự.");
         }
 
-        // 2. Kiểm tra Số điện thoại (Bắt buộc)
-        if (string.IsNullOrWhiteSpace(phoneNumber))
-        {
-            throw new AppValidationException("Số điện thoại là bắt buộc và không được để trống.");
-        }
-
-        var trimmedPhone = phoneNumber.Trim();
-        // Kiểm tra độ dài hoặc không khớp biểu thức chính quy (dấu ! nghĩa là phủ định)
-        if (trimmedPhone.Length > MaxPhoneNumberLength || !PhoneNumberPattern.IsMatch(trimmedPhone))
+        // 2. Thành viên gia đình có thể không có số liên hệ riêng.
+        if (!string.IsNullOrWhiteSpace(phoneNumber) &&
+            (phoneNumber.Trim().Length > MaxPhoneNumberLength || !PhoneNumberPattern.IsMatch(phoneNumber.Trim())))
         {
             throw new AppValidationException("Số điện thoại không hợp lệ. Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0.");
         }

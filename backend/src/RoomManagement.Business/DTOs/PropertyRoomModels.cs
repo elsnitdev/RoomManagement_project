@@ -10,5 +10,7 @@ public sealed record CreateRoomInput(string RoomNumber, string? RoomName, int? F
 public sealed record UpdateRoomInput(string RoomNumber, string? RoomName, int? Floor, decimal? Area, decimal BasePrice, int MaxOccupants, string? Description, RoomStatus Status, string RowVersion);
 public sealed record RoomFilter(int Page, int PageSize, string? Search, RoomStatus? Status, Guid? RowId = null, int? Floor = null);
 public sealed record RoomOccupant(Guid TenantId, string FullName, DateOnly JoinDate);
+public enum RoomOccupancyState { Vacant, ContractedAwaitingMoveIn, Occupied, NeedsContract }
 public sealed record RoomResult(Room Room, RoomStatus Status, Guid? ContractId = null,
-    IReadOnlyList<RoomOccupant>? Occupants = null);
+    IReadOnlyList<RoomOccupant>? Occupants = null,
+    RoomOccupancyState OccupancyState = RoomOccupancyState.Vacant);

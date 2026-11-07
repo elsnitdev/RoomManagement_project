@@ -8,6 +8,8 @@ using RoomManagement.API.Contracts.Users;
 using RoomManagement.Business.DTOs.Users;
 using RoomManagement.Business.Exceptions;
 using RoomManagement.Business.Interfaces;
+using RoomManagement.Data;
+using System.Net;
 
 namespace RoomManagement.API.Controllers;
 
@@ -182,5 +184,89 @@ public sealed class AuthController : ControllerBase
             "Chưa triển khai",
             "API đăng ký chung chưa được triển khai. Vui lòng sử dụng /api/auth/register-landlord để đăng ký chủ trọ.",
             code: "NOT_IMPLEMENTED"));
+    }
+
+    [HttpPost("tenant-registration/check")]
+    public async Task<IActionResult> CheckTenantRegistration(
+        [FromBody] CheckTenantRegistrationRequest request,
+        [FromServices] ITenantRegistrationService registration,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(new { status = await registration.CheckAsync(request.LandlordCode, request.PhoneNumber, cancellationToken) });
+        }
+        catch (AppValidationException ex)
+        {
+            return BadRequest(ProblemDetailsHelper.Create(400, "Dữ liệu không hợp lệ", ex.Message, code: "VALIDATION_FAILED"));
+        }
+    }
+
+    [HttpPost("tenant-registration/request-otp")]
+    public async Task<IActionResult> RequestTenantOtp([FromBody] CheckTenantRegistrationRequest request,
+        [FromServices] ITenantRegistrationService registration,
+        [FromServices] ISmsOtpSender smsSender,
+        [FromServices] IWebHostEnvironment environment,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (environment.IsDevelopment() &&
+                (HttpContext.Connection.RemoteIpAddress is null ||
+                 !IPAddress.IsLoopback(HttpContext.Connection.RemoteIpAddress)))
+                return StatusCode(403, ProblemDetailsHelper.Create(403, "Chỉ dùng trên máy phát triển", "OTP thử nghiệm chỉ khả dụng qua kết nối cục bộ.", code: "DEV_OTP_LOCAL_ONLY"));
+            var challengeId = await registration.RequestOtpAsync(request.LandlordCode, request.PhoneNumber, cancellationToken);
+            if (environment.IsDevelopment() && smsSender is DevelopmentSmsOtpSender devSender)
+                return Ok(new { challengeId, expiresInSeconds = 300, testOtp = devSender.LastCode });
+            return Ok(new { challengeId, expiresInSeconds = 300 });
+        }
+        catch (NotSupportedException)
+        {
+            return StatusCode(503, ProblemDetailsHelper.Create(503, "Dịch vụ SMS chưa sẵn sàng", "Dịch vụ xác minh SMS chưa được cấu hình.", code: "SMS_NOT_CONFIGURED"));
+        }
+        catch (AppValidationException ex)
+        {
+            return BadRequest(ProblemDetailsHelper.Create(400, "Dữ liệu không hợp lệ", ex.Message, code: "VALIDATION_FAILED"));
+        }
+        catch (AppConflictException ex)
+        {
+            return Conflict(ProblemDetailsHelper.Create(409, "Không thể gửi mã", ex.Message, code: ex.Code ?? "REGISTRATION_CONFLICT"));
+        }
+    }
+
+    [HttpPost("tenant-registration/verify-otp")]
+    public async Task<IActionResult> VerifyTenantOtp([FromBody] VerifyTenantOtpRequest request,
+        [FromServices] ITenantRegistrationService registration, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await registration.VerifyOtpAsync(request.LandlordCode, request.PhoneNumber, request.ChallengeId, request.Code, cancellationToken);
+            return Ok(new { verified = true });
+        }
+        catch (AppValidationException ex)
+        {
+            return BadRequest(ProblemDetailsHelper.Create(400, "Xác minh thất bại", ex.Message, code: "INVALID_OTP"));
+        }
+    }
+
+    [HttpPost("register-tenant")]
+    public async Task<IActionResult> RegisterTenant(
+        [FromBody] RegisterTenantRequest request,
+        [FromServices] ITenantRegistrationService registration,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var user = await registration.RegisterAsync(request.LandlordCode, request.PhoneNumber, request.ChallengeId, request.Password, request.ConfirmPassword, cancellationToken);
+            return StatusCode(StatusCodes.Status201Created, new { data = UserResponse.FromDto(user) });
+        }
+        catch (AppValidationException ex)
+        {
+            return BadRequest(ProblemDetailsHelper.Create(400, "Dữ liệu không hợp lệ", ex.Message, code: "VALIDATION_FAILED"));
+        }
+        catch (AppConflictException ex)
+        {
+            return Conflict(ProblemDetailsHelper.Create(409, "Không thể đăng ký", ex.Message, code: ex.Code ?? "REGISTRATION_CONFLICT"));
+        }
     }
 }

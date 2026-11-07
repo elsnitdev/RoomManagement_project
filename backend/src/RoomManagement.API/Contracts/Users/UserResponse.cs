@@ -22,6 +22,7 @@ public sealed class UserResponse
     /// Email của người dùng.
     /// </summary>
     public string? Email { get; init; }
+    public string? LandlordCode { get; init; }
 
     /// <summary>
     /// Vai trò đã được cấp (Landlord hoặc Tenant).
@@ -51,6 +52,7 @@ public sealed class UserResponse
         Id = dto.Id,
         UserName = dto.UserName,
         Email = dto.Email,
+        LandlordCode = dto.LandlordCode,
         Role = dto.Role,
         IsActive = dto.IsActive,
         ApprovalStatus = dto.ApprovalStatus,

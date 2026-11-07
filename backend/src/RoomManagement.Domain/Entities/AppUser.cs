@@ -25,6 +25,7 @@ public sealed class AppUser
 
     /// <summary>Số điện thoại liên hệ.</summary>
     public string? PhoneNumber { get; set; }
+    public string? LandlordCode { get; set; }
 
     /// <summary>Số Căn cước công dân (duy nhất trong hệ thống).</summary>
     public string? CitizenId { get; set; }

@@ -10,6 +10,7 @@ import PropertyManagement from "./components/PropertyManagement";
 import RoomManagementPage from "./pages/RoomManagementPage";
 import CreateRoomPage from "./pages/CreateRoomPage";
 import LandlordBilling from "./components/billing/LandlordBilling";
+import LandlordContracts from "./components/contracts/LandlordContracts";
 import TenantBilling from "./components/billing/TenantBilling";
 import AdminServices from "./components/billing/AdminServices";
 import {
@@ -109,10 +110,12 @@ export default function App() {
         ? action === "new"
           ? "Tạo phòng"
           : "Quản lý phòng"
-        : page === "billing" && detailId
+        : page === "billing" && detailId && detailId !== "rooms"
           ? "Chi tiết hóa đơn"
+        : page === "tenants" && detailId
+          ? "Chi tiết người thuê"
         : titleMap[page] ||
-          (route === "register" ? "Đăng ký chủ trọ" : "Đăng nhập");
+          (route === "register" ? "Đăng ký chủ trọ" : route === "tenant-register" ? "Đăng ký người thuê" : "Đăng nhập");
     document.title = `${route.startsWith('tenant/room') ? 'Chỗ ở của tôi' : title} | Nhà Trọ Xanh`;
   }, [route]);
   useEffect(() => {
@@ -273,7 +276,7 @@ export default function App() {
             <span className="breadcrumb">
               Không gian làm việc {activeRole === "tenant" ? <ChevronRight size={15} aria-hidden="true" /> : <Icon name="chevron" size={15} />} {" "}
               <strong>
-                {activeRole === "tenant" && page === "room" ? "Chỗ ở của tôi" : page === "properties" ? propertyPageTitle : page === "billing" && roomId ? "Chi tiết hóa đơn" : titleMap[page]}
+                {activeRole === "tenant" && page === "room" ? "Chỗ ở của tôi" : page === "properties" ? propertyPageTitle : page === "billing" && roomId && roomId !== "rooms" ? "Chi tiết hóa đơn" : titleMap[page]}
               </strong>
             </span>
           </div>
@@ -289,7 +292,7 @@ export default function App() {
               </span>
               <span>
                 <strong>{user?.userName || "Người dùng"}</strong>
-                <small>{activeRole === "admin" ? "Admin" : activeRole === "tenant" ? "Người thuê" : "Chủ trọ"}</small>
+                <small>{activeRole === "admin" ? "Admin" : activeRole === "tenant" ? "Người thuê" : `Chủ trọ · Mã ${user?.landlordCode || "đang cập nhật"}`}</small>
               </span>
             </div>
           </div>
@@ -330,7 +333,9 @@ export default function App() {
               notify={notify}
             />
           ) : activeRole === "landlord" && page === "billing" ? (
-            <LandlordBilling invoiceId={roomId} navigate={navigate} />
+            <LandlordBilling invoiceId={roomId === 'rooms' ? undefined : roomId} initialPropertyId={roomId === 'rooms' ? propertySection : undefined} initialRoomId={roomId === 'rooms' ? roomAction : undefined} navigate={navigate} />
+          ) : activeRole === "landlord" && page === "contracts" ? (
+            <LandlordContracts key={route} routeParts={[roomId, propertySection, roomAction]} navigate={navigate} notify={notify} />
           ) : page === "properties" ? (
             propertySection === "rooms" && roomId ? (
               roomAction === "new" ? (

@@ -10,7 +10,7 @@ public sealed class TenantRequestConfiguration : IEntityTypeConfiguration<Tenant
     {
         builder.ToTable("TenantRequests", "dbo", table =>
         {
-            table.HasCheckConstraint("CK_TenantRequests_Category", @"(Category IN (N'Repair', N'Billing', N'Question', N'Complaint', N'Other'))");
+            table.HasCheckConstraint("CK_TenantRequests_Category", @"(Category IN (N'Repair', N'Billing', N'Question', N'Complaint', N'Other', N'MoveOutNotice'))");
             table.HasCheckConstraint("CK_TenantRequests_Priority", @"(Priority IN (N'Low', N'Medium', N'High'))");
             table.HasCheckConstraint("CK_TenantRequests_Status", @"(Status IN (N'Pending', N'InProgress', N'Resolved'))");
             table.HasCheckConstraint("CK_TenantRequests_ResolvedAt", @"((Status = N'Resolved' AND ResolvedAt IS NOT NULL) OR (Status <> N'Resolved' AND ResolvedAt IS NULL))");
