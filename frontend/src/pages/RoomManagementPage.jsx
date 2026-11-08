@@ -19,7 +19,6 @@ export default function RoomManagementPage({ propertyId, navigate, notify }) {
   const [rowId, setRowId] = useState('')
   const [floor, setFloor] = useState('')
   const [editingRoom, setEditingRoom] = useState(null)
-  const [selectedRoom, setSelectedRoom] = useState(null)
   const [pendingDelete, setPendingDelete] = useState(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -65,17 +64,8 @@ export default function RoomManagementPage({ propertyId, navigate, notify }) {
     }
   }
 
-  async function openRoomDetail(roomId) {
-    setBusy(true)
-    setActionError('')
-    try {
-      const response = await getRoom(propertyId, roomId)
-      setSelectedRoom(response.data)
-    } catch (cause) {
-      setActionError(messageOf(cause))
-    } finally {
-      setBusy(false)
-    }
+  function openRoomDetail(roomId) {
+    navigate(`landlord/properties/${propertyId}/rooms/${roomId}`)
   }
 
   function askDeleteRoom(event, room) {
@@ -124,7 +114,6 @@ export default function RoomManagementPage({ propertyId, navigate, notify }) {
             </header>
             {!property.isActive && <p className="pm-inactive-note"><AlertTriangle size={17} aria-hidden="true" /> Khu trọ đang tạm ngừng. Hãy kích hoạt khu trọ trước khi tạo phòng.</p>}
             {actionError && <p className="form-error pm-action-error" role="alert">{actionError}</p>}
-            {selectedRoom && <section className="content-card pm-real-room-detail" aria-labelledby="pm-real-room-title"><div className="pm-real-room-head"><div><span className="pm-eyebrow">CHI TIẾT PHÒNG · {property.name}</span><h2 id="pm-real-room-title">Phòng {selectedRoom.roomNumber}</h2><p>{selectedRoom.roomName || 'Chưa đặt tên'} · {roomRows.find(row => row.id === selectedRoom.rowId)?.name || 'Chưa có dãy'} · {selectedRoom.floor == null ? 'Chưa có tầng' : selectedRoom.floor === 0 ? 'Tầng trệt' : `Tầng ${selectedRoom.floor}`}</p></div><button type="button" className="pm-contract-create-link" onClick={() => setSelectedRoom(null)}>Đóng chi tiết</button></div><div className="pm-real-room-facts"><span>Giá thuê: <strong>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(selectedRoom.basePrice)}</strong></span><span>Diện tích: <strong>{selectedRoom.area ? `${selectedRoom.area} m²` : 'Chưa cập nhật'}</strong></span><span>Sức chứa: <strong>{selectedRoom.maxOccupants} người</strong></span></div>{selectedRoom.description && <p>{selectedRoom.description}</p>}<div className="pm-real-room-actions">{selectedRoom.status === 'Available' && <button type="button" className="pm-contract-create-link" onClick={() => navigate(`landlord/contracts/new/${propertyId}/${selectedRoom.id}`)}>Tạo hợp đồng cho phòng này</button>}{selectedRoom.contractId && <button type="button" className="pm-contract-create-link" onClick={() => navigate(`landlord/contracts/${propertyId}/${selectedRoom.contractId}`)}>Xem hợp đồng hiện tại</button>}<button type="button" className="pm-contract-create-link" onClick={() => navigate(`landlord/billing/rooms/${propertyId}/${selectedRoom.id}`)}>Xem hóa đơn phòng</button></div></section>}
             {editingRoom && <RoomForm key={editingRoom.id} propertyId={propertyId} initial={editingRoom} onCancel={() => setEditingRoom(null)} onSaved={() => { setEditingRoom(null); roomsQuery.reload(); notify('Đã cập nhật phòng.') }} />}
             <section className="pm-room-panel content-card" aria-labelledby="pm-rooms-title">
               <div className="pm-section-heading pm-room-heading">

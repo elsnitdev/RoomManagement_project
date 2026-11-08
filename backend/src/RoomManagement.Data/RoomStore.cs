@@ -161,6 +161,7 @@ public sealed class RoomStore : IRoomStore
     /// <inheritdoc />
     public async Task<string?> GetDeleteBlockerAsync(Guid roomId, CancellationToken ct)
     {
+        if (await _db.RoomImages.AnyAsync(i => i.RoomId == roomId, ct)) return "ROOM_HAS_IMAGES";
         if (await _db.Contracts.AnyAsync(c => c.RoomId == roomId, ct)) return "ROOM_HAS_CONTRACTS";
         if (await _db.RoomServices.AnyAsync(s => s.RoomId == roomId, ct)) return "ROOM_HAS_SERVICES";
         if (await _db.MeterReadings.AnyAsync(m => m.RoomId == roomId, ct)) return "ROOM_HAS_METER_READINGS";

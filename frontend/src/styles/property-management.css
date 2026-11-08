@@ -181,3 +181,58 @@
 .pm-room-row-item form { flex: 1; }
 .pm-room-row-item input { min-width: 120px; flex: 1; min-height: 42px; border: 1px solid #d8e2ee; border-radius: 8px; padding: 0 10px; }
 .pm-room-row-actions { margin-left: auto; }
+
+/* Property overview: one readable horizontal row per property. */
+.pm-property-grid{grid-template-columns:1fr;gap:11px}
+.pm-property-card{display:grid;grid-template-columns:48px minmax(0,1fr) auto auto;align-items:center;gap:18px;padding:17px 20px;background:#fff}
+.pm-property-card .pm-card-icon{width:48px;height:48px}
+.pm-property-card-main{min-width:0}
+.pm-property-card h3{margin:0 0 5px;font-size:16px}
+.pm-property-card .pm-address{display:flex;align-items:flex-start;gap:5px;min-height:0;margin:0;font-size:12px;overflow-wrap:anywhere}
+.pm-property-card .pm-address svg{flex:none;margin-top:2px}
+.pm-property-card .pm-description{margin:5px 0 0;-webkit-line-clamp:1}
+.pm-property-card-meta{display:grid;justify-items:end;gap:8px;min-width:125px}
+.pm-property-card-meta>span:last-child{color:#8a9aaf;font-size:11px;white-space:nowrap}
+.pm-property-card .pm-text-action[aria-expanded="true"] svg{transform:rotate(180deg)}
+.pm-property-card-reveal{grid-column:1/-1;display:grid;grid-template-rows:0fr;margin-top:-18px;opacity:0;visibility:hidden;transition:grid-template-rows .28s ease,margin-top .28s ease,opacity .24s ease,visibility .28s}
+.pm-property-card-reveal.is-open{grid-template-rows:1fr;margin-top:0;opacity:1;visibility:visible}
+.pm-property-card-reveal-inner{min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid #e8edf4}
+.pm-property-card-reveal-inner>div{padding-top:15px;min-width:0}
+.pm-property-card-reveal-inner>div>span{color:#8090a5;font-size:11px;font-weight:750}
+.pm-property-card-reveal-inner p{margin:5px 0 0;color:#52657d;font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.pm-property-card-reveal-inner .pm-secondary-action{flex:none;margin-top:15px}
+.pm-text-action,.pm-secondary-action,.pm-primary-action,.pm-table-link{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;border-radius:9px;padding:8px 12px;font-size:12px;font-weight:800;white-space:nowrap;cursor:pointer}
+.pm-text-action{border:0;background:#edf4ff;color:#1d4ed8}
+.pm-text-action:hover,.pm-secondary-action:hover,.pm-table-link:hover{background:#dbeafe}
+.pm-secondary-action,.pm-table-link{border:1px solid #cbdcf5;background:#fff;color:#1d4ed8}
+.pm-primary-action{border:1px solid #1d4ed8;background:#1d4ed8;color:#fff}
+.pm-primary-action:hover:not(:disabled){background:#1e40af}
+.pm-primary-action:disabled{opacity:.5;cursor:not-allowed}
+.pm-text-action:focus-visible,.pm-secondary-action:focus-visible,.pm-primary-action:focus-visible,.pm-table-link:focus-visible,.pm-detail-toggle:focus-visible{outline:3px solid #78a7f1;outline-offset:2px}
+.pm-detail-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:49px;padding:12px 17px;border:1px solid #cbdcf5;border-radius:10px;background:#f4f8ff;color:#2458a8;text-align:left;font-size:13px;font-weight:800;cursor:pointer}
+.pm-detail-toggle svg{transition:transform .22s ease}
+.pm-detail-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+.pm-details-reveal{display:grid;grid-template-rows:0fr;margin-top:-21px;opacity:0;visibility:hidden;transition:grid-template-rows .3s ease,margin-top .3s ease,opacity .25s ease,visibility .3s}
+.pm-details-reveal.is-open{grid-template-rows:1fr;margin-top:0;opacity:1;visibility:visible}
+.pm-details-reveal-inner{min-height:0;overflow:hidden}
+.pm-details-reveal .pm-detail-card{margin-top:1px}
+.pm-billing-panel,.pm-management-panel{padding:24px}
+.pm-billing-panel .pm-section-heading{align-items:center}
+.pm-billing-grid,.pm-management-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pm-billing-stat,.pm-management-grid>div{min-width:0;display:grid;align-content:start;justify-items:start;gap:9px;padding:16px;border:1px solid #e2eaf4;border-radius:11px;background:#f8fbff}
+.pm-billing-stat>span,.pm-management-grid>div>span{color:#71839c;font-size:11px;font-weight:750}
+.pm-billing-stat strong,.pm-management-grid strong{color:#223b5c;font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+.pm-management-grid strong{display:flex;align-items:center;gap:7px}
+.pm-management-grid strong svg{color:#597eb9;flex:none}
+.pm-billing-bottom{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:16px}
+.pm-billing-bottom p{margin:0;color:#65768e;font-size:12px;line-height:1.6}
+.pm-inline-error{margin:12px 0 0;color:#9d3834;font-size:12px}
+.pm-inline-error button{padding:0;border:0;background:none;color:#1d4ed8;text-decoration:underline;cursor:pointer}
+.pm-management-panel .pm-inactive-note{margin:14px 0 0}
+.pm-page--detail .pm-room-panel .pm-room-heading{padding-bottom:18px;margin-bottom:20px;border-bottom:1px solid #edf1f6}
+.pm-page--detail .pm-room-panel .pm-toolbar{flex-wrap:wrap;justify-content:flex-start}
+.pm-page--detail .pm-room-panel .pm-search{margin-right:auto}
+.pm-page--detail .pm-room-panel .pm-table-link{min-height:34px;padding:6px 9px;border:0;background:#edf4ff;font-size:11px}
+@media(max-width:900px){.pm-property-card{grid-template-columns:48px minmax(0,1fr) auto}.pm-property-card .pm-text-action{grid-column:2/-1;justify-self:end}.pm-billing-grid,.pm-management-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.pm-property-card{grid-template-columns:45px minmax(0,1fr);gap:10px 12px;padding:15px}.pm-property-card .pm-card-icon{width:45px;height:45px}.pm-property-card-meta{grid-column:2;justify-items:start;display:flex;align-items:center;flex-wrap:wrap;gap:8px}.pm-property-card .pm-text-action{grid-column:2;justify-self:start}.pm-property-card-reveal{margin-top:-10px}.pm-property-card-reveal.is-open{margin-top:0}.pm-property-card-reveal-inner{align-items:flex-start;flex-direction:column;gap:10px}.pm-property-card-reveal-inner .pm-secondary-action{margin:0 0 4px;white-space:normal;text-align:left}.pm-billing-panel,.pm-management-panel{padding:18px}.pm-billing-grid,.pm-management-grid{grid-template-columns:1fr}.pm-billing-bottom{align-items:flex-start;flex-direction:column}.pm-page--detail .pm-room-panel .pm-room-heading{align-items:flex-start;flex-direction:column}.pm-page--detail .pm-room-panel .pm-heading-actions{justify-content:flex-start}}
+@media(prefers-reduced-motion:reduce){.pm-details-reveal,.pm-detail-toggle svg,.pm-property-card-reveal,.pm-property-card .pm-text-action svg{transition:none}}

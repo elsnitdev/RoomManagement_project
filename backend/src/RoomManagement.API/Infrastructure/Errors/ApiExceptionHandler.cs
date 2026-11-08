@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
+using Azure;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using RoomManagement.Business.Errors;
@@ -32,6 +33,8 @@ public sealed class ApiExceptionHandler : IExceptionHandler
           (StatusCodes.Status400BadRequest, "Dữ liệu yêu cầu không hợp lệ", business.Code),
       SqlException { Number: 1205 } =>
           (StatusCodes.Status409Conflict, "Dữ liệu bị xung đột", "CONCURRENT_UPDATE_CONFLICT"),
+      RequestFailedException =>
+          (StatusCodes.Status503ServiceUnavailable, "Kho ảnh chưa sẵn sàng", "BLOB_STORAGE_UNAVAILABLE"),
       _ => (StatusCodes.Status500InternalServerError, "Lỗi hệ thống", "INTERNAL_ERROR")
     };
 

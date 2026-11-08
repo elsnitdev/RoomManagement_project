@@ -8,6 +8,7 @@ import Tenant from "./Tenant";
 import Profile from "./Profile";
 import PropertyManagement from "./components/PropertyManagement";
 import RoomManagementPage from "./pages/RoomManagementPage";
+import RoomDetailPage from "./pages/RoomDetailPage";
 import CreateRoomPage from "./pages/CreateRoomPage";
 import LandlordBilling from "./components/billing/LandlordBilling";
 import LandlordContracts from "./components/contracts/LandlordContracts";
@@ -109,7 +110,7 @@ export default function App() {
       page === "properties" && section === "rooms"
         ? action === "new"
           ? "Tạo phòng"
-          : "Quản lý phòng"
+          : action ? "Chi tiết phòng" : "Quản lý phòng"
         : page === "billing" && detailId && detailId !== "rooms"
           ? "Chi tiết hóa đơn"
         : page === "tenants" && detailId
@@ -168,7 +169,7 @@ export default function App() {
     propertySection === "rooms"
       ? roomAction === "new"
         ? "Tạo phòng"
-        : "Quản lý phòng"
+        : roomAction ? "Chi tiết phòng" : "Quản lý phòng"
       : titleMap[page];
   const items = activeRole === "admin" ? adminNav : activeRole === "tenant" ? tenantNav : landlordNav;
   return (
@@ -342,6 +343,14 @@ export default function App() {
                 <CreateRoomPage
                   key={roomId}
                   propertyId={roomId}
+                  navigate={navigate}
+                  notify={notify}
+                />
+              ) : roomAction ? (
+                <RoomDetailPage
+                  key={`${roomId}:${roomAction}`}
+                  propertyId={roomId}
+                  roomId={roomAction}
                   navigate={navigate}
                   notify={notify}
                 />

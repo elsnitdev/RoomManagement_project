@@ -29,6 +29,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentLandlord, AuthenticatedLandlord>();
 builder.Services.AddScoped<PropertyService>();
 builder.Services.AddScoped<RoomService>();
+builder.Services.AddScoped<RoomImageService>();
+builder.Services.AddHostedService<BlobCleanupWorker>();
 builder.Services.AddScoped<RoomBatchService>();
 builder.Services.AddScoped<ContractService>();
 builder.Services.AddScoped<BillingInputService>();

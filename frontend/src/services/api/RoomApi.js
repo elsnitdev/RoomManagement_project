@@ -1,5 +1,6 @@
 import { apiRequest } from '../apiClient'
 import { invalidateApiCache } from '../apiCache'
+import { readAuthSession } from '../../contexts/authSession.js'
 
 const propertyPath = propertyId => `/api/properties/${encodeURIComponent(propertyId)}`
 const roomsPath = propertyId => `${propertyPath(propertyId)}/rooms`
@@ -48,4 +49,33 @@ export async function updateRoom(propertyId, roomId, data) {
 export async function deleteRoom(propertyId, roomId) {
   await apiRequest(roomPath(propertyId, roomId), { method: 'DELETE' })
   invalidateApiCache('rooms')
+}
+
+const imagesPath = (propertyId, roomId) => `${roomPath(propertyId, roomId)}/images`
+
+export async function listRoomImages(propertyId, roomId) {
+  return (await apiRequest(imagesPath(propertyId, roomId))).data
+}
+
+export async function uploadRoomImage(propertyId, roomId, file) {
+  const body = new FormData()
+  body.append('file', file)
+  return (await apiRequest(imagesPath(propertyId, roomId), { method: 'POST', body })).data
+}
+
+export async function deleteRoomImage(propertyId, roomId, imageId) {
+  await apiRequest(`${imagesPath(propertyId, roomId)}/${encodeURIComponent(imageId)}`, { method: 'DELETE' })
+}
+
+export async function reorderRoomImages(propertyId, roomId, imageIds) {
+  await apiRequest(`${imagesPath(propertyId, roomId)}/order`, { method: 'PUT', body: { imageIds } })
+}
+
+export async function loadRoomImage(propertyId, roomId, imageId, signal) {
+  const base = (import.meta.env?.VITE_API_BASE_URL || '').replace(/\/$/, '')
+  const response = await fetch(`${base}${imagesPath(propertyId, roomId)}/${encodeURIComponent(imageId)}/content`, {
+    headers: { Authorization: `Bearer ${readAuthSession()?.accessToken || ''}` }, signal,
+  })
+  if (!response.ok) throw new Error(`Không tải được ảnh (${response.status}).`)
+  return URL.createObjectURL(await response.blob())
 }

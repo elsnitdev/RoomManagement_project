@@ -15,6 +15,8 @@ public sealed class RoomManagementDbContext : DbContext
 public DbSet<TenantProfile> TenantProfiles => Set<TenantProfile>();
 public DbSet<Property> Properties => Set<Property>();
 public DbSet<Room> Rooms => Set<Room>();
+public DbSet<RoomImage> RoomImages => Set<RoomImage>();
+public DbSet<BlobCleanupJob> BlobCleanupJobs => Set<BlobCleanupJob>();
 public DbSet<RoomRow> RoomRows => Set<RoomRow>();
 public DbSet<RoomNumberCounter> RoomNumberCounters => Set<RoomNumberCounter>();
 public DbSet<RoomBatchSubmission> RoomBatchSubmissions => Set<RoomBatchSubmission>();

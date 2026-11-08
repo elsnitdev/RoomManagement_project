@@ -122,6 +122,7 @@ public sealed class RoomService
                 "ROOM_HAS_CONTRACTS" => "Phòng còn hợp đồng.",
                 "ROOM_HAS_SERVICES" => "Phòng còn dịch vụ.",
                 "ROOM_HAS_METER_READINGS" => "Phòng còn chỉ số điện nước.",
+                "ROOM_HAS_IMAGES" => "Hãy xóa ảnh phòng trước khi xóa phòng.",
                 _ => "Phòng còn dữ liệu liên quan."
             };
             throw new BusinessException(BusinessErrorType.Conflict, blocker, message);

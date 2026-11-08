@@ -100,12 +100,12 @@ public sealed class ContractStore : IContractStore
     var roomNumber = await _db.Rooms.Where(r => r.Id == contract.RoomId).Select(r => r.RoomNumber).SingleAsync(ct);
 
     var tenantRows = await (from link in _db.ContractTenants.AsNoTracking()
-                         join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
-                         where link.ContractId == contract.Id &&
-                             (tenantUserId == null || profile.UserId == tenantUserId)
-                         orderby link.JoinDate, link.Id
-                         select new ContractTenantInfo(link.Id, profile.Id, profile.UserId, profile.FullName,
-                             profile.PhoneNumber, profile.Email, link.JoinDate, link.LeaveDate, link.IsContactPerson)).ToListAsync(ct);
+                            join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
+                            where link.ContractId == contract.Id &&
+                                (tenantUserId == null || profile.UserId == tenantUserId)
+                            orderby link.JoinDate, link.Id
+                            select new ContractTenantInfo(link.Id, profile.Id, profile.UserId, profile.FullName,
+                                profile.PhoneNumber, profile.Email, link.JoinDate, link.LeaveDate, link.IsContactPerson)).ToListAsync(ct);
     var linkIds = tenantRows.Select(x => x.Id).ToArray();
     var currentCommitments = await _db.MemberCommitments.AsNoTracking()
         .Where(x => linkIds.Contains(x.ContractTenantId) && x.SupersededAt == null &&
@@ -383,13 +383,17 @@ public sealed class ContractStore : IContractStore
         .Select(c => c.Status).SingleAsync(ct);
     if (currentStatus != ContractStatus.Draft)
       throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ALREADY_CHANGED", "Hợp đồng đã thay đổi trạng thái.");
+
     if (contract.EndDate is { } end && end < RoomManagement.Business.Services.VietnamDate.Today)
       throw new BusinessException(BusinessErrorType.InvalidOperation,
           "CONTRACT_ALREADY_EXPIRED", "Hợp đồng đã quá ngày kết thúc.");
+
     if (room.Status != RoomStatus.Available || await HasOverlappingContractAsync(contract, ct))
       throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ROOM_CONFLICT", "Phòng đã có hợp đồng trùng thời gian hoặc không khả dụng.");
+
     var tenants = await _db.ContractTenants.Where(x => x.ContractId == contract.Id && x.LeaveDate == null)
         .Select(x => x.TenantId).ToListAsync(ct);
+
     var contactCount = await (from link in _db.ContractTenants
                               join profile in _db.TenantProfiles on link.TenantId equals profile.Id
                               where link.ContractId == contract.Id && link.IsContactPerson &&
@@ -397,14 +401,19 @@ public sealed class ContractStore : IContractStore
                                   (profile.PhoneNumber != null && profile.PhoneNumber != "" ||
                                    profile.Email != null && profile.Email != "")
                               select link.Id).CountAsync(ct);
-    if (tenants.Count == 0 || tenants.Count > room.MaxOccupants ||
-        contactCount != 1 ||
+
+    if (tenants.Count == 0 || tenants.Count > room.MaxOccupants || contactCount != 1 ||
         !await _db.ContractTenants.AnyAsync(x => x.ContractId == contract.Id &&
+
             x.JoinDate <= contract.StartDate && x.LeaveDate == null, ct) ||
+
         await _db.ContractTenants.AnyAsync(link => tenants.Contains(link.TenantId) && link.ContractId != contract.Id &&
+
             (link.LeaveDate == null || link.LeaveDate >= contract.StartDate) &&
+
             _db.Contracts.Any(c => c.Id == link.ContractId && c.Status == ContractStatus.Active &&
                 c.StartDate <= (contract.EndDate ?? DateOnly.MaxValue) &&
+
                 (c.EndDate == null || c.EndDate >= contract.StartDate)), ct))
       throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_TENANT_CONFLICT", "Người thuê có hợp đồng trùng thời gian hoặc phòng vượt sức chứa.");
     var missingCommitment = await _db.ContractTenants.AnyAsync(link => link.ContractId == contract.Id &&
@@ -500,11 +509,17 @@ public sealed class ContractStore : IContractStore
     }
     var commitment = new MemberCommitment
     {
-      Id = Guid.NewGuid(), ContractTenantId = linkId, CommitmentType = input.CommitmentType,
-      SignedOn = input.SignedOn, SignerName = input.SignerName.Trim(),
-      SignerTenantProfileId = input.SignerTenantProfileId, SignerRelation = input.SignerRelation?.Trim(),
-      TermsSnapshot = input.TermsSnapshot.Trim(), ConfirmedAt = now,
-      ConfirmedByUserId = ownerId, EvidenceStatus = CommitmentEvidenceStatus.PendingUpload,
+      Id = Guid.NewGuid(),
+      ContractTenantId = linkId,
+      CommitmentType = input.CommitmentType,
+      SignedOn = input.SignedOn,
+      SignerName = input.SignerName.Trim(),
+      SignerTenantProfileId = input.SignerTenantProfileId,
+      SignerRelation = input.SignerRelation?.Trim(),
+      TermsSnapshot = input.TermsSnapshot.Trim(),
+      ConfirmedAt = now,
+      ConfirmedByUserId = ownerId,
+      EvidenceStatus = CommitmentEvidenceStatus.PendingUpload,
       CreatedAt = now
     };
     _db.MemberCommitments.Add(commitment);
@@ -539,10 +554,15 @@ public sealed class ContractStore : IContractStore
       throw new BusinessException(BusinessErrorType.Conflict, "MOVE_OUT_NOTICE_OPEN", "Người thuê đã có thông báo rời đang xử lý.");
     var notice = new TenantRequest
     {
-      Id = Guid.NewGuid(), ContractId = contract.Id, RequestedByTenantId = input.TenantId,
-      Category = TenantRequestCategory.MoveOutNotice, Title = input.Title.Trim(),
-      Description = input.Description.Trim(), RequestedAt = DateTime.UtcNow,
-      Status = TenantRequestStatus.Pending, Priority = TenantRequestPriority.Medium
+      Id = Guid.NewGuid(),
+      ContractId = contract.Id,
+      RequestedByTenantId = input.TenantId,
+      Category = TenantRequestCategory.MoveOutNotice,
+      Title = input.Title.Trim(),
+      Description = input.Description.Trim(),
+      RequestedAt = DateTime.UtcNow,
+      Status = TenantRequestStatus.Pending,
+      Priority = TenantRequestPriority.Medium
     };
     _db.TenantRequests.Add(notice);
     await SaveAsync(ct);
@@ -592,8 +612,14 @@ public sealed class ContractStore : IContractStore
                               commitment.SupersededAt == null &&
                               (commitment.ConfirmedAt != null ||
                                commitment.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence))
-                      select new { link.JoinDate, link.LeaveDate, contract.StartDate,
-                          contract.EndDate, contract.ClosedOn }).ToListAsync(ct);
+                      select new
+                      {
+                        link.JoinDate,
+                        link.LeaveDate,
+                        contract.StartDate,
+                        contract.EndDate,
+                        contract.ClosedOn
+                      }).ToListAsync(ct);
     var periods = new List<ContractTenurePeriod>();
     foreach (var row in rows)
     {
