@@ -49,8 +49,8 @@ public interface IContractStore
   /// <summary>Đóng hợp đồng nếu trạng thái hiện tại khớp trạng thái dự kiến.</summary>
   Task CloseSafelyAsync(Contract contract, ContractStatus expectedStatus,
       ContractStatus newStatus, DateOnly closedOn, string? reason, CancellationToken ct);
-  /// <summary>Thêm hợp đồng mới và lưu vào cơ sở dữ liệu.</summary>
-  Task AddAsync(Contract contract, CancellationToken ct);
+  /// <summary>Tạo hợp đồng, hóa đơn cọc và khoản thu ban đầu trong một giao dịch.</summary>
+  Task CreateWithDepositAsync(Guid propertyId, string ownerId, ContractCreation creation, CancellationToken ct);
   /// <summary>Lưu thay đổi hợp đồng và xử lý lỗi trùng dữ liệu.</summary>
   Task SaveAsync(CancellationToken ct);
 

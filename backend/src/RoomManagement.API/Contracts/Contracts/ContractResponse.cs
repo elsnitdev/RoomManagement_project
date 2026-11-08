@@ -7,11 +7,11 @@ namespace RoomManagement.API.Contracts.Contracts;
 public sealed record ContractResponse(
     Guid Id, string ContractCode, Guid RoomId, DateOnly StartDate, DateOnly? EndDate,
     decimal MonthlyRent, decimal DepositAmount, byte? PaymentDueDay,
-    ContractStatus Status, string? Note)
+    ContractStatus Status, string? Note, Guid? DepositInvoiceId = null)
 {
-  public static ContractResponse From(Contract c) => new(c.Id, c.ContractCode, c.RoomId,
+  public static ContractResponse From(Contract c, Guid? depositInvoiceId = null) => new(c.Id, c.ContractCode, c.RoomId,
       c.StartDate, c.EndDate, c.MonthlyRent, c.DepositAmount,
-      c.PaymentDueDay, c.Status, c.Note);
+      c.PaymentDueDay, c.Status, c.Note, depositInvoiceId);
 }
 
 public sealed record ContractTenantResponse(Guid Id, Guid ContractId, Guid TenantId, DateOnly JoinDate,

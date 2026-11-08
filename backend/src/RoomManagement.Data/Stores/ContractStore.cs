@@ -451,12 +451,40 @@ public sealed class ContractStore : IContractStore
     await transaction.CommitAsync(ct);
   }
 
-  //AddAsync – Thêm hợp đồng mới vào database.
+  // CreateWithDepositAsync – Lưu hợp đồng và toàn bộ chứng từ cọc cùng lúc.
   /// <inheritdoc />
-  public async Task AddAsync(Contract contract, CancellationToken ct)
+  public async Task CreateWithDepositAsync(Guid propertyId, string ownerId,
+      ContractCreation creation, CancellationToken ct)
   {
+    var contract = creation.Contract;
+    if ((contract.DepositAmount > 0) != (creation.DepositInvoice is not null) ||
+        (creation.DepositInvoice is null) != (creation.DepositItem is null) ||
+        (creation.InitialPayment is null) != (creation.InitialPaymentReview is null) ||
+        creation.InitialPayment is not null && creation.DepositInvoice is null)
+      throw new ArgumentException("Bộ chứng từ tạo hợp đồng không đầy đủ.", nameof(creation));
+
+    await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+    var room = await _db.Rooms.FromSqlInterpolated(
+        $"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {contract.RoomId}")
+        .AsNoTracking().SingleOrDefaultAsync(ct);
+    if (room is null || room.PropertyId != propertyId ||
+        !await _db.Properties.AnyAsync(p => p.Id == propertyId && p.OwnerUserId == ownerId && p.IsActive, ct))
+      throw new BusinessException(BusinessErrorType.NotFound,
+          "ROOM_NOT_FOUND", "Không tìm thấy phòng trong khu trọ.");
+
     _db.Contracts.Add(contract);
+    if (creation.DepositInvoice is { } invoice)
+    {
+      _db.Invoices.Add(invoice);
+      _db.InvoiceItems.Add(creation.DepositItem!);
+    }
+    if (creation.InitialPayment is { } payment)
+    {
+      _db.Payments.Add(payment);
+      _db.PaymentReviewEvents.Add(creation.InitialPaymentReview!);
+    }
     await SaveAsync(ct);
+    await transaction.CommitAsync(ct);
   }
   // SaveAsync – Lưu thay đổi vào database và xử lý lỗi trùng dữ liệu.
   /// <inheritdoc />

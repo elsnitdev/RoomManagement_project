@@ -5,7 +5,16 @@ namespace RoomManagement.Business.DTOs;
 
 public sealed record CreateContractInput(
     Guid RoomId, string ContractCode, DateOnly StartDate, DateOnly? EndDate,
-    decimal MonthlyRent, decimal DepositAmount, byte? PaymentDueDay, string? Note);
+    decimal MonthlyRent, decimal DepositAmount, byte? PaymentDueDay, string? Note,
+    InitialDepositPaymentStatus DepositPaymentStatus = InitialDepositPaymentStatus.Unpaid,
+    PaymentMethod? DepositPaymentMethod = null, DateTimeOffset? DepositPaidAt = null);
+
+public enum InitialDepositPaymentStatus { Unpaid = 1, Paid = 2 }
+
+public sealed record CreateContractResult(Contract Contract, Guid? DepositInvoiceId);
+
+public sealed record ContractCreation(Contract Contract, Invoice? DepositInvoice,
+    InvoiceItem? DepositItem, Payment? InitialPayment, PaymentReviewEvent? InitialPaymentReview);
 
 public sealed record AddContractTenantInput(Guid TenantId, DateOnly JoinDate, bool IsContactPerson);
 public sealed record AddContractUserInput(string Email, DateOnly JoinDate);

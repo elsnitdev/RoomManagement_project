@@ -13,10 +13,14 @@ public sealed record CreateContractRequest(
     [property: JsonRequired] decimal MonthlyRent,
     [property: JsonRequired] decimal DepositAmount,
     byte? PaymentDueDay,
-    [StringLength(1000)] string? Note)
+    [StringLength(1000)] string? Note,
+    InitialDepositPaymentStatus DepositPaymentStatus = InitialDepositPaymentStatus.Unpaid,
+    PaymentMethod? DepositPaymentMethod = null,
+    DateTimeOffset? DepositPaidAt = null)
 {
   public CreateContractInput ToInput() => new(RoomId, ContractCode, StartDate,
-      EndDate, MonthlyRent, DepositAmount, PaymentDueDay, Note);
+      EndDate, MonthlyRent, DepositAmount, PaymentDueDay, Note,
+      DepositPaymentStatus, DepositPaymentMethod, DepositPaidAt);
 }
 
 public sealed record AddContractTenantRequest(

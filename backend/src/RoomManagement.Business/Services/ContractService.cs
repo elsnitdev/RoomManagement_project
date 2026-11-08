@@ -29,7 +29,7 @@ public sealed class ContractService
     return owner;
   }
 
-  public async Task<Contract> CreateAsync(Guid propertyId, CreateContractInput input, CancellationToken ct)
+  public async Task<CreateContractResult> CreateAsync(Guid propertyId, CreateContractInput input, CancellationToken ct)
   {
     var owner = await OwnerAsync(ct);
     if (!await _store.RoomOwnedAsync(propertyId, input.RoomId, owner, ct))
@@ -40,9 +40,20 @@ public sealed class ContractService
         input.EndDate is not { } end || end < input.StartDate ||
         end.Day != DateTime.DaysInMonth(end.Year, end.Month) ||
         input.MonthlyRent < 0 || input.DepositAmount < 0 ||
+        decimal.Round(input.DepositAmount, 2) != input.DepositAmount ||
         input.PaymentDueDay is < 1 or > 31 || input.Note is { Length: > 1000 })
       throw new BusinessException(BusinessErrorType.Validation,
           "CONTRACT_INVALID", "Thông tin hợp đồng không hợp lệ.");
+    var now = DateTime.UtcNow;
+    if (!Enum.IsDefined(input.DepositPaymentStatus) ||
+        (input.DepositAmount == 0 && input.DepositPaymentStatus == InitialDepositPaymentStatus.Paid) ||
+        (input.DepositPaymentStatus == InitialDepositPaymentStatus.Paid &&
+            (input.DepositPaymentMethod is not (PaymentMethod.Cash or PaymentMethod.BankTransfer) ||
+             input.DepositPaidAt is null || input.DepositPaidAt.Value.UtcDateTime > now)) ||
+        (input.DepositPaymentStatus == InitialDepositPaymentStatus.Unpaid &&
+            (input.DepositPaymentMethod is not null || input.DepositPaidAt is not null)))
+      throw new BusinessException(BusinessErrorType.Validation,
+          "DEPOSIT_PAYMENT_INVALID", "Thông tin thanh toán tiền cọc không hợp lệ.");
     var contract = new Contract
     {
       Id = Guid.NewGuid(),
@@ -55,10 +66,53 @@ public sealed class ContractService
       PaymentDueDay = input.PaymentDueDay,
       Note = input.Note?.Trim(),
       Status = ContractStatus.Draft,
-      CreatedAt = DateTime.UtcNow
+      CreatedAt = now
     };
-    await _store.AddAsync(contract, ct);
-    return contract;
+    Invoice? invoice = null;
+    InvoiceItem? item = null;
+    Payment? payment = null;
+    PaymentReviewEvent? review = null;
+    if (input.DepositAmount > 0)
+    {
+      var today = VietnamDate.Today;
+      var invoiceId = Guid.NewGuid();
+      invoice = new Invoice
+      {
+        Id = invoiceId, ContractId = contract.Id, RoomId = contract.RoomId,
+        InvoiceCode = $"DEP-{invoiceId:N}", InvoiceType = InvoiceType.Deposit,
+        IssueDate = today, DueDate = contract.StartDate > today ? contract.StartDate : today,
+        TotalAmount = contract.DepositAmount, Status = InvoiceStatus.Issued, CreatedAt = now
+      };
+      item = new InvoiceItem
+      {
+        Id = Guid.NewGuid(), InvoiceId = invoiceId, ItemType = InvoiceItemType.Deposit,
+        Description = "Tiền đặt cọc", Quantity = 1, UnitPrice = contract.DepositAmount,
+        Amount = contract.DepositAmount, CreatedAt = now
+      };
+      if (input.DepositPaymentStatus == InitialDepositPaymentStatus.Paid)
+      {
+        payment = new Payment
+        {
+          Id = Guid.NewGuid(), InvoiceId = invoiceId,
+          ClaimedAmount = contract.DepositAmount, VerifiedAmount = contract.DepositAmount,
+          PaymentMethod = input.DepositPaymentMethod!.Value, Status = PaymentStatus.Success,
+          PaidAt = input.DepositPaidAt!.Value.UtcDateTime, VerifiedAt = now,
+          VerifiedByUserId = owner, IdempotencyKey = $"deposit-initial:{contract.Id:N}",
+          Note = "Chủ trọ ghi nhận đã nhận đủ cọc khi tạo hợp đồng.", CreatedAt = now
+        };
+        review = new PaymentReviewEvent
+        {
+          Id = Guid.NewGuid(), PaymentId = payment.Id,
+          PreviousStatus = PaymentStatus.Pending, NewStatus = PaymentStatus.Success,
+          NewVerifiedAmount = contract.DepositAmount,
+          Reason = "Chủ trọ xác nhận đã nhận đủ cọc khi tạo hợp đồng.",
+          ReviewedByUserId = owner, ReviewedAt = now
+        };
+      }
+    }
+    await _store.CreateWithDepositAsync(propertyId, owner,
+        new ContractCreation(contract, invoice, item, payment, review), ct);
+    return new CreateContractResult(contract, invoice?.Id);
   }
 
   public async Task<Contract> GetAsync(Guid propertyId, Guid contractId, CancellationToken ct)

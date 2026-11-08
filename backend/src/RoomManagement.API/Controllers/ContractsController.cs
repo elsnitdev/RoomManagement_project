@@ -21,7 +21,8 @@ public sealed class ContractsController : ControllerBase
   public async Task<IActionResult> Create(Guid propertyId,
       [FromBody] CreateContractRequest request, CancellationToken ct)
   {
-    var result = ContractResponse.From(await _service.CreateAsync(propertyId, request.ToInput(), ct));
+    var created = await _service.CreateAsync(propertyId, request.ToInput(), ct);
+    var result = ContractResponse.From(created.Contract, created.DepositInvoiceId);
     return CreatedAtAction(nameof(Get), new { propertyId, contractId = result.Id },
         new ApiResponse<ContractResponse>(result));
   }
