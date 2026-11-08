@@ -18,6 +18,7 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.HasKey(e => e.Id).HasName("PK_Payments");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.InvoiceId).HasColumnType("uniqueidentifier").IsRequired();
+        builder.Property(e => e.SubmittedByUserId).HasColumnType("nvarchar(450)");
         builder.Property(e => e.ClaimedAmount).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(e => e.VerifiedAmount).HasColumnType("decimal(18,2)");
         builder.Property(e => e.PaymentMethod).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
@@ -30,8 +31,10 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(e => e.Note).HasColumnType("nvarchar(500)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_Payments_CreatedAt");
         builder.HasOne<Invoice>().WithMany().HasForeignKey(e => e.InvoiceId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Payments_Invoices");
+        builder.HasOne<AppUser>().WithMany().HasForeignKey(e => e.SubmittedByUserId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Payments_SubmittedBy");
         builder.HasOne<AppUser>().WithMany().HasForeignKey(e => e.VerifiedByUserId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Payments_VerifiedBy");
         builder.HasIndex(e => new { e.InvoiceId, e.Status }).HasDatabaseName("IX_Payments_Invoice_Status");
+        builder.HasIndex(e => new { e.SubmittedByUserId, e.InvoiceId }).HasDatabaseName("IX_Payments_Submitter_Invoice");
         builder.HasIndex(e => e.TransactionCode).HasDatabaseName("UX_Payments_TransactionCode").IsUnique().HasFilter(@"TransactionCode IS NOT NULL");
         builder.HasIndex(e => e.IdempotencyKey).HasDatabaseName("UX_Payments_IdempotencyKey").IsUnique();
     }

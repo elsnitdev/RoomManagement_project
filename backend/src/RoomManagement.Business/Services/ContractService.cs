@@ -97,7 +97,8 @@ public sealed class ContractService
           ClaimedAmount = contract.DepositAmount, VerifiedAmount = contract.DepositAmount,
           PaymentMethod = input.DepositPaymentMethod!.Value, Status = PaymentStatus.Success,
           PaidAt = input.DepositPaidAt!.Value.UtcDateTime, VerifiedAt = now,
-          VerifiedByUserId = owner, IdempotencyKey = $"deposit-initial:{contract.Id:N}",
+          VerifiedByUserId = owner, SubmittedByUserId = owner,
+          IdempotencyKey = $"deposit-initial:{contract.Id:N}",
           Note = "Chủ trọ ghi nhận đã nhận đủ cọc khi tạo hợp đồng.", CreatedAt = now
         };
         review = new PaymentReviewEvent

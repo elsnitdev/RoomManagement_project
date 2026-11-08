@@ -36,6 +36,7 @@ builder.Services.AddScoped<ContractService>();
 builder.Services.AddScoped<BillingInputService>();
 builder.Services.AddScoped<MonthlyInvoiceCalculator>();
 builder.Services.AddScoped<InvoiceService>();
+builder.Services.AddScoped<PaymentService>();
 builder.Services.AddHostedService<ContractExpiryWorker>();
 
 builder.Services.AddControllers(options =>

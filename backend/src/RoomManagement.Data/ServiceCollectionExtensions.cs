@@ -43,6 +43,7 @@ public static class ServiceCollectionExtensions
     services.AddScoped<IContractStore, ContractStore>();
     services.AddScoped<IBillingInputStore, BillingInputStore>();
     services.AddScoped<IInvoiceStore, InvoiceStore>();
+    services.AddScoped<IPaymentStore, PaymentStore>();
     return services;
   }
 }

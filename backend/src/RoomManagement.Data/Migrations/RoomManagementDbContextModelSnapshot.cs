@@ -848,6 +848,9 @@ namespace RoomManagement.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("SubmittedByUserId")
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<string>("TransactionCode")
                         .HasColumnType("varchar(150)");
 
@@ -873,6 +876,9 @@ namespace RoomManagement.Data.Migrations
                         .HasFilter("TransactionCode IS NOT NULL");
 
                     b.HasIndex("VerifiedByUserId");
+
+                    b.HasIndex("SubmittedByUserId", "InvoiceId")
+                        .HasDatabaseName("IX_Payments_Submitter_Invoice");
 
                     b.HasIndex("InvoiceId", "Status")
                         .HasDatabaseName("IX_Payments_Invoice_Status");
@@ -1757,6 +1763,12 @@ namespace RoomManagement.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_Payments_Invoices");
+
+                    b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("SubmittedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("FK_Payments_SubmittedBy");
 
                     b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
                         .WithMany()

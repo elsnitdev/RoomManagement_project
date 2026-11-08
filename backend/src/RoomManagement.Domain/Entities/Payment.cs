@@ -6,6 +6,7 @@ public sealed class Payment
 {
     public Guid Id { get; set; }
     public Guid InvoiceId { get; set; }
+    public string? SubmittedByUserId { get; set; }
     public decimal ClaimedAmount { get; set; }
     public decimal? VerifiedAmount { get; set; }
     public PaymentMethod PaymentMethod { get; set; }

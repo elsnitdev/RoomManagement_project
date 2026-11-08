@@ -24,18 +24,7 @@ public sealed class InvoiceStore : IInvoiceStore
 
     /// <summary>Tạo truy vấn hóa đơn đã phát hành mà người thuê được xem.</summary>
     private IQueryable<Invoice> TenantInvoices(string tenantUserId) =>
-        _db.Invoices.Where(invoice => invoice.Status == InvoiceStatus.Issued &&
-            _db.ContractTenants.Any(link => link.ContractId == invoice.ContractId &&
-                (invoice.InvoiceType == InvoiceType.Monthly
-                    ? invoice.BillingYear != null && invoice.BillingMonth != null &&
-                      (link.JoinDate.Year < invoice.BillingYear ||
-                       link.JoinDate.Year == invoice.BillingYear && link.JoinDate.Month <= invoice.BillingMonth) &&
-                      (link.LeaveDate == null || link.LeaveDate.Value.Year > invoice.BillingYear ||
-                       link.LeaveDate.Value.Year == invoice.BillingYear && link.LeaveDate.Value.Month >= invoice.BillingMonth)
-                    : link.JoinDate <= invoice.IssueDate &&
-                      (link.LeaveDate == null || link.LeaveDate >= invoice.IssueDate)) &&
-                _db.TenantProfiles.Any(profile => profile.Id == link.TenantId &&
-                    profile.UserId == tenantUserId)));
+        InvoiceAccessQueries.TenantInvoices(_db, tenantUserId);
 
     /// <inheritdoc />
     public Task<Contract?> GetOwnedContractAsync(Guid propertyId, Guid contractId, string ownerId, CancellationToken ct) =>
