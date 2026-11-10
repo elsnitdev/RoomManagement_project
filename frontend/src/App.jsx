@@ -12,6 +12,7 @@ import RoomDetailPage from "./pages/RoomDetailPage";
 import CreateRoomPage from "./pages/CreateRoomPage";
 import LandlordBilling from "./components/billing/LandlordBilling";
 import LandlordContracts from "./components/contracts/LandlordContracts";
+import { PropertyRules } from "./components/contracts/ContractRules";
 import TenantBilling from "./components/billing/TenantBilling";
 import AdminServices from "./components/billing/AdminServices";
 import {
@@ -338,7 +339,9 @@ export default function App() {
           ) : activeRole === "landlord" && page === "contracts" ? (
             <LandlordContracts key={route} routeParts={[roomId, propertySection, roomAction]} navigate={navigate} notify={notify} />
           ) : page === "properties" ? (
-            propertySection === "rooms" && roomId ? (
+            propertySection === "rules" && roomId ? (
+              <PropertyRules key={roomId} propertyId={roomId} navigate={navigate} />
+            ) : propertySection === "rooms" && roomId ? (
               roomAction === "new" ? (
                 <CreateRoomPage
                   key={roomId}

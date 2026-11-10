@@ -78,11 +78,12 @@ public sealed class RoomStore : IRoomStore
                join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
                where link.ContractId == contractId && link.JoinDate <= today &&
                      (link.LeaveDate == null || link.LeaveDate >= today) &&
-                     _db.MemberCommitments.Any(commitment => commitment.ContractTenantId == link.Id &&
+                     (_db.ContractRulesAcceptances.Any(a => a.ContractTenantId == link.Id) ||
+                      !link.OnlineRulesRequired && _db.MemberCommitments.Any(commitment => commitment.ContractTenantId == link.Id &&
                          commitment.CommitmentType == CommitmentType.RoomRulesAgreement &&
                          commitment.SupersededAt == null &&
                          (commitment.ConfirmedAt != null ||
-                          commitment.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence))
+                          commitment.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence)))
                orderby profile.FullName
                select new RoomOccupant(profile.Id, profile.FullName, link.JoinDate)).ToListAsync(ct);
 
@@ -102,9 +103,10 @@ public sealed class RoomStore : IRoomStore
                 RoomStatus.Occupied => query.Where(r => _db.Contracts.Any(c => c.RoomId == r.Id && c.Status == ContractStatus.Active && c.StartDate <= today && (c.EndDate == null || c.EndDate >= today) &&
                     _db.ContractTenants.Any(t => t.ContractId == c.Id && t.JoinDate <= today &&
                         (t.LeaveDate == null || t.LeaveDate >= today) &&
-                        _db.MemberCommitments.Any(m => m.ContractTenantId == t.Id &&
+                        (_db.ContractRulesAcceptances.Any(a => a.ContractTenantId == t.Id) ||
+                         !t.OnlineRulesRequired && _db.MemberCommitments.Any(m => m.ContractTenantId == t.Id &&
                             m.CommitmentType == CommitmentType.RoomRulesAgreement && m.SupersededAt == null &&
-                            (m.ConfirmedAt != null || m.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence))))),
+                            (m.ConfirmedAt != null || m.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence)))))),
                 RoomStatus.Available => query.Where(r => !_db.Contracts.Any(c => c.RoomId == r.Id &&
                     c.Status == ContractStatus.Active &&
                     (c.EndDate == null || c.EndDate >= today)) &&

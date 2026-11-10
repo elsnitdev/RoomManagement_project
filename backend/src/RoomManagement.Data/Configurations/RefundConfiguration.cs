@@ -18,6 +18,7 @@ public sealed class RefundConfiguration : IEntityTypeConfiguration<Refund>
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.InvoiceId).HasColumnType("uniqueidentifier").IsRequired();
         builder.Property(e => e.Amount).HasColumnType("decimal(18,2)").IsRequired();
+        builder.Property(e => e.IsOverpaymentRefund).HasColumnType("bit").HasDefaultValue(false);
         builder.Property(e => e.Status).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.RefundedAt).HasColumnType("datetime2(0)");
         builder.Property(e => e.Reason).HasColumnType("nvarchar(500)").IsRequired();

@@ -111,6 +111,13 @@ public sealed class ContractStore : IContractStore
         .Where(x => linkIds.Contains(x.ContractTenantId) && x.SupersededAt == null &&
             x.CommitmentType == CommitmentType.RoomRulesAgreement)
         .ToDictionaryAsync(x => x.ContractTenantId, ct);
+    var propertyId = await _db.Rooms.AsNoTracking().Where(x => x.Id == contract.RoomId).Select(x => x.PropertyId).SingleAsync(ct);
+    var latestRulesId = await _db.ContractRulesVersions.AsNoTracking().Where(x => x.PropertyId == propertyId && x.IsActive)
+        .OrderByDescending(x => x.VersionNumber).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
+    var onlineAcceptances = await _db.ContractRulesAcceptances.AsNoTracking()
+        .Where(x => linkIds.Contains(x.ContractTenantId)).ToListAsync(ct);
+    var onlineRequired = await _db.ContractTenants.AsNoTracking().Where(x => linkIds.Contains(x.Id) && x.OnlineRulesRequired)
+        .Select(x => x.Id).ToListAsync(ct);
     var tenants = new List<ContractTenantInfo>();
     foreach (var tenant in tenantRows)
     {
@@ -123,7 +130,11 @@ public sealed class ContractStore : IContractStore
         CommitmentSignedOn = commitment?.SignedOn,
         CommitmentConfirmedAt = commitment?.ConfirmedAt,
         EvidenceStatus = commitment?.EvidenceStatus,
-        HasConfirmedCommitment = commitment?.ConfirmedAt != null,
+        HasConfirmedCommitment = onlineAcceptances.Any(x => x.ContractTenantId == tenant.Id) ||
+            (!onlineRequired.Contains(tenant.Id) && commitment?.ConfirmedAt != null),
+        CurrentRulesVersionId = latestRulesId,
+        HasAcceptedCurrentRules = latestRulesId.HasValue && onlineAcceptances.Any(x =>
+            x.ContractTenantId == tenant.Id && x.RulesVersionId == latestRulesId && x.AcceptedByUserId == tenant.UserId),
         TenureSpans = RoomManagement.Business.Services.ContractTenureCalculator.Calculate(periods)
       });
     }
@@ -316,6 +327,7 @@ public sealed class ContractStore : IContractStore
     var row = new ContractTenant
     {
       Id = Guid.NewGuid(),
+      OnlineRulesRequired = true,
       ContractId = contract.Id,
       TenantId = tenantId,
       JoinDate = joinDate,
@@ -345,9 +357,10 @@ public sealed class ContractStore : IContractStore
         (currentStatus != ContractStatus.Active || x.JoinDate <= today), ct)
         ?? throw new BusinessException(BusinessErrorType.NotFound, "CONTRACT_TENANT_NOT_FOUND", "Không tìm thấy thành viên đang thuộc hợp đồng.");
     if (currentStatus == ContractStatus.Active &&
-        !await _db.MemberCommitments.AnyAsync(x => x.ContractTenantId == linkId &&
+        !await _db.ContractRulesAcceptances.AnyAsync(x => x.ContractTenantId == linkId, ct) &&
+        (link.OnlineRulesRequired || !await _db.MemberCommitments.AnyAsync(x => x.ContractTenantId == linkId &&
             x.CommitmentType == CommitmentType.RoomRulesAgreement && x.SupersededAt == null &&
-            (x.ConfirmedAt != null || x.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence), ct))
+            (x.ConfirmedAt != null || x.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence), ct)))
       throw new BusinessException(BusinessErrorType.InvalidOperation, "COMMITMENT_REQUIRED",
           "Người liên hệ cần có cam kết đã xác nhận.");
     var contact = await _db.TenantProfiles.AsNoTracking().SingleAsync(x => x.Id == link.TenantId, ct);
@@ -376,7 +389,9 @@ public sealed class ContractStore : IContractStore
   /// <inheritdoc />
   public async Task ActivateSafelyAsync(Contract contract, CancellationToken ct)
   {
+    var propertyId = await _db.Rooms.AsNoTracking().Where(x => x.Id == contract.RoomId).Select(x => x.PropertyId).SingleAsync(ct);
     await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+    await _db.Properties.FromSqlInterpolated($"SELECT * FROM dbo.Properties WITH (UPDLOCK, HOLDLOCK) WHERE Id = {propertyId}").AsNoTracking().SingleAsync(ct);
     var room = await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {contract.RoomId}")
         .SingleAsync(ct);
     var currentStatus = await _db.Contracts.AsNoTracking().Where(c => c.Id == contract.Id)
@@ -416,14 +431,17 @@ public sealed class ContractStore : IContractStore
 
                 (c.EndDate == null || c.EndDate >= contract.StartDate)), ct))
       throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_TENANT_CONFLICT", "Người thuê có hợp đồng trùng thời gian hoặc phòng vượt sức chứa.");
+    var currentRulesId = await _db.ContractRulesVersions.AsNoTracking().Where(x => x.PropertyId == propertyId && x.IsActive)
+        .OrderByDescending(x => x.VersionNumber).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
+    if (currentRulesId is null)
+      throw new BusinessException(BusinessErrorType.InvalidOperation, "RULES_REQUIRED", "Chủ trọ cần lưu nội quy trước khi kích hoạt.");
     var missingCommitment = await _db.ContractTenants.AnyAsync(link => link.ContractId == contract.Id &&
-        link.LeaveDate == null && !_db.MemberCommitments.Any(commitment =>
-            commitment.ContractTenantId == link.Id &&
-            commitment.CommitmentType == CommitmentType.RoomRulesAgreement &&
-            commitment.SupersededAt == null && commitment.ConfirmedAt != null), ct);
+        link.LeaveDate == null && !_db.ContractRulesAcceptances.Any(acceptance =>
+            acceptance.ContractTenantId == link.Id && acceptance.RulesVersionId == currentRulesId &&
+            _db.TenantProfiles.Any(profile => profile.Id == link.TenantId && profile.UserId != null && profile.UserId == acceptance.AcceptedByUserId)), ct);
     if (missingCommitment)
       throw new BusinessException(BusinessErrorType.InvalidOperation, "COMMITMENT_REQUIRED",
-          "Mỗi thành viên cần có cam kết được chủ trọ xác nhận trước khi kích hoạt.");
+          "Mỗi thành viên cần dùng tài khoản liên kết để chấp thuận nội quy mới nhất trước khi kích hoạt.");
     contract.Status = ContractStatus.Active;
     contract.UpdatedAt = DateTime.UtcNow;
     await SaveAsync(ct);
@@ -443,6 +461,23 @@ public sealed class ContractStore : IContractStore
     if (currentStatus != expectedStatus)
       throw new BusinessException(BusinessErrorType.Conflict,
           "CONTRACT_ALREADY_CHANGED", "Hợp đồng đã thay đổi trạng thái.");
+    if (expectedStatus == ContractStatus.Draft && newStatus == ContractStatus.Cancelled)
+    {
+      var depositId = await _db.Invoices.AsNoTracking()
+          .Where(x => x.ContractId == contract.Id && x.InvoiceType == InvoiceType.Deposit &&
+              x.Status != InvoiceStatus.Cancelled)
+          .Select(x => (Guid?)x.Id).SingleOrDefaultAsync(ct);
+      if (depositId is { } invoiceId)
+      {
+        await InvoiceTransactionLock.AcquireAsync(_db, invoiceId, ct);
+        var deposit = await _db.Invoices.SingleAsync(x => x.Id == invoiceId, ct);
+        if (await InvoiceFinancialActivity.ExistsAsync(_db, deposit, ct))
+          throw new BusinessException(BusinessErrorType.Conflict,
+              "CONTRACT_DEPOSIT_HAS_FINANCIAL_ACTIVITY",
+              "Hóa đơn cọc đã có giao dịch. Cần đối soát trước khi hủy hợp đồng.");
+        deposit.Status = InvoiceStatus.Cancelled;
+      }
+    }
     contract.Status = newStatus;
     contract.ClosedOn = closedOn;
     contract.ClosureReason = reason;
@@ -635,11 +670,12 @@ public sealed class ContractStore : IContractStore
                       where link.TenantId == tenantId && contract.RoomId == roomId &&
                           (contract.Status == ContractStatus.Active || contract.Status == ContractStatus.Expired ||
                            contract.Status == ContractStatus.Terminated) && contract.StartDate <= asOf &&
-                          _db.MemberCommitments.Any(commitment => commitment.ContractTenantId == link.Id &&
+                          (_db.ContractRulesAcceptances.Any(a => a.ContractTenantId == link.Id) ||
+                           !link.OnlineRulesRequired && _db.MemberCommitments.Any(commitment => commitment.ContractTenantId == link.Id &&
                               commitment.CommitmentType == CommitmentType.RoomRulesAgreement &&
                               commitment.SupersededAt == null &&
                               (commitment.ConfirmedAt != null ||
-                               commitment.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence))
+                               commitment.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence)))
                       select new
                       {
                         link.JoinDate,

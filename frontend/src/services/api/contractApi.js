@@ -24,4 +24,13 @@ export const contractApi = {
   leave: (propertyId, contractId, linkId, leaveDate) => apiRequest(`${one(propertyId, contractId)}/tenants/${encodeURIComponent(linkId)}/leave`, { method: 'POST', body: { leaveDate } }).then(data),
   mine: signal => allPages('/api/me/contracts', signal),
   myDetail: (contractId, signal) => apiRequest(`/api/me/contracts/${encodeURIComponent(contractId)}`, { signal }).then(data),
+  rules: (propertyId, signal) => apiRequest(`/api/properties/${encodeURIComponent(propertyId)}/rules`, { signal }).then(data),
+  saveRules: (propertyId, body) => apiRequest(`/api/properties/${encodeURIComponent(propertyId)}/rules`, { method: 'PUT', body }).then(data),
+  myRules: signal => apiRequest('/api/me/contract-rules', { signal }).then(data),
+  acceptRules: (contractId, linkId, versionId) => apiRequest(`/api/me/contract-rules/${encodeURIComponent(contractId)}/tenants/${encodeURIComponent(linkId)}/accept`, { method: 'POST', body: { versionId } }).then(data),
+  myEvidence: (contractId, linkId, signal) => apiRequest(`/api/me/contract-rules/${encodeURIComponent(contractId)}/tenants/${encodeURIComponent(linkId)}/evidence`, { signal }).then(data),
+  uploadEvidence: (contractId, linkId, file) => { const body = new FormData(); body.append('file', file); return apiRequest(`/api/me/contract-rules/${encodeURIComponent(contractId)}/tenants/${encodeURIComponent(linkId)}/evidence`, { method: 'POST', body }).then(data) },
+  myEvidenceContent: (contractId, linkId, id) => apiRequest(`/api/me/contract-rules/${encodeURIComponent(contractId)}/tenants/${encodeURIComponent(linkId)}/evidence/${encodeURIComponent(id)}/content`, { responseType: 'blob' }),
+  tenantEvidence: (propertyId, contractId, linkId, signal) => apiRequest(`${one(propertyId, contractId)}/tenants/${encodeURIComponent(linkId)}/rules-evidence`, { signal }).then(data),
+  tenantEvidenceContent: (propertyId, contractId, linkId, id) => apiRequest(`${one(propertyId, contractId)}/tenants/${encodeURIComponent(linkId)}/rules-evidence/${encodeURIComponent(id)}/content`, { responseType: 'blob' }),
 }

@@ -47,11 +47,11 @@ public sealed record InvoiceSummaryResponse(Guid Id, string Code, Guid ContractI
 }
 
 public sealed record InvoiceDetailResponse(InvoiceSummaryResponse Summary,
-    IReadOnlyList<InvoiceItemResponse> Items)
+    IReadOnlyList<InvoiceItemResponse> Items, IReadOnlyList<InvoiceTenantResult> Tenants)
 {
     public static InvoiceDetailResponse From(InvoiceDetailResult x) =>
         new(InvoiceSummaryResponse.From(x.Invoice, x.Balance),
-            x.Items.Select(InvoiceItemResponse.From).ToList());
+            x.Items.Select(InvoiceItemResponse.From).ToList(), x.Tenants);
 }
 
 public sealed record InvoiceCreatedResponse(Guid Id, string Code, InvoiceStatus Status)

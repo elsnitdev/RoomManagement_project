@@ -32,6 +32,6 @@ public sealed class MyInvoicePaymentsController : ControllerBase
         var userId = User.FindFirst("sub")?.Value ?? "";
         var rows = await _payments.ListTenantAsync(invoiceId, userId, ct);
         return Ok(new ApiResponse<IReadOnlyList<PaymentResponse>>(
-            rows.Select(PaymentResponse.From).ToList()));
+            rows.Select(row => PaymentResponse.From(row.Payment, row.ReviewReason)).ToList()));
     }
 }

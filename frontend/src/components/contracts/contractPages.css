@@ -28,3 +28,42 @@
 .ct-add-tenant-toggle{justify-self:start}.ct-add-tenant-panel{display:grid;gap:12px}.ct-add-tenant-panel>label{display:grid;gap:6px;font-size:12px;font-weight:700}.ct-add-tenant-panel>label input{width:100%}
 @media(max-width:760px){.ct-room-filters,.ct-list-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}.ct-detail-grid{grid-template-columns:1fr}.ct-card{padding:17px}}
 @media(max-width:520px){.ct-page-head{align-items:start;flex-direction:column}.ct-room-filters,.ct-list-toolbar,.ct-fields{grid-template-columns:1fr}.ct-room-option{align-items:start}.ct-room-option b{display:none}.ct-form-footer{align-items:stretch;flex-direction:column}.ct-form-footer>div{display:grid;grid-template-columns:1fr 1fr}.ct-facts div{grid-template-columns:1fr;gap:4px}.ct-add-tenant-actions{align-items:stretch;flex-direction:column}.ct-add-tenant-actions label{width:100%}}
+
+/* Deposit fields are part of contract creation, with a distinct review step. */
+.ct-finance-card {
+  border-color: #bdd8ec;
+  background: linear-gradient(135deg, #f5faff 0%, #fff 45%);
+}
+.ct-finance-card > h2 { color: #194e7b; }
+.ct-finance-card .ct-fields { align-items: start; }
+.ct-finance-card .ct-fields > label:nth-child(2) {
+  padding: 13px;
+  border: 1px solid #c8dfef;
+  border-radius: 11px;
+  background: #f1f8fe;
+}
+.ct-finance-card .ct-fields > label:nth-child(2) small { color: #3e637f; }
+.ct-deposit-fields {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 17px;
+  border: 1px solid #d0e3f1;
+  border-radius: 11px;
+  background: #fbfdff;
+}
+.ct-deposit-fields > label { min-width: 0; }
+.ct-deposit-fields > label:first-child { color: #194e7b; }
+.ct-deposit-fields > p { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border-radius: 8px; background: #edf6fd; color: #285879; font-size: 12px; line-height: 1.5; }
+.ct-finance-card input[type="number"] { font-variant-numeric: tabular-nums; }
+.ct-pages .ct-facts dd .contract-button { min-height: 40px; white-space: normal; text-align: center; }
+.ct-pages .ct-facts dd { min-width: 0; overflow-wrap: anywhere; }
+.ct-pages :is(button, input, select, textarea):focus-visible { outline-color: #2674b8; outline-offset: 3px; }
+@media (max-width: 760px) {
+  .ct-deposit-fields { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .ct-deposit-fields { padding: 14px; }
+  .ct-pages .ct-facts dd .contract-button { width: 100%; }
+}

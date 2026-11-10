@@ -41,9 +41,12 @@ public static class ServiceCollectionExtensions
     services.AddSingleton<IObjectStorage, AzureBlobObjectStorage>();
     services.AddScoped<IRoomBatchStore, RoomBatchStore>();
     services.AddScoped<IContractStore, ContractStore>();
+    services.AddScoped<IContractRulesStore, ContractRulesStore>();
+    services.AddScoped<IContractRulesEvidenceStore, ContractRulesEvidenceStore>();
     services.AddScoped<IBillingInputStore, BillingInputStore>();
     services.AddScoped<IInvoiceStore, InvoiceStore>();
     services.AddScoped<IPaymentStore, PaymentStore>();
+    services.AddScoped<IPaymentEvidenceStore, PaymentEvidenceStore>();
     return services;
   }
 }

@@ -31,3 +31,9 @@ public sealed record UpdatePropertyRequest(
         if (string.IsNullOrWhiteSpace(Address)) yield return new ValidationResult("Địa chỉ không được rỗng.", [nameof(Address)]);
     }
 }
+
+public sealed record UpdatePaymentAccountRequest(
+    [StringLength(150)] string? BankName,
+    [StringLength(50)] string? AccountNumber,
+    [StringLength(150)] string? AccountHolder,
+    [property: JsonRequired][Required] string RowVersion);

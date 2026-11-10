@@ -20,6 +20,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useApiQuery } from "../hooks/useApiQuery";
 import { ConfirmationToast, Feedback, IconButton, Pagination, Status, dateText, messageOf, moneyText } from "./property/ManagementUi";
 import { billingApi } from "../services/api/billingApi";
+import { PropertyRules } from "./contracts/ContractRules";
 import {
   createProperty,
   deleteProperty,
@@ -81,6 +82,39 @@ function PropertyForm({ initial, onClose, onSaved }) {
   );
 }
 
+function PaymentAccountForm({ property, onSaved }) {
+  const initial = { bankName: property.bankName || "", accountNumber: property.bankAccountNumber || "", accountHolder: property.bankAccountHolder || "" };
+  const [draft, setDraft] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const configured = Boolean(initial.bankName && initial.accountNumber && initial.accountHolder);
+  const dirty = Object.keys(initial).some(key => draft[key] !== initial[key]);
+  async function submit(event) {
+    event.preventDefault();
+    const values = { bankName: draft.bankName.trim(), accountNumber: draft.accountNumber.trim(), accountHolder: draft.accountHolder.trim() };
+    const filled = Object.values(values).filter(Boolean).length;
+    if (filled > 0 && filled < 3) { setError("Hãy nhập đủ ngân hàng, số tài khoản và tên chủ tài khoản; hoặc để trống cả ba ô để xóa."); return; }
+    setBusy(true); setError("");
+    try {
+      await billingApi.updatePaymentAccount(property.id, { ...values, rowVersion: property.rowVersion });
+      onSaved();
+    } catch (cause) { setError(messageOf(cause)); }
+    finally { setBusy(false); }
+  }
+  return <section className="pm-form-card pm-payment-account content-card" aria-labelledby="payment-account-title">
+    <div className="pm-section-heading"><div><span className="pm-eyebrow">THANH TOÁN / KHU TRỌ</span><h2 id="payment-account-title">Tài khoản nhận chuyển khoản</h2></div><span className="pm-payment-account-status" data-configured={configured ? "true" : "false"}>{configured ? "Đã cấu hình" : "Chưa cấu hình"}</span></div>
+    <p>Người thuê thấy tài khoản này trên hóa đơn của khu trọ. Nếu chưa cấu hình, họ sẽ được hướng dẫn liên hệ chủ trọ.</p>
+    <form className="pm-form-grid pm-payment-account-form" onSubmit={submit}>
+      <label className="field"><span>Ngân hàng</span><input maxLength={150} value={draft.bankName} onChange={event => setDraft({ ...draft, bankName: event.target.value })} placeholder="Tên ngân hàng" /></label>
+      <label className="field"><span>Số tài khoản</span><input maxLength={50} inputMode="numeric" value={draft.accountNumber} onChange={event => setDraft({ ...draft, accountNumber: event.target.value })} placeholder="Số tài khoản nhận tiền" /></label>
+      <label className="field pm-span"><span>Tên chủ tài khoản</span><input maxLength={150} value={draft.accountHolder} onChange={event => setDraft({ ...draft, accountHolder: event.target.value })} placeholder="Tên theo tài khoản ngân hàng" /></label>
+      <p className="pm-span">Để xóa tài khoản hiện tại, để trống cả ba ô rồi lưu.</p>
+      {error && <p className="form-error pm-span" role="alert">{error}</p>}
+      <div className="pm-form-actions pm-span"><button type="button" disabled={busy || !dirty} onClick={() => { setDraft(initial); setError(""); }}>Khôi phục</button><button type="submit" disabled={busy || !dirty}>{busy ? "Đang lưu…" : "Lưu tài khoản nhận tiền"}</button></div>
+    </form>
+  </section>;
+}
+
 function PropertyList({ navigate, notify }) {
   const { user } = useAuth();
   const [page, setPage] = useState(1);
@@ -89,6 +123,7 @@ function PropertyList({ navigate, notify }) {
   const [status, setStatus] = useState("all");
   const [creating, setCreating] = useState(false);
   const [expandedPropertyId, setExpandedPropertyId] = useState(null);
+  const [rulesPropertyId, setRulesPropertyId] = useState("");
   const query = useApiQuery(
     `properties:${user?.id}:list:${page}:${search}:${status}`,
     () => listProperties({ page, pageSize: 12, search: search || undefined, isActive: status === "all" ? undefined : status === "active" }),
@@ -96,6 +131,15 @@ function PropertyList({ navigate, notify }) {
   );
   const properties = query.data?.data || [];
   const meta = query.data?.meta;
+  const rulesProperties = useApiQuery(`properties:${user?.id}:rules-selector`, async () => {
+    const items = [];
+    for (let currentPage = 1; ; currentPage += 1) {
+      const result = await listProperties({ page: currentPage, pageSize: 100 });
+      const rows = result.data || [];
+      items.push(...rows);
+      if (!rows.length || (result.meta?.totalPages != null ? currentPage >= result.meta.totalPages : rows.length < 100)) return items;
+    }
+  }, { enabled: Boolean(user) });
 
   function applySearch(event) {
     event.preventDefault();
@@ -115,6 +159,11 @@ function PropertyList({ navigate, notify }) {
           return <article className="pm-property-card" key={property.id}><span className="pm-card-icon"><Building2 size={23} aria-hidden="true" /></span><div className="pm-property-card-main"><h3>{property.name}</h3><p className="pm-address"><MapPin size={14} aria-hidden="true" />{property.address}</p></div><div className="pm-property-card-meta"><Status active={property.isActive} /><span>Tạo ngày {dateText(property.createdAt)}</span></div><button type="button" className="pm-text-action" aria-expanded={expanded} aria-controls={`pm-property-preview-${property.id}`} onClick={() => setExpandedPropertyId(expanded ? null : property.id)}>{expanded ? "Ẩn chi tiết" : "Xem chi tiết"} <ChevronDown size={17} aria-hidden="true" /></button><div id={`pm-property-preview-${property.id}`} className={`pm-property-card-reveal${expanded ? " is-open" : ""}`} aria-hidden={!expanded} inert={!expanded}><div className="pm-property-card-reveal-inner"><div><span>Mô tả khu trọ</span><p>{property.description || "Chưa có mô tả cho khu trọ này."}</p></div><button type="button" className="pm-secondary-action" onClick={() => navigate(`landlord/properties/${property.id}`)}>Quản lý khu trọ, hóa đơn và phòng <ArrowRight size={16} aria-hidden="true" /></button></div></div></article>;
         })}</div>}
         <Pagination page={page} meta={meta} onChange={setPage} />
+      </section>
+      <section className="pm-list-panel content-card" aria-labelledby="property-rules-select-title">
+        <div className="pm-section-heading"><div><h2 id="property-rules-select-title">Điều khoản khu trọ</h2><p>Chọn khu trọ để xem, tạo hoặc cập nhật điều khoản đang áp dụng.</p></div></div>
+        {rulesProperties.isLoading ? <p role="status">Đang tải khu trọ…</p> : rulesProperties.error ? <Feedback error={rulesProperties.error} onRetry={rulesProperties.reload} /> : <label className="pm-filter"><span>Khu trọ</span><select value={rulesPropertyId} onChange={event => setRulesPropertyId(event.target.value)}><option value="">Chọn khu trọ</option>{(rulesProperties.data || []).map(property => <option key={property.id} value={property.id}>{property.name}{property.isActive ? "" : " (tạm ngừng)"}</option>)}</select></label>}
+        {rulesPropertyId && <PropertyRules key={rulesPropertyId} propertyId={rulesPropertyId} navigate={navigate} embedded />}
       </section>
     </div>
   );
@@ -264,7 +313,9 @@ function PropertyDetail({ propertyId, navigate, notify }) {
           </section></div>
         </div>
 
+        <section className="pm-billing-card content-card"><div className="pm-section-heading"><div><span className="pm-eyebrow">QUY ĐỊNH CHUNG</span><h2>Nội quy & điều khoản khu trọ</h2><p>Thiết lập nội dung áp dụng cho các hợp đồng trong khu trọ.</p></div><button type="button" className="pm-secondary-action" onClick={() => navigate(`landlord/properties/${propertyId}/rules`)}>Quản lý nội quy <ArrowRight size={16} aria-hidden="true" /></button></div></section>
         <PropertyBillingSummary propertyId={propertyId} navigate={navigate} />
+        <PaymentAccountForm key={property.rowVersion} property={property} onSaved={() => { propertyQuery.reload(); notify("Đã cập nhật tài khoản nhận chuyển khoản."); }} />
         <section className="pm-management-panel content-card" aria-labelledby="pm-management-title"><div className="pm-section-heading"><div><span className="pm-eyebrow">QUẢN LÝ CHUNG</span><h2 id="pm-management-title">Vận hành khu trọ</h2></div></div><div className="pm-management-grid"><div><span>Trạng thái</span><Status active={property.isActive} /></div><div><span>Ngày tạo</span><strong><CalendarDays size={16} aria-hidden="true" />{dateText(property.createdAt)}</strong></div><div><span>Cập nhật gần nhất</span><strong><RotateCcw size={16} aria-hidden="true" />{dateText(property.updatedAt || property.createdAt)}</strong></div></div>{!property.isActive && <p className="pm-inactive-note"><AlertTriangle size={17} aria-hidden="true" /> Khu trọ đang tạm ngừng. Hãy kích hoạt khu trọ trước khi thêm phòng.</p>}</section>
         <PropertyRoomList propertyId={propertyId} property={property} navigate={navigate} />
         <ConfirmationToast request={pendingDelete} busy={busy} onCancel={cancelDelete} onConfirm={confirmDelete} />

@@ -47,6 +47,12 @@ public sealed class PropertiesController : ControllerBase
     public async Task<ActionResult<ApiResponse<PropertyResponse>>> Update(Guid propertyId, [FromBody] UpdatePropertyRequest request, CancellationToken ct) =>
         Ok(new ApiResponse<PropertyResponse>(PropertyResponse.From(await _service.UpdateAsync(propertyId, request.ToInput(), ct))));
 
+    [HttpPut("{propertyId:guid}/payment-account")]
+    public async Task<ActionResult<ApiResponse<PropertyResponse>>> UpdatePaymentAccount(Guid propertyId,
+        [FromBody] UpdatePaymentAccountRequest request, CancellationToken ct) =>
+        Ok(new ApiResponse<PropertyResponse>(PropertyResponse.From(await _service.UpdatePaymentAccountAsync(
+            propertyId, request.BankName, request.AccountNumber, request.AccountHolder, request.RowVersion, ct))));
+
     [HttpDelete("{propertyId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Delete(Guid propertyId, CancellationToken ct)

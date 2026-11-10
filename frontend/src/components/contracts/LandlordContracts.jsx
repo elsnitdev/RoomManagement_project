@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, FileText, Plus, Search } from 'lucide-react'
 import { billingApi } from '../../services/api/billingApi'
 import { contractApi } from '../../services/api/contractApi'
+import { LandlordRules } from './ContractRules'
 import { getLandlordTenants } from '../../services/api/landlordTenantApi'
 import { listRoomRows } from '../../services/api/RoomRowApi'
 import { endOfMonth, unavailableTenantIds } from './contractForm'
@@ -15,7 +16,7 @@ const statusText = { Draft: 'Bản nháp', Active: 'Đang hiệu lực', Expired
 const isUpcoming = contract => contract?.status === 'Active' && contract.startDate > today()
 const needsSettlement = contract => ['Expired', 'Terminated'].includes(contract?.status) && (Number(contract.outstandingAmount) > 0 || Number(contract.depositHeld) > 0 || contract.hasDraftInvoices || !contract.hasSettlement)
 const errorText = error => error?.message || 'Không thể thực hiện thao tác. Vui lòng thử lại.'
-const newForm = () => ({ roomId: '', startDate: today(), endMonth: '', monthlyRent: '', depositAmount: '0', paymentDueDay: '', tenantId: '', note: '' })
+const newForm = () => ({ roomId: '', startDate: today(), endMonth: '', monthlyRent: '', depositAmount: '0', depositPaymentStatus: 'Unpaid', depositPaymentMethod: 'Cash', paymentDueDay: '', tenantId: '', note: '' })
 const routeTo = (navigate, path) => navigate(`landlord/contracts${path}`)
 
 async function allTenants(signal) {
@@ -53,10 +54,17 @@ function DatePicker({ value, onChange, min }) {
 
 function MonthPicker({ value, min, onChange }) {
   const currentYear = Number(today().slice(0, 4))
-  const year = Number(value?.slice(0, 4) || min?.slice(0, 4) || currentYear)
+  const minYear = Number(min?.slice(0, 4) || currentYear)
+  const [year, setYear] = useState(() => Number(value?.slice(0, 4) || minYear))
   const month = value?.slice(5, 7) || ''
-  const years = Array.from({ length: 16 }, (_, index) => currentYear - 1 + index)
-  return <div className="ct-month"><select aria-label="Tháng kết thúc" value={month} onChange={event => onChange(event.target.value ? `${year}-${event.target.value}` : '')}><option value="">Chọn tháng</option>{Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0')).map(item => <option key={item} value={item} disabled={`${year}-${item}` < min}>Tháng {Number(item)}</option>)}</select><select aria-label="Năm kết thúc" value={year} onChange={event => { const next = Number(event.target.value); onChange(month && `${next}-${month}` >= min ? `${next}-${month}` : '') }}>{years.map(item => <option key={item} value={item}>{item}</option>)}</select></div>
+  useEffect(() => {
+    if (value) setYear(Number(value.slice(0, 4)))
+    else setYear(previous => Math.max(previous, minYear))
+  }, [value, minYear])
+  const startYear = Math.min(minYear, year)
+  const endYear = Math.min(9999, Math.max(minYear + 15, year))
+  const years = Array.from({ length: endYear - startYear + 1 }, (_, index) => startYear + index)
+  return <div className="ct-month"><select aria-label="Tháng kết thúc" value={month} onChange={event => onChange(event.target.value ? `${year}-${event.target.value}` : '')}><option value="">Chọn tháng</option>{Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0')).map(item => <option key={item} value={item} disabled={Boolean(min && `${year}-${item}` < min)}>Tháng {Number(item)}</option>)}</select><select aria-label="Năm kết thúc" value={year} onChange={event => { const next = Number(event.target.value); setYear(next); onChange(month && (!min || `${next}-${month}` >= min) ? `${next}-${month}` : '') }}>{years.map(item => <option key={item} value={item} disabled={item < minYear}>{item}</option>)}</select></div>
 }
 
 function Status({ contract }) { const upcoming = isUpcoming(contract); return <span className={`ct-status ct-status--${upcoming ? 'upcoming' : contract?.status?.toLowerCase()}`}>{upcoming ? 'Sắp bắt đầu' : statusText[contract?.status] || contract?.status}</span> }
@@ -80,6 +88,10 @@ export default function LandlordContracts({ notify, navigate, routeParts = [] })
   const [tenantAvailabilityError, setTenantAvailabilityError] = useState(false)
   const [showAddTenant, setShowAddTenant] = useState(false)
   const [detail, setDetail] = useState(null)
+  const [depositInvoice, setDepositInvoice] = useState(null)
+  const [depositInvoiceLoading, setDepositInvoiceLoading] = useState(false)
+  const [depositInvoiceError, setDepositInvoiceError] = useState(false)
+  const [depositRevision, setDepositRevision] = useState(0)
   const [form, setForm] = useState(newForm)
   const [roomSearch, setRoomSearch] = useState('')
   const [roomRow, setRoomRow] = useState('')
@@ -128,6 +140,18 @@ export default function LandlordContracts({ notify, navigate, routeParts = [] })
     return () => controller.abort()
   }, [propertyId, contractId])
   useEffect(() => {
+    if (!contractId || !detail || Number(detail.depositAmount) <= 0) { setDepositInvoice(null); return }
+    const controller = new AbortController()
+    setDepositInvoiceLoading(true)
+    setDepositInvoiceError(false)
+    setDepositInvoice(null)
+    billingApi.depositInvoice(contractId, controller.signal)
+      .then(invoice => { if (!controller.signal.aborted) setDepositInvoice(invoice) })
+      .catch(cause => { if (!controller.signal.aborted) { setDepositInvoiceError(true); setError(errorText(cause)) } })
+      .finally(() => { if (!controller.signal.aborted) setDepositInvoiceLoading(false) })
+    return () => controller.abort()
+  }, [contractId, detail?.depositAmount, depositRevision])
+  useEffect(() => {
     setForm(current => ({ ...current, roomId: routeRoomId || current.roomId }))
   }, [routeRoomId])
   useEffect(() => {
@@ -166,21 +190,37 @@ export default function LandlordContracts({ notify, navigate, routeParts = [] })
     try {
       // The API still requires ContractCode. Generate it without asking the landlord to enter it.
       const code = `HD-${chosenRoom.roomNumber.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()}-${form.startDate.slice(0, 4)}-${Date.now().toString(36).toUpperCase()}`.slice(0, 50)
-      const created = await contractApi.create(propertyId, { roomId: form.roomId, contractCode: code, startDate: form.startDate, endDate: endOfMonth(form.endMonth), monthlyRent: Number(form.monthlyRent), depositAmount: Number(form.depositAmount), paymentDueDay: form.paymentDueDay ? Number(form.paymentDueDay) : null, note: form.note.trim() || null })
+      const depositPaid = Number(form.depositAmount) > 0 && form.depositPaymentStatus === 'Paid'
+      const created = await contractApi.create(propertyId, { roomId: form.roomId, contractCode: code, startDate: form.startDate, endDate: endOfMonth(form.endMonth), monthlyRent: Number(form.monthlyRent), depositAmount: Number(form.depositAmount), depositPaymentStatus: depositPaid ? 'Paid' : 'Unpaid', depositPaymentMethod: depositPaid ? form.depositPaymentMethod : null, paymentDueDay: form.paymentDueDay ? Number(form.paymentDueDay) : null, note: form.note.trim() || null })
       if (form.tenantId) {
         try { await contractApi.addTenant(propertyId, created.id, { tenantId: form.tenantId, joinDate: form.startDate, isContactPerson: true }) }
-        catch (cause) { notify?.('Đã lưu bản nháp, nhưng chưa gán được người thuê.'); setError(errorText(cause)) }
+        catch (cause) {
+          notify?.(`Đã tạo hợp đồng${created.depositInvoiceId ? ' và hóa đơn cọc' : ''}, nhưng chưa gán được người thuê: ${errorText(cause)}`)
+          routeTo(navigate, `/${propertyId}/${created.id}`)
+          return
+        }
       }
-      notify?.('Đã tạo hợp đồng nháp.')
-      routeTo(navigate, `/${propertyId}/${created.id}`)
+      notify?.(created.depositInvoiceId ? 'Đã tạo hợp đồng và phát hành hóa đơn cọc.' : 'Đã tạo hợp đồng nháp.')
+      if (created.depositInvoiceId) navigate(`landlord/billing/${created.depositInvoiceId}`)
+      else routeTo(navigate, `/${propertyId}/${created.id}`)
     } catch (cause) { setError(errorText(cause)) }
     finally { setBusy(false) }
   }
 
   async function run(action, message) {
     setBusy(true); setError('')
-    try { await action(); setDetail(await contractApi.detail(propertyId, contractId)); notify?.(message) }
+    try { await action(); setDetail(await contractApi.detail(propertyId, contractId)); setDepositRevision(value => value + 1); notify?.(message) }
     catch (cause) { setError(errorText(cause)) }
+    finally { setBusy(false) }
+  }
+
+  async function createLegacyDeposit() {
+    setBusy(true); setError('')
+    try {
+      const invoice = await billingApi.createDeposit(contractId)
+      notify?.('Đã tạo hóa đơn cọc nháp. Hãy kiểm tra rồi phát hành.')
+      navigate(`landlord/billing/${invoice.id}`)
+    } catch (cause) { setError(errorText(cause)); setDepositRevision(value => value + 1) }
     finally { setBusy(false) }
   }
 
@@ -199,7 +239,12 @@ export default function LandlordContracts({ notify, navigate, routeParts = [] })
       <form className="ct-form" onSubmit={create}>
         <section className="ct-card"><div className="ct-card-head"><span className="ct-step">1</span><div><h2>Chọn phòng <em>*</em></h2><p>Vị trí phòng được hiển thị theo dãy và tầng.</p></div></div><div className="ct-room-filters"><label>Khu trọ<select value={propertyId} onChange={event => { setPropertyId(event.target.value); setRoomRow(''); setRoomFloor(''); setRoomSearch(''); setForm(current => ({ ...current, roomId: '', monthlyRent: '' })) }} required>{properties.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Tìm phòng<input type="search" placeholder="Mã hoặc tên phòng" value={roomSearch} onChange={event => setRoomSearch(event.target.value)} /></label><label>Dãy<select value={roomRow} onChange={event => setRoomRow(event.target.value)}><option value="">Tất cả dãy</option>{rows.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label><label>Tầng<select value={roomFloor} onChange={event => setRoomFloor(event.target.value)}><option value="">Tất cả tầng</option>{[...new Set(rooms.map(item => item.floor).filter(item => item !== null))].sort((a, b) => a - b).map(item => <option key={item} value={item}>{item === 0 ? 'Tầng trệt' : `Tầng ${item}`}</option>)}</select></label></div><div className="ct-room-list" role="radiogroup" aria-label="Phòng còn trống">{matchingRooms.length ? matchingRooms.map(room => <label className={`ct-room-option${form.roomId === room.id ? ' is-selected' : ''}`} key={room.id}><input type="radio" name="contract-room" checked={form.roomId === room.id} onChange={() => setForm(current => ({ ...current, roomId: room.id, monthlyRent: String(room.basePrice || '') }))} /><span><strong>{room.roomNumber}{room.roomName && ` · ${room.roomName}`}</strong><small><RoomLabel room={room} rows={rows} /> · {room.area ? `${room.area} m²` : 'Diện tích chưa có'} · {money(room.basePrice)}/tháng</small></span><b>Còn trống</b></label>) : <p className="ct-empty-text">Không có phòng trống phù hợp.</p>}</div></section>
         {chosenRoom && <><section className="ct-card"><div className="ct-card-head"><span className="ct-step">2</span><div><h2>Thời hạn</h2><p>Phòng đã chọn: <RoomLabel room={chosenRoom} rows={rows} property={property} /></p></div></div><div className="ct-fields"><label>Ngày bắt đầu *<DatePicker value={form.startDate} onChange={value => setForm(current => ({ ...current, startDate: value, endMonth: current.endMonth < value.slice(0, 7) ? '' : current.endMonth }))} /></label><label>Tháng kết thúc *<MonthPicker value={form.endMonth} min={form.startDate.slice(0, 7)} onChange={value => patchForm('endMonth', value)} />{form.endMonth && <small>Hợp đồng kết thúc ngày {displayDate(endOfMonth(form.endMonth))}</small>}</label></div></section>
-          <section className="ct-card"><h2>Tài chính</h2><div className="ct-fields"><label>Tiền thuê/tháng *<input type="number" min="0" step="1000" required value={form.monthlyRent} onChange={event => patchForm('monthlyRent', event.target.value)} /><small>Gợi ý từ giá niêm yết của phòng.</small></label><label>Tiền cọc *<input type="number" min="0" step="1000" required value={form.depositAmount} onChange={event => patchForm('depositAmount', event.target.value)} /></label><label>Hạn thanh toán<select value={form.paymentDueDay} onChange={event => patchForm('paymentDueDay', event.target.value)}><option value="">Chưa thiết lập</option>{Array.from({ length: 15 }, (_, index) => index + 1).map(day => <option key={day} value={day}>Ngày {String(day).padStart(2, '0')} hằng tháng</option>)}</select></label></div></section>
+          <section className="ct-card ct-finance-card"><h2>Tài chính</h2><div className="ct-fields">
+            <label>Tiền thuê/tháng *<input type="number" min="0" step="1000" required value={form.monthlyRent} onChange={event => patchForm('monthlyRent', event.target.value)} /><small>Gợi ý từ giá niêm yết của phòng.</small></label>
+            <label>Tiền cọc *<input type="number" min="0" step="1000" required value={form.depositAmount} onChange={event => patchForm('depositAmount', event.target.value)} /><small>Cọc lớn hơn 0 sẽ tự phát hành hóa đơn khi lưu hợp đồng.</small></label>
+            <label>Hạn thanh toán<select value={form.paymentDueDay} onChange={event => patchForm('paymentDueDay', event.target.value)}><option value="">Chưa thiết lập</option>{Array.from({ length: 15 }, (_, index) => index + 1).map(day => <option key={day} value={day}>Ngày {String(day).padStart(2, '0')} hằng tháng</option>)}</select></label>
+            {Number(form.depositAmount) > 0 && <div className="ct-deposit-fields"><label>Trạng thái tiền cọc<select value={form.depositPaymentStatus} onChange={event => patchForm('depositPaymentStatus', event.target.value)}><option value="Unpaid">Chưa thanh toán (mặc định)</option><option value="Paid">Đã nhận đủ tiền cọc</option></select></label>{form.depositPaymentStatus === 'Paid' && <><label>Phương thức đã nhận<select value={form.depositPaymentMethod} onChange={event => patchForm('depositPaymentMethod', event.target.value)}><option value="Cash">Tiền mặt</option><option value="BankTransfer">Chuyển khoản</option></select></label></>}<p>{form.depositPaymentStatus === 'Paid' ? 'Hóa đơn cọc sẽ được phát hành và ghi nhận đã thanh toán đủ.' : 'Hóa đơn cọc sẽ được phát hành với số tiền còn phải thu bằng tiền cọc.'}</p></div>}
+          </div></section>
           <section className="ct-card"><h2>Người thuê</h2><p>Tìm và chọn đúng hồ sơ bằng email hoặc số điện thoại. Có thể thêm sau khi lưu bản nháp.</p><label>Tìm người thuê<div className="ct-search"><Search size={17} /><input type="search" placeholder="Email hoặc số điện thoại…" value={tenantSearch} onChange={event => setTenantSearch(event.target.value)} /></div></label>{chosenTenant && <div className="ct-picked"><strong>Đã chọn: {chosenTenant.fullName}</strong><span>{chosenTenant.email || 'Chưa có email'} · {chosenTenant.phoneNumber || 'Chưa có SĐT'}</span><button type="button" onClick={() => patchForm('tenantId', '')}>Bỏ chọn</button></div>}<div className="ct-tenant-list">{matchingTenants.length ? matchingTenants.map(item => <button key={item.id} type="button" className={form.tenantId === item.id ? 'is-selected' : ''} onClick={() => patchForm('tenantId', item.id)}><strong>{item.fullName}</strong><span>{item.email || 'Chưa có email'} · {item.phoneNumber || 'Chưa có SĐT'}</span><small>{form.tenantId === item.id ? 'Đã chọn' : 'Chọn'}</small></button>) : <p className="ct-empty-text">Không tìm thấy người thuê. <button type="button" onClick={() => navigate('landlord/tenants')}>Đến danh mục người thuê</button></p>}</div></section>
           <section className="ct-card"><label>Ghi chú<textarea rows={3} maxLength={1000} value={form.note} onChange={event => patchForm('note', event.target.value)} /></label></section><div className="ct-form-footer"><span>Mã hợp đồng được hệ thống tạo khi lưu.</span><div><button type="button" className="contract-button contract-button--ghost" onClick={() => routeTo(navigate, '')}>Hủy</button><button type="submit" className="contract-button contract-button--primary" disabled={busy || !form.endMonth}>{busy ? 'Đang lưu…' : 'Lưu bản nháp'}</button></div></div></>}
       </form>
@@ -231,6 +276,7 @@ export default function LandlordContracts({ notify, navigate, routeParts = [] })
               <div><dt>Thời hạn</dt><dd>{displayDate(detail.startDate)} – {displayDate(detail.endDate)}</dd></div>
               <div><dt>Tiền thuê/tháng</dt><dd>{money(detail.monthlyRent)}</dd></div>
               <div><dt>Tiền cọc</dt><dd>{money(detail.depositAmount)}</dd></div>
+              {Number(detail.depositAmount) > 0 && <div><dt>Hóa đơn cọc</dt><dd>{depositInvoiceLoading ? 'Đang kiểm tra hóa đơn…' : depositInvoiceError ? <button type="button" className="contract-button contract-button--secondary" onClick={() => setDepositRevision(value => value + 1)}>Không tải được hóa đơn · Thử lại</button> : depositInvoice ? <button type="button" className="contract-button contract-button--secondary" onClick={() => navigate(`landlord/billing/${depositInvoice.id}`)}>Xem hóa đơn cọc · {depositInvoice.status === 'Draft' ? 'Bản nháp' : depositInvoice.status === 'Cancelled' ? 'Đã hủy' : 'Đã phát hành'}</button> : ['Draft', 'Active'].includes(detail.status) ? <button type="button" className="contract-button contract-button--secondary" disabled={busy} onClick={() => { if (window.confirm('Hợp đồng cũ chưa có hóa đơn cọc. Tạo hóa đơn nháp để kiểm tra trước khi phát hành?')) createLegacyDeposit() }}>Tạo hóa đơn cọc nháp cho hợp đồng cũ</button> : 'Chưa có hóa đơn cọc'}</dd></div>}
               <div><dt>Hạn thanh toán</dt><dd>{detail.paymentDueDay ? 'Ngày ' + detail.paymentDueDay + ' hằng tháng' : 'Chưa thiết lập'}</dd></div>
               {detail.note && <div><dt>Ghi chú</dt><dd>{detail.note}</dd></div>}
             </dl>
@@ -240,12 +286,13 @@ export default function LandlordContracts({ notify, navigate, routeParts = [] })
             <div className="ct-actions">
               {detail.status === 'Draft' && <>
                 <button type="button" className="contract-button contract-button--primary" disabled={busy || !detail.tenants?.length} onClick={() => run(() => contractApi.activate(propertyId, contractId), 'Đã kích hoạt hợp đồng.')}>Kích hoạt hợp đồng</button>
-                <button type="button" className="contract-button contract-button--danger" disabled={busy} onClick={() => { if (window.confirm('Hủy bản nháp này?')) run(() => contractApi.cancel(propertyId, contractId), 'Đã hủy bản nháp.') }}>Hủy bản nháp</button>
+                <button type="button" className="contract-button contract-button--danger" disabled={busy} onClick={() => { if (window.confirm('Hủy bản nháp và hóa đơn cọc chưa có giao dịch? Nếu đã có giao dịch, hệ thống sẽ chặn để đối soát.')) run(() => contractApi.cancel(propertyId, contractId), 'Đã hủy bản nháp và hóa đơn cọc chưa có giao dịch.') }}>Hủy bản nháp</button>
               </>}
               {detail.status === 'Active' && <button type="button" className="contract-button contract-button--ghost" disabled={busy} onClick={() => { const reason = window.prompt('Lý do kết thúc hợp đồng sớm'); if (reason?.trim()) run(() => contractApi.terminate(propertyId, contractId, reason.trim()), 'Đã kết thúc hợp đồng.') }}>Kết thúc sớm</button>}
             </div>
           </aside>
         </div>
+        <LandlordRules propertyId={propertyId} contractId={contractId} detail={detail} navigate={navigate} />
         {needsSettlement(detail) && <div className="contract-message contract-message--warning" role="status"><strong>Cần đối chiếu tất toán.</strong> Còn nợ {money(detail.outstandingAmount)} · Cọc đang giữ {money(detail.depositHeld)}{detail.hasDraftInvoices ? ' · Có hóa đơn nháp' : ''}{!detail.hasSettlement ? ' · Chưa có bản ghi tất toán' : ''}</div>}
         <section className="ct-card">
           <h2>Người thuê</h2>

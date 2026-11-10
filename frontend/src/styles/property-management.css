@@ -236,3 +236,36 @@
 @media(max-width:900px){.pm-property-card{grid-template-columns:48px minmax(0,1fr) auto}.pm-property-card .pm-text-action{grid-column:2/-1;justify-self:end}.pm-billing-grid,.pm-management-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.pm-property-card{grid-template-columns:45px minmax(0,1fr);gap:10px 12px;padding:15px}.pm-property-card .pm-card-icon{width:45px;height:45px}.pm-property-card-meta{grid-column:2;justify-items:start;display:flex;align-items:center;flex-wrap:wrap;gap:8px}.pm-property-card .pm-text-action{grid-column:2;justify-self:start}.pm-property-card-reveal{margin-top:-10px}.pm-property-card-reveal.is-open{margin-top:0}.pm-property-card-reveal-inner{align-items:flex-start;flex-direction:column;gap:10px}.pm-property-card-reveal-inner .pm-secondary-action{margin:0 0 4px;white-space:normal;text-align:left}.pm-billing-panel,.pm-management-panel{padding:18px}.pm-billing-grid,.pm-management-grid{grid-template-columns:1fr}.pm-billing-bottom{align-items:flex-start;flex-direction:column}.pm-page--detail .pm-room-panel .pm-room-heading{align-items:flex-start;flex-direction:column}.pm-page--detail .pm-room-panel .pm-heading-actions{justify-content:flex-start}}
 @media(prefers-reduced-motion:reduce){.pm-details-reveal,.pm-detail-toggle svg,.pm-property-card-reveal,.pm-property-card .pm-text-action svg{transition:none}}
+
+/* Per-property receiving account: clear configuration next to billing facts. */
+.pm-payment-account {
+  padding: 24px;
+  border: 1px solid #c6dced;
+  border-radius: 15px;
+  background: linear-gradient(130deg, #f3f9ff 0%, #fff 47%);
+  box-shadow: 0 3px 16px rgb(30 76 115 / .05);
+}
+.pm-payment-account .pm-section-heading { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #dce8f2; }
+.pm-payment-account .pm-eyebrow { color: #245e90; }
+.pm-payment-account .pm-section-heading h2 { color: #1b4263; }
+.pm-payment-account > p { margin: 0 0 19px; color: #4f667c; font-size: 13px; line-height: 1.6; }
+.pm-payment-account .pm-payment-account-status { display: inline-flex; align-items: center; gap: 7px; width: max-content; max-width: 100%; padding: 7px 10px; border: 1px solid #ebd8ae; border-radius: 999px; background: #fff7e7; color: #80540d; font-size: 11px; line-height: 1.4; font-weight: 800; }
+.pm-payment-account-status::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pm-payment-account .pm-payment-account-status[data-configured="true"] { border-color: #b9dfc5; background: #eaf7ef; color: #176442; }
+.pm-payment-account-form { gap: 15px 18px; }
+.pm-payment-account-form .field { min-width: 0; }
+.pm-payment-account-form .field > span { color: #304e68; font-size: 12px; font-weight: 750; }
+.pm-payment-account-form input { width: 100%; min-height: 44px; border: 1px solid #bfcfdf; border-radius: 9px; padding: 9px 12px; background: #fff; color: #203047; font: inherit; font-size: 13px; }
+.pm-payment-account-form input::placeholder { color: #71859a; }
+.pm-payment-account-form > p:not(.form-error) { margin: -4px 0 0; color: #587188; font-size: 12px; line-height: 1.5; }
+.pm-payment-account-form .pm-form-actions { margin-top: 3px; }
+.pm-payment-account-form .pm-form-actions button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border: 1px solid #b7d1e4; border-radius: 9px; background: #f4f9fd; color: #205d99; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
+.pm-payment-account-form .pm-form-actions button:hover:not(:disabled) { background: #e7f3fb; }
+.pm-payment-account-form .pm-form-actions button[type="submit"] { border-color: #205d99; background: #205d99; color: #fff; }
+.pm-payment-account-form .pm-form-actions button[type="submit"]:hover:not(:disabled) { background: #164d80; }
+.pm-payment-account-form .pm-form-actions button:disabled { opacity: .52; cursor: not-allowed; }
+.pm-payment-account-form :is(button,input):focus-visible { outline: 3px solid #2d78bb; outline-offset: 3px; }
+@media (max-width: 560px) {
+  .pm-payment-account { padding: 18px; }
+  .pm-payment-account-form .pm-form-actions button { width: 100%; }
+}

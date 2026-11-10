@@ -9,6 +9,7 @@ public interface IInvoiceStore
     Task<Contract?> GetOwnedContractAsync(Guid propertyId, Guid contractId, string ownerId, CancellationToken ct);
     /// <summary>Tìm hợp đồng thuộc chủ trọ theo mã hợp đồng.</summary>
     Task<Contract?> GetOwnedContractByIdAsync(Guid contractId, string ownerId, CancellationToken ct);
+    Task<Invoice?> GetOwnedDepositAsync(Guid contractId, string ownerId, CancellationToken ct);
     /// <summary>Lấy danh sách hóa đơn của chủ trọ theo bộ lọc và phân trang.</summary>
     Task<(IReadOnlyList<InvoiceSummaryResult> Items, long Total)> ListOwnedAsync(
         Guid propertyId, string ownerId, InvoiceFilter filter, CancellationToken ct);
@@ -19,6 +20,8 @@ public interface IInvoiceStore
     Task<InvoiceDetailResult?> GetOwnedDetailAsync(Guid invoiceId, string ownerId, CancellationToken ct);
     /// <summary>Lấy chi tiết hóa đơn mà người thuê được xem.</summary>
     Task<InvoiceDetailResult?> GetTenantDetailAsync(Guid invoiceId, string tenantUserId, CancellationToken ct);
+    Task<Property?> GetTenantPaymentPropertyAsync(Guid invoiceId, string tenantUserId, CancellationToken ct);
+    Task<bool> CanTenantDeclarePaymentAsync(Guid invoiceId, string tenantUserId, DateOnly today, CancellationToken ct);
     /// <summary>Tạo hóa đơn nháp cùng các dòng tiền sau khi kiểm tra dữ liệu.</summary>
     Task<Invoice> CreateDraftAsync(Invoice invoice, IReadOnlyList<InvoiceItem> items,
         string ownerId, CancellationToken ct);

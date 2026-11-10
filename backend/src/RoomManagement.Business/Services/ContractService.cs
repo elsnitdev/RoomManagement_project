@@ -49,7 +49,7 @@ public sealed class ContractService
         (input.DepositAmount == 0 && input.DepositPaymentStatus == InitialDepositPaymentStatus.Paid) ||
         (input.DepositPaymentStatus == InitialDepositPaymentStatus.Paid &&
             (input.DepositPaymentMethod is not (PaymentMethod.Cash or PaymentMethod.BankTransfer) ||
-             input.DepositPaidAt is null || input.DepositPaidAt.Value.UtcDateTime > now)) ||
+             input.DepositPaidAt is { } paidAt && paidAt.UtcDateTime > now)) ||
         (input.DepositPaymentStatus == InitialDepositPaymentStatus.Unpaid &&
             (input.DepositPaymentMethod is not null || input.DepositPaidAt is not null)))
       throw new BusinessException(BusinessErrorType.Validation,
@@ -96,7 +96,7 @@ public sealed class ContractService
           Id = Guid.NewGuid(), InvoiceId = invoiceId,
           ClaimedAmount = contract.DepositAmount, VerifiedAmount = contract.DepositAmount,
           PaymentMethod = input.DepositPaymentMethod!.Value, Status = PaymentStatus.Success,
-          PaidAt = input.DepositPaidAt!.Value.UtcDateTime, VerifiedAt = now,
+          PaidAt = input.DepositPaidAt?.UtcDateTime ?? now, VerifiedAt = now,
           VerifiedByUserId = owner, SubmittedByUserId = owner,
           IdempotencyKey = $"deposit-initial:{contract.Id:N}",
           Note = "Chủ trọ ghi nhận đã nhận đủ cọc khi tạo hợp đồng.", CreatedAt = now

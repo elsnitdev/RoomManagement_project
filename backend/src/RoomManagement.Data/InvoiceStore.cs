@@ -16,15 +16,24 @@ public sealed class InvoiceStore : IInvoiceStore
 
     /// <summary>Tạo truy vấn hóa đơn thuộc các khu trọ của chủ trọ.</summary>
     private IQueryable<Invoice> OwnedInvoices(string ownerId) =>
-        from invoice in _db.Invoices
-        join room in _db.Rooms on invoice.RoomId equals room.Id
-        join property in _db.Properties on room.PropertyId equals property.Id
-        where property.OwnerUserId == ownerId
-        select invoice;
+        InvoiceAccessQueries.OwnedInvoices(_db, ownerId);
 
     /// <summary>Tạo truy vấn hóa đơn đã phát hành mà người thuê được xem.</summary>
     private IQueryable<Invoice> TenantInvoices(string tenantUserId) =>
         InvoiceAccessQueries.TenantInvoices(_db, tenantUserId);
+
+    public Task<Property?> GetTenantPaymentPropertyAsync(Guid invoiceId, string tenantUserId, CancellationToken ct) =>
+        (from invoice in TenantInvoices(tenantUserId).AsNoTracking()
+         join room in _db.Rooms.AsNoTracking() on invoice.RoomId equals room.Id
+         join property in _db.Properties.AsNoTracking() on room.PropertyId equals property.Id
+         where invoice.Id == invoiceId
+         select property).SingleOrDefaultAsync(ct);
+
+    public Task<bool> CanTenantDeclarePaymentAsync(Guid invoiceId, string tenantUserId, DateOnly today, CancellationToken ct) =>
+        TenantInvoices(tenantUserId).AnyAsync(invoice => invoice.Id == invoiceId &&
+            _db.ContractTenants.Any(link => link.ContractId == invoice.ContractId &&
+                (link.LeaveDate == null || link.LeaveDate >= today) &&
+                _db.TenantProfiles.Any(profile => profile.Id == link.TenantId && profile.UserId == tenantUserId)), ct);
 
     /// <inheritdoc />
     public Task<Contract?> GetOwnedContractAsync(Guid propertyId, Guid contractId, string ownerId, CancellationToken ct) =>
@@ -42,6 +51,13 @@ public sealed class InvoiceStore : IInvoiceStore
          join property in _db.Properties.AsNoTracking() on room.PropertyId equals property.Id
          where contract.Id == contractId && property.OwnerUserId == ownerId && property.IsActive
          select contract).SingleOrDefaultAsync(ct);
+
+    public Task<Invoice?> GetOwnedDepositAsync(Guid contractId, string ownerId, CancellationToken ct) =>
+        OwnedInvoices(ownerId).AsNoTracking()
+            .Where(x => x.ContractId == contractId && x.InvoiceType == InvoiceType.Deposit)
+            .OrderBy(x => x.Status == InvoiceStatus.Cancelled ? 1 : 0)
+            .ThenByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
 
     /// <inheritdoc />
     public async Task<(IReadOnlyList<InvoiceSummaryResult> Items, long Total)> ListOwnedAsync(
@@ -81,7 +97,7 @@ public sealed class InvoiceStore : IInvoiceStore
     {
         var invoice = await OwnedInvoices(ownerId).AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == invoiceId, ct);
-        return await DetailAsync(invoice, ct);
+        return await DetailAsync(invoice, null, ct);
     }
 
     /// <inheritdoc />
@@ -89,18 +105,25 @@ public sealed class InvoiceStore : IInvoiceStore
     {
         var invoice = await TenantInvoices(tenantUserId).AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == invoiceId, ct);
-        return await DetailAsync(invoice, ct);
+        return await DetailAsync(invoice, tenantUserId, ct);
     }
 
     /// <summary>Ghép hóa đơn với các dòng tiền và số dư.</summary>
-    private async Task<InvoiceDetailResult?> DetailAsync(Invoice? invoice, CancellationToken ct)
+    private async Task<InvoiceDetailResult?> DetailAsync(Invoice? invoice, string? tenantUserId, CancellationToken ct)
     {
         if (invoice is null) return null;
         var items = await _db.InvoiceItems.AsNoTracking().Where(x => x.InvoiceId == invoice.Id)
             .OrderBy(x => x.CreatedAt).ThenBy(x => x.Id).ToListAsync(ct);
         var balance = await _db.InvoiceBalances.AsNoTracking()
             .SingleAsync(x => x.InvoiceId == invoice.Id, ct);
-        return new InvoiceDetailResult(invoice, items, Balance(balance));
+        var tenants = await (from link in _db.ContractTenants.AsNoTracking()
+                             join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
+                             where link.ContractId == invoice.ContractId &&
+                                 (tenantUserId == null || profile.UserId == tenantUserId)
+                             orderby link.JoinDate, link.Id
+                             select new InvoiceTenantResult(profile.FullName, profile.PhoneNumber, profile.Email,
+                                 link.IsContactPerson, link.JoinDate, link.LeaveDate)).ToListAsync(ct);
+        return new InvoiceDetailResult(invoice, items, Balance(balance), tenants);
     }
 
     /// <inheritdoc />
@@ -124,6 +147,11 @@ public sealed class InvoiceStore : IInvoiceStore
                                      : contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active)
                            select contract.Id).AnyAsync(ct);
         if (!owned) throw NotFound();
+        if (invoice.InvoiceType == InvoiceType.Deposit &&
+            await _db.Invoices.AnyAsync(x => x.ContractId == invoice.ContractId &&
+                x.InvoiceType == InvoiceType.Deposit, ct))
+            throw new BusinessException(BusinessErrorType.Conflict,
+                "DEPOSIT_INVOICE_EXISTS", "Hợp đồng đã có lịch sử hóa đơn cọc.");
         if (invoice.InvoiceType == InvoiceType.Monthly &&
             await _db.Invoices.AnyAsync(x => x.RoomId == invoice.RoomId &&
                 x.InvoiceType == InvoiceType.Monthly && x.BillingYear == invoice.BillingYear &&
@@ -195,12 +223,7 @@ public sealed class InvoiceStore : IInvoiceStore
             ?? throw NotFound();
         if (invoice.Status == InvoiceStatus.Cancelled)
             throw Invalid("INVOICE_INVALID_STATUS", "Hóa đơn đã hủy.");
-        var hasMoneyHistory = await _db.Payments.AnyAsync(x => x.InvoiceId == invoiceId, ct) ||
-            await _db.Refunds.AnyAsync(x => x.InvoiceId == invoiceId, ct) ||
-            await _db.InvoiceAdjustments.AnyAsync(x => x.InvoiceId == invoiceId, ct) ||
-            await _db.DepositApplications.AnyAsync(x => x.TargetInvoiceId == invoiceId, ct) ||
-            invoice.InvoiceType == InvoiceType.Deposit &&
-                await _db.DepositApplications.AnyAsync(x => x.ContractId == invoice.ContractId, ct);
+        var hasMoneyHistory = await InvoiceFinancialActivity.ExistsAsync(_db, invoice, ct);
         if (hasMoneyHistory)
             throw Invalid("INVOICE_HAS_FINANCIAL_ACTIVITY", "Hóa đơn đã có giao dịch tài chính.");
         invoice.Status = InvoiceStatus.Cancelled;

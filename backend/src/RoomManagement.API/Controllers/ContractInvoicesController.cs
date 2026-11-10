@@ -15,6 +15,14 @@ public sealed class ContractInvoicesController : ControllerBase
     private readonly InvoiceService _service;
     public ContractInvoicesController(InvoiceService service) => _service = service;
 
+    [HttpGet("deposit")]
+    public async Task<IActionResult> GetDeposit(Guid contractId, CancellationToken ct)
+    {
+        var invoice = await _service.FindDepositAsync(contractId, ct);
+        return Ok(new ApiResponse<InvoiceCreatedResponse?>(
+            invoice is null ? null : InvoiceCreatedResponse.From(invoice)));
+    }
+
     [HttpPost("deposit")]
     public async Task<IActionResult> CreateDeposit(Guid contractId, CancellationToken ct) =>
         StatusCode(StatusCodes.Status201Created,

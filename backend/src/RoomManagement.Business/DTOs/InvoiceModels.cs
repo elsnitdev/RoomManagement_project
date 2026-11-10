@@ -15,5 +15,8 @@ public sealed record InvoicePreviewResult(Guid ContractId, Guid RoomId, short Ye
 public sealed record InvoiceBalanceResult(decimal EffectiveAmount, decimal TotalPaid,
     decimal TotalRefunded, decimal TotalDepositApplied, decimal RemainingAmount);
 public sealed record InvoiceSummaryResult(Invoice Invoice, InvoiceBalanceResult Balance);
+public sealed record InvoiceTenantResult(string FullName, string? PhoneNumber, string? Email,
+    bool IsContactPerson, DateOnly JoinDate, DateOnly? LeaveDate);
 public sealed record InvoiceDetailResult(Invoice Invoice,
-    IReadOnlyList<InvoiceItem> Items, InvoiceBalanceResult Balance);
+    IReadOnlyList<InvoiceItem> Items, InvoiceBalanceResult Balance,
+    IReadOnlyList<InvoiceTenantResult> Tenants);

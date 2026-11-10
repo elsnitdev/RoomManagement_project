@@ -26,6 +26,8 @@ public sealed record ContractTenantInfo(Guid Id, Guid TenantId, string? UserId, 
     public DateTime? CommitmentConfirmedAt { get; init; }
     public CommitmentEvidenceStatus? EvidenceStatus { get; init; }
     public bool HasConfirmedCommitment { get; init; }
+    public Guid? CurrentRulesVersionId { get; init; }
+    public bool HasAcceptedCurrentRules { get; init; }
     public IReadOnlyList<ContractTenureSpan> TenureSpans { get; init; } = [];
 }
 public sealed record ContractDetail(Contract Contract, string RoomNumber, IReadOnlyList<ContractTenantInfo> Tenants,

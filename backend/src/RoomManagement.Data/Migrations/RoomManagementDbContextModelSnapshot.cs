@@ -336,6 +336,137 @@ namespace RoomManagement.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("RoomManagement.Domain.Entities.ContractRulesAcceptance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AcceptedAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("AcceptedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid>("ContractTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RulesVersionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AcceptedByUserId");
+
+                    b.HasIndex("ContractTenantId");
+
+                    b.HasIndex("RulesVersionId", "ContractTenantId")
+                        .IsUnique();
+
+                    b.ToTable("ContractRulesAcceptances", "dbo");
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.ContractRulesEvidence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AcceptanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BlobName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("UploadedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AcceptanceId");
+
+                    b.HasIndex("BlobName")
+                        .IsUnique();
+
+                    b.HasIndex("UploadedByUserId");
+
+                    b.ToTable("ContractRulesEvidence", "dbo", t =>
+                        {
+                            t.HasCheckConstraint("CK_ContractRulesEvidence_Size", "[SizeBytes] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.ContractRulesVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("PropertyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("PropertyId")
+                        .IsUnique()
+                        .HasFilter("[PropertyId] IS NOT NULL AND [IsActive] = 1");
+
+                    b.HasIndex("ContractId", "VersionNumber")
+                        .IsUnique()
+                        .HasFilter("[ContractId] IS NOT NULL");
+
+                    b.HasIndex("PropertyId", "VersionNumber")
+                        .IsUnique()
+                        .HasFilter("[PropertyId] IS NOT NULL");
+
+                    b.ToTable("ContractRulesVersions", "dbo", t =>
+                        {
+                            t.HasCheckConstraint("CK_ContractRulesVersion_Scope", "([ContractId] IS NULL AND [PropertyId] IS NOT NULL) OR ([ContractId] IS NOT NULL AND [PropertyId] IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("RoomManagement.Domain.Entities.ContractSettlement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -414,6 +545,11 @@ namespace RoomManagement.Data.Migrations
 
                     b.Property<DateOnly?>("LeaveDate")
                         .HasColumnType("date");
+
+                    b.Property<bool>("OnlineRulesRequired")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
@@ -877,11 +1013,11 @@ namespace RoomManagement.Data.Migrations
 
                     b.HasIndex("VerifiedByUserId");
 
-                    b.HasIndex("SubmittedByUserId", "InvoiceId")
-                        .HasDatabaseName("IX_Payments_Submitter_Invoice");
-
                     b.HasIndex("InvoiceId", "Status")
                         .HasDatabaseName("IX_Payments_Invoice_Status");
+
+                    b.HasIndex("SubmittedByUserId", "InvoiceId")
+                        .HasDatabaseName("IX_Payments_Submitter_Invoice");
 
                     b.ToTable("Payments", "dbo", t =>
                         {
@@ -892,6 +1028,61 @@ namespace RoomManagement.Data.Migrations
                             t.HasCheckConstraint("CK_Payments_Status", "(Status IN (N'Pending', N'Success', N'Failed', N'Cancelled'))");
 
                             t.HasCheckConstraint("CK_Payments_Verification", "((Status = N'Success' AND VerifiedAmount IS NOT NULL AND VerifiedAmount > 0 AND PaidAt IS NOT NULL AND VerifiedAt IS NOT NULL AND VerifiedByUserId IS NOT NULL) OR (Status <> N'Success' AND VerifiedAmount IS NULL AND VerifiedAt IS NULL AND VerifiedByUserId IS NULL))");
+                        });
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.PaymentEvidence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BlobName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("UploadedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BlobName")
+                        .IsUnique();
+
+                    b.HasIndex("UploadedByUserId");
+
+                    b.HasIndex("PaymentId", "CreatedAt");
+
+                    b.ToTable("PaymentEvidence", "dbo", t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentEvidence_Size", "[SizeBytes] > 0");
                         });
                 });
 
@@ -957,6 +1148,15 @@ namespace RoomManagement.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(300)");
 
+                    b.Property<string>("BankAccountHolder")
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("BankAccountNumber")
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("BankName")
+                        .HasColumnType("nvarchar(150)");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2(0)")
@@ -1019,6 +1219,11 @@ namespace RoomManagement.Data.Migrations
 
                     b.Property<Guid>("InvoiceId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsOverpaymentRefund")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("Reason")
                         .IsRequired()
@@ -1627,6 +1832,61 @@ namespace RoomManagement.Data.Migrations
                         .HasConstraintName("FK_ContractDocuments_Contracts");
                 });
 
+            modelBuilder.Entity("RoomManagement.Domain.Entities.ContractRulesAcceptance", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("AcceptedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("RoomManagement.Domain.Entities.ContractTenant", null)
+                        .WithMany()
+                        .HasForeignKey("ContractTenantId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("RoomManagement.Domain.Entities.ContractRulesVersion", null)
+                        .WithMany()
+                        .HasForeignKey("RulesVersionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.ContractRulesEvidence", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.ContractRulesAcceptance", null)
+                        .WithMany()
+                        .HasForeignKey("AcceptanceId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UploadedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.ContractRulesVersion", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.Contract", null)
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("RoomManagement.Domain.Entities.Property", null)
+                        .WithMany()
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
             modelBuilder.Entity("RoomManagement.Domain.Entities.ContractSettlement", b =>
                 {
                     b.HasOne("RoomManagement.Domain.Entities.Contract", null)
@@ -1775,6 +2035,21 @@ namespace RoomManagement.Data.Migrations
                         .HasForeignKey("VerifiedByUserId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .HasConstraintName("FK_Payments_VerifiedBy");
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.PaymentEvidence", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.Payment", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UploadedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.PaymentReviewEvent", b =>

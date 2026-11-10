@@ -118,6 +118,14 @@ public sealed class InvoiceService
         return await _invoices.CreateDraftAsync(invoice, [item], owner, ct);
     }
 
+    public async Task<Invoice?> FindDepositAsync(Guid contractId, CancellationToken ct)
+    {
+        var owner = await OwnerAsync(ct);
+        _ = await _invoices.GetOwnedContractByIdAsync(contractId, owner, ct)
+            ?? throw NotFound("CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+        return await _invoices.GetOwnedDepositAsync(contractId, owner, ct);
+    }
+
     public async Task<PageResult<InvoiceSummaryResult>> ListAsync(Guid propertyId, InvoiceFilter filter, CancellationToken ct)
     {
         var owner = await OwnerAsync(ct);
@@ -156,6 +164,16 @@ public sealed class InvoiceService
         return await _invoices.GetTenantDetailAsync(invoiceId, tenantUserId, ct)
             ?? throw NotFound("INVOICE_NOT_FOUND", "Không tìm thấy hóa đơn.");
     }
+
+    public async Task<Property> GetMyPaymentPropertyAsync(string tenantUserId, Guid invoiceId, CancellationToken ct) =>
+        !string.IsNullOrWhiteSpace(tenantUserId)
+            ? await _invoices.GetTenantPaymentPropertyAsync(invoiceId, tenantUserId, ct)
+                ?? throw NotFound("INVOICE_NOT_FOUND", "Không tìm thấy hóa đơn.")
+            : throw NotFound("INVOICE_NOT_FOUND", "Không tìm thấy hóa đơn.");
+
+    public Task<bool> CanDeclareMyPaymentAsync(string tenantUserId, Guid invoiceId, CancellationToken ct) =>
+        _invoices.CanTenantDeclarePaymentAsync(invoiceId, tenantUserId,
+            VietnamDate.Today, ct);
 
     public async Task<Invoice> IssueAsync(Guid invoiceId, CancellationToken ct) =>
         await _invoices.IssueAsync(invoiceId, await OwnerAsync(ct), ct);

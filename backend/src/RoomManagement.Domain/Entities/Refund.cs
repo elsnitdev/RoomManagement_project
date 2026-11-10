@@ -7,6 +7,7 @@ public sealed class Refund
     public Guid Id { get; set; }
     public Guid InvoiceId { get; set; }
     public decimal Amount { get; set; }
+    public bool IsOverpaymentRefund { get; set; }
     public RefundStatus Status { get; set; }
     public DateTime? RefundedAt { get; set; }
     public string Reason { get; set; } = null!;

@@ -1,6 +1,20 @@
 # plans/
 ai-feature-workflow-guide.md
 backend/tests/RoomManagement.Tests/CrudIntegration.Local.cs
+# Các test và kết quả kiểm thử cọc chỉ dùng trên máy local
+backend/tests/RoomManagement.Tests/DepositApiCaptureTests.cs
+backend/tests/RoomManagement.Tests/DepositWorkflowTests.cs
+backend/tests/RoomManagement.Tests/LandlordPaymentTests.cs
+backend/tests/RoomManagement.Tests/PaymentEvidenceLocalTests.cs
+backend/tests/RoomManagement.Tests/OverpaymentLocalTests.cs
+backend/tests/RoomManagement.Tests/ContractRulesLocalTests.cs
+docs/deposit-api-review.json
+docs/deposit-task1-local.json
+docs/overpayment-review.local.json
+frontend/src/components/billing/paymentDate.local.test.js
+frontend/src/components/billing/invoiceDisplay.local.test.js
+frontend/src/services/api/uploadWithTimeout.local.test.js
+TestResults/
 .dotnet-cli/
 landlord-manage-tenant-profiles-plan.md
 architecture_and_workflow_frontend.md
@@ -29,3 +43,4 @@ backend/artifacts/*.log
 # OS
 .DS_Store
 Thumbs.db
+frontend/local-rules-ui-test*

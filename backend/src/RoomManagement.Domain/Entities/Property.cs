@@ -7,6 +7,9 @@ public sealed class Property
     public string Name { get; set; } = null!;
     public string Address { get; set; } = null!;
     public string? Description { get; set; }
+    public string? BankName { get; set; }
+    public string? BankAccountNumber { get; set; }
+    public string? BankAccountHolder { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

@@ -8,5 +8,6 @@ public sealed class ContractTenant
     public DateOnly JoinDate { get; set; }
     public DateOnly? LeaveDate { get; set; }
     public bool IsContactPerson { get; set; }
+    public bool OnlineRulesRequired { get; set; }
     public DateTime CreatedAt { get; set; }
 }

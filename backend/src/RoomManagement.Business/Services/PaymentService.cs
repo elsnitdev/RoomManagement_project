@@ -38,7 +38,7 @@ public sealed class PaymentService
         }, ct);
     }
 
-    public Task<IReadOnlyList<Payment>> ListTenantAsync(Guid invoiceId,
+    public Task<IReadOnlyList<TenantPaymentResult>> ListTenantAsync(Guid invoiceId,
         string tenantUserId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(tenantUserId) || invoiceId == Guid.Empty)

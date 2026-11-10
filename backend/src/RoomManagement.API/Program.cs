@@ -33,10 +33,14 @@ builder.Services.AddScoped<RoomImageService>();
 builder.Services.AddHostedService<BlobCleanupWorker>();
 builder.Services.AddScoped<RoomBatchService>();
 builder.Services.AddScoped<ContractService>();
+builder.Services.AddScoped<ContractRulesService>();
+builder.Services.AddScoped<ContractRulesEvidenceService>();
 builder.Services.AddScoped<BillingInputService>();
 builder.Services.AddScoped<MonthlyInvoiceCalculator>();
 builder.Services.AddScoped<InvoiceService>();
 builder.Services.AddScoped<PaymentService>();
+builder.Services.AddScoped<LandlordPaymentService>();
+builder.Services.AddScoped<PaymentEvidenceService>();
 builder.Services.AddHostedService<ContractExpiryWorker>();
 
 builder.Services.AddControllers(options =>

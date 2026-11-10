@@ -40,10 +40,10 @@ public sealed record SetContractEndDateRequest([property: JsonRequired] DateOnly
 public sealed record ConfirmMemberCommitmentRequest(
     [property: JsonRequired] CommitmentType CommitmentType,
     [property: JsonRequired] DateOnly SignedOn,
-    [property: Required, StringLength(200)] string SignerName,
+    [Required, StringLength(200)] string SignerName,
     Guid? SignerTenantProfileId,
     [StringLength(100)] string? SignerRelation,
-    [property: Required] string TermsSnapshot)
+    [Required] string TermsSnapshot)
 {
     public ConfirmMemberCommitmentInput ToInput() => new(CommitmentType, SignedOn,
         SignerName, SignerTenantProfileId, SignerRelation, TermsSnapshot);

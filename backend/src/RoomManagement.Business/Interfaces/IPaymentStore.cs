@@ -10,5 +10,20 @@ public interface IPaymentStore
         DeclareTenantPaymentInput input, CancellationToken ct);
 
     /// <summary>Lấy các khoản chính tài khoản người thuê đã khai trên hóa đơn được xem.</summary>
-    Task<IReadOnlyList<Payment>> ListTenantAsync(Guid invoiceId, string tenantUserId, CancellationToken ct);
+    Task<IReadOnlyList<TenantPaymentResult>> ListTenantAsync(Guid invoiceId,
+        string tenantUserId, CancellationToken ct);
+
+    /// <summary>Lấy toàn bộ khoản khai và khoản thu của hóa đơn thuộc chủ trọ.</summary>
+    Task<IReadOnlyList<OwnerPaymentResult>> ListOwnedAsync(Guid invoiceId, string ownerId, CancellationToken ct);
+
+    /// <summary>Xác nhận hoặc từ chối một khoản đang chờ trong giao dịch khóa hóa đơn.</summary>
+    Task<OwnerPaymentResult> ReviewAsync(Guid paymentId, string ownerId,
+        ReviewPaymentInput input, CancellationToken ct);
+
+    /// <summary>Ghi ngay khoản tiền chủ trọ đã nhận, kèm lịch sử xác nhận.</summary>
+    Task<OwnerPaymentResult> RecordReceivedAsync(Guid invoiceId, string ownerId,
+        RecordReceivedPaymentInput input, CancellationToken ct);
+    Task<Refund> RecordOverpaymentRefundAsync(Guid invoiceId, string ownerId,
+        decimal amount, string? transactionCode, Guid idempotencyKey, CancellationToken ct);
+    Task<IReadOnlyList<Refund>> ListOverpaymentRefundsAsync(Guid invoiceId, string ownerId, CancellationToken ct);
 }

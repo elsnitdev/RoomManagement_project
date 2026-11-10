@@ -78,6 +78,26 @@ public sealed class PropertyService
         return property;
     }
 
+    public async Task<Property> UpdatePaymentAccountAsync(Guid propertyId, string? bankName,
+        string? accountNumber, string? accountHolder, string rowVersion, CancellationToken ct)
+    {
+        var property = await GetAsync(propertyId, ct);
+        RowVersionGuard.Verify(rowVersion, property.RowVersion);
+        var fields = new[] { bankName, accountNumber, accountHolder };
+        if (fields.Any(value => !string.IsNullOrWhiteSpace(value)))
+        {
+            PropertyRoomValidation.Required(bankName, 150, "Ngân hàng");
+            PropertyRoomValidation.Required(accountNumber, 50, "Số tài khoản");
+            PropertyRoomValidation.Required(accountHolder, 150, "Tên chủ tài khoản");
+        }
+        property.BankName = string.IsNullOrWhiteSpace(bankName) ? null : bankName.Trim();
+        property.BankAccountNumber = string.IsNullOrWhiteSpace(accountNumber) ? null : accountNumber.Trim();
+        property.BankAccountHolder = string.IsNullOrWhiteSpace(accountHolder) ? null : accountHolder.Trim();
+        property.UpdatedAt = DateTime.UtcNow;
+        await _propertyStore.SaveAsync(ct);
+        return property;
+    }
+
     public async Task DeleteAsync(Guid propertyId, CancellationToken ct)
     {
         var property = await GetAsync(propertyId, ct);

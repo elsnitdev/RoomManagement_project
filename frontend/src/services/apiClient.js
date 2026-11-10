@@ -36,7 +36,7 @@ function errorMessage(data, status) {
     : 'Không thể xử lý yêu cầu. Vui lòng thử lại.'
 }
 
-export async function apiRequest(path, { method = 'GET', body, headers, signal, auth = true } = {}) {
+export async function apiRequest(path, { method = 'GET', body, headers, signal, auth = true, responseType } = {}) {
   const requestHeaders = new Headers(headers)
   let requestBody
 
@@ -65,6 +65,7 @@ export async function apiRequest(path, { method = 'GET', body, headers, signal, 
     throw new ApiError('Không kết nối được máy chủ. Vui lòng thử lại sau.', 0, error)
   }
 
+  if (response.ok && responseType === 'blob') return response.blob()
   const contentType = response.headers.get('content-type') || ''
   const responseText = response.status === 204 ? '' : await response.text()
   let data = responseText || null

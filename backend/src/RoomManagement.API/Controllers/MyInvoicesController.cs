@@ -38,4 +38,19 @@ public sealed class MyInvoicesController : ControllerBase
         return Ok(new ApiResponse<InvoiceDetailResponse>(InvoiceDetailResponse.From(
             await _service.GetMineAsync(userId, invoiceId, ct))));
     }
+
+    [HttpGet("{invoiceId:guid}/payment-account")]
+    public async Task<IActionResult> PaymentAccount(Guid invoiceId, CancellationToken ct)
+    {
+        var userId = User.FindFirst("sub")?.Value ?? "";
+        var property = await _service.GetMyPaymentPropertyAsync(userId, invoiceId, ct);
+        return Ok(new ApiResponse<object>(new
+        {
+            propertyName = property.Name,
+            bankName = property.BankName,
+            accountNumber = property.BankAccountNumber,
+            accountHolder = property.BankAccountHolder,
+            canDeclarePayment = await _service.CanDeclareMyPaymentAsync(userId, invoiceId, ct)
+        }));
+    }
 }
