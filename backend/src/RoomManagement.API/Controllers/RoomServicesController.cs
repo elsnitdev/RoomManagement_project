@@ -25,4 +25,10 @@ public sealed class RoomServicesController : ControllerBase
         [FromBody] AssignRoomServiceRequest request, CancellationToken ct) =>
         StatusCode(StatusCodes.Status201Created, new ApiResponse<RoomServiceResponse>(
             RoomServiceResponse.From(await _service.AssignRoomServiceAsync(propertyId, roomId, request.ToInput(), ct))));
+
+    [HttpPut("{assignmentId:guid}")]
+    public async Task<IActionResult> Replace(Guid propertyId, Guid roomId, Guid assignmentId,
+        [FromBody] AssignRoomServiceRequest request, CancellationToken ct) =>
+        Ok(new ApiResponse<RoomServiceResponse>(RoomServiceResponse.From(
+            await _service.ReplaceRoomServiceAsync(propertyId, roomId, assignmentId, request.ToInput(), ct))));
 }

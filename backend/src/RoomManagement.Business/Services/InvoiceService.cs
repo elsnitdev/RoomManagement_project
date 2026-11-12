@@ -61,7 +61,9 @@ public sealed class InvoiceService
                     "Dịch vụ áp dụng một phần kỳ chưa có quy tắc phân bổ tiền.");
             var price = item.CustomPrice ?? assignment.Service.DefaultPrice
                 ?? throw Validation("SERVICE_PRICE_MISSING", "Dịch vụ chưa có đơn giá.");
-            services.Add(new BillableRoomService(item.ServiceId, assignment.Service.Name, price));
+            if (assignment.Service.PropertyId != propertyId)
+                throw Validation("SERVICE_PROPERTY_MISMATCH", "Dịch vụ không thuộc khu trọ của phòng.");
+            services.Add(new BillableRoomService(item.ServiceId, assignment.Service.Name, price, item.Quantity));
         }
         var issueDate = VietnamToday();
         return _calculator.Calculate(contract, input.Year, input.Month, issueDate,

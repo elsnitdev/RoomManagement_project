@@ -60,10 +60,15 @@ public sealed class MonthlyInvoiceCalculator
 
         foreach (var service in services)
         {
-            if (service.UnitPrice < 0) throw Validation("SERVICE_PRICE_INVALID", "Đơn giá dịch vụ không hợp lệ.");
+            if (service.UnitPrice < 0 || service.Quantity <= 0) throw Validation("SERVICE_PRICE_INVALID", "Đơn giá hoặc số lượng dịch vụ không hợp lệ.");
             var price = Money(service.UnitPrice);
+            decimal amount;
+            try { amount = Money(checked(service.Quantity * price)); }
+            catch (OverflowException) { throw Validation("SERVICE_AMOUNT_INVALID", "Thành tiền dịch vụ vượt giới hạn."); }
+            if (amount > 9_999_999_999_999_999.99m)
+                throw Validation("SERVICE_AMOUNT_INVALID", "Thành tiền dịch vụ vượt giới hạn.");
             items.Add(new CalculatedInvoiceItem(InvoiceItemType.Service,
-                service.Name, 1, price, price, service.ServiceId));
+                service.Name, service.Quantity, price, amount, service.ServiceId));
         }
 
         var total = items.Sum(x => x.Amount);

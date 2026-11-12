@@ -9,6 +9,8 @@ public sealed record CreateMeterReadingInput(UtilityType Type, short Year, byte 
     decimal PreviousValue, decimal CurrentValue, string? Note);
 public sealed record CreateServiceInput(string Name, string? Description, string? Unit,
     decimal? DefaultPrice);
+public sealed record UpdateServiceInput(string Name, string? Description, string? Unit,
+    decimal? DefaultPrice, bool IsActive);
 public sealed record AssignRoomServiceInput(Guid ServiceId, decimal? CustomPrice,
-    DateOnly StartDate, DateOnly? EndDate);
+    DateOnly StartDate, DateOnly? EndDate, int Quantity = 1);
 public sealed record RoomServiceResult(RoomService Assignment, Service Service);

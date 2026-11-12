@@ -192,6 +192,12 @@ public sealed class PaymentStore : IPaymentStore
         if (invoice.Status != InvoiceStatus.Issued)
             throw new BusinessException(BusinessErrorType.InvalidOperation,
                 "INVOICE_NOT_ISSUED", "Chỉ hóa đơn đã phát hành mới được ghi nhận thanh toán.");
+        var remaining = await _db.InvoiceBalances.AsNoTracking()
+            .Where(x => x.InvoiceId == invoiceId)
+            .Select(x => x.RemainingAmount).SingleAsync(ct);
+        if (remaining <= 0)
+            throw new BusinessException(BusinessErrorType.Conflict,
+                "INVOICE_NO_AMOUNT_DUE", "Hóa đơn đã thu đủ hoặc đang dư tiền; vui lòng tải lại hóa đơn.");
 
         var now = DateTime.UtcNow;
         var payment = new Payment

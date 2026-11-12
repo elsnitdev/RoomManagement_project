@@ -8,25 +8,28 @@ using RoomManagement.Domain;
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRoles.Admin + "," + UserRoles.Landlord)]
-[Route("api/services")]
+[Authorize(Roles = UserRoles.Landlord)]
+[Route("api/properties/{propertyId:guid}/services")]
 public sealed class ServiceCatalogController : ControllerBase
 {
     private readonly BillingInputService _service;
     public ServiceCatalogController(BillingInputService service) => _service = service;
 
     [HttpGet]
-    public async Task<IActionResult> List(CancellationToken ct) =>
+    public async Task<IActionResult> List(Guid propertyId, CancellationToken ct) =>
         Ok(new ApiResponse<IReadOnlyList<ServiceResponse>>(
-            (await _service.ListServicesAsync(ct)).Select(ServiceResponse.From).ToList()));
+            (await _service.ListServicesAsync(propertyId, ct)).Select(ServiceResponse.From).ToList()));
 
     [HttpPost]
-    [Authorize(Roles = UserRoles.Admin)]
-    public async Task<IActionResult> Create([FromBody] CreateServiceRequest request, CancellationToken ct)
+    public async Task<IActionResult> Create(Guid propertyId, [FromBody] CreateServiceRequest request, CancellationToken ct)
     {
-        var actorId = User.FindFirst("sub")?.Value ?? "";
-        var result = await _service.CreateServiceAsync(actorId, request.ToInput(), ct);
+        var result = await _service.CreateServiceAsync(propertyId, request.ToInput(), ct);
         return StatusCode(StatusCodes.Status201Created,
             new ApiResponse<ServiceResponse>(ServiceResponse.From(result)));
     }
+
+    [HttpPut("{serviceId:guid}")]
+    public async Task<IActionResult> Update(Guid propertyId, Guid serviceId, [FromBody] UpdateServiceRequest request, CancellationToken ct) =>
+        Ok(new ApiResponse<ServiceResponse>(ServiceResponse.From(
+            await _service.UpdateServiceAsync(propertyId, serviceId, request.ToInput(), ct))));
 }

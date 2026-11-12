@@ -35,11 +35,22 @@ public sealed record CreateServiceRequest(
     public CreateServiceInput ToInput() => new(Name, Description, Unit, DefaultPrice);
 }
 
+public sealed record UpdateServiceRequest(
+    [property: JsonRequired][Required, StringLength(100)] string Name,
+    [StringLength(500)] string? Description,
+    [StringLength(50)] string? Unit,
+    decimal? DefaultPrice,
+    [property: JsonRequired] bool IsActive)
+{
+    public UpdateServiceInput ToInput() => new(Name, Description, Unit, DefaultPrice, IsActive);
+}
+
 public sealed record AssignRoomServiceRequest(
     [property: JsonRequired] Guid ServiceId,
     decimal? CustomPrice,
     [property: JsonRequired] DateOnly StartDate,
-    DateOnly? EndDate)
+    DateOnly? EndDate,
+    int Quantity = 1)
 {
-    public AssignRoomServiceInput ToInput() => new(ServiceId, CustomPrice, StartDate, EndDate);
+    public AssignRoomServiceInput ToInput() => new(ServiceId, CustomPrice, StartDate, EndDate, Quantity);
 }

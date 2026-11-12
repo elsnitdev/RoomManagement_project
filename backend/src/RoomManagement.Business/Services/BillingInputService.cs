@@ -59,6 +59,21 @@ public sealed class BillingInputService
         return rate;
     }
 
+    public async Task<UtilityRate> ReplaceRateAsync(Guid propertyId, CreateUtilityRateInput input, CancellationToken ct)
+    {
+        var owner = await OwnerAsync(ct);
+        await EnsurePropertyAsync(propertyId, owner, ct);
+        if (!Enum.IsDefined(input.Type) || input.UnitPrice < 0 || input.UnitPrice != decimal.Round(input.UnitPrice, 2) ||
+            string.IsNullOrWhiteSpace(input.Unit) || input.Unit.Trim().Length > 50 ||
+            input.EffectiveFrom.Day != 1 || input.EffectiveFrom < NextMonth() || input.EffectiveTo is not null)
+            throw Validation("UTILITY_RATE_INVALID", "Giá mới phải bắt đầu từ đầu tháng sau hoặc muộn hơn.");
+        var rate = new UtilityRate { Id = Guid.NewGuid(), PropertyId = propertyId, UtilityType = input.Type,
+            UnitPrice = input.UnitPrice, Unit = input.Unit.Trim(), EffectiveFrom = input.EffectiveFrom,
+            CreatedAt = DateTime.UtcNow };
+        await _store.ReplaceRateAsync(rate, ct);
+        return rate;
+    }
+
     public async Task<IReadOnlyList<UtilityRate>> ListRatesAsync(Guid propertyId, UtilityType? type, CancellationToken ct)
     {
         var owner = await OwnerAsync(ct);
@@ -96,12 +111,15 @@ public sealed class BillingInputService
         return await _store.ListReadingsAsync(roomId, type, ct);
     }
 
-    public Task<IReadOnlyList<Service>> ListServicesAsync(CancellationToken ct) => _store.ListServicesAsync(ct);
-
-    public async Task<Service> CreateServiceAsync(string actorId, CreateServiceInput input, CancellationToken ct)
+    public async Task<IReadOnlyList<Service>> ListServicesAsync(Guid propertyId, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(actorId) || !await _store.ActiveAdminAsync(actorId, ct))
-            throw new BusinessException(BusinessErrorType.NotFound, "ADMIN_NOT_FOUND", "Không tìm thấy quản trị viên.");
+        await EnsurePropertyAsync(propertyId, await OwnerAsync(ct), ct);
+        return await _store.ListServicesAsync(propertyId, ct);
+    }
+
+    public async Task<Service> CreateServiceAsync(Guid propertyId, CreateServiceInput input, CancellationToken ct)
+    {
+        await EnsurePropertyAsync(propertyId, await OwnerAsync(ct), ct);
         if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Trim().Length > 100 ||
             input.Description is { Length: > 500 } || input.Unit is { Length: > 50 } ||
             input.DefaultPrice is < 0 ||
@@ -109,7 +127,7 @@ public sealed class BillingInputService
             throw Validation("SERVICE_INVALID", "Thông tin dịch vụ không hợp lệ.");
         var service = new Service
         {
-            Id = Guid.NewGuid(), Name = input.Name.Trim(), Description = input.Description?.Trim(),
+            Id = Guid.NewGuid(), PropertyId = propertyId, Name = input.Name.Trim(), Description = input.Description?.Trim(),
             Unit = input.Unit?.Trim(), DefaultPrice = input.DefaultPrice, IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -117,14 +135,27 @@ public sealed class BillingInputService
         return service;
     }
 
+    public async Task<Service> UpdateServiceAsync(Guid propertyId, Guid serviceId, UpdateServiceInput input, CancellationToken ct)
+    {
+        await EnsurePropertyAsync(propertyId, await OwnerAsync(ct), ct);
+        if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Trim().Length > 100 ||
+            input.Description is { Length: > 500 } || input.Unit is { Length: > 50 } ||
+            input.DefaultPrice is < 0 || input.DefaultPrice is { } price && price != decimal.Round(price, 2))
+            throw Validation("SERVICE_INVALID", "Thông tin dịch vụ không hợp lệ.");
+        return await _store.UpdateServiceAsync(propertyId, serviceId, input.Name.Trim(), input.Description?.Trim(),
+            input.Unit?.Trim(), input.DefaultPrice, input.IsActive, ct);
+    }
+
     public async Task<RoomServiceResult> AssignRoomServiceAsync(Guid propertyId, Guid roomId, AssignRoomServiceInput input, CancellationToken ct)
     {
         var owner = await OwnerAsync(ct);
         await EnsureRoomAsync(propertyId, roomId, owner, ct);
-        var service = await _store.GetServiceAsync(input.ServiceId, ct);
+        var service = await _store.GetServiceAsync(propertyId, input.ServiceId, ct);
         if (service is null || !service.IsActive)
             throw NotFound("SERVICE_NOT_FOUND", "Không tìm thấy dịch vụ đang hoạt động.");
-        if (input.StartDate == default || input.EndDate is { } end && end < input.StartDate ||
+        if (input.StartDate.Day != 1 || input.StartDate < NextMonth() ||
+            input.EndDate is { } end && (end < input.StartDate || end != new DateOnly(end.Year, end.Month, DateTime.DaysInMonth(end.Year, end.Month))) ||
+            input.Quantity <= 0 ||
             input.CustomPrice is < 0 ||
             input.CustomPrice is { } price && price != decimal.Round(price, 2) ||
             input.CustomPrice is null && service.DefaultPrice is null)
@@ -132,12 +163,33 @@ public sealed class BillingInputService
         var assignment = new RoomServiceEntity
         {
             Id = Guid.NewGuid(), RoomId = roomId, ServiceId = input.ServiceId,
-            CustomPrice = input.CustomPrice, StartDate = input.StartDate,
+            CustomPrice = input.CustomPrice ?? service.DefaultPrice, Quantity = input.Quantity, StartDate = input.StartDate,
             EndDate = input.EndDate, CreatedAt = DateTime.UtcNow
         };
         await _store.AddRoomServiceAsync(assignment, ct);
         return new RoomServiceResult(assignment, service);
     }
+
+    public async Task<RoomServiceResult> ReplaceRoomServiceAsync(Guid propertyId, Guid roomId, Guid assignmentId,
+        AssignRoomServiceInput input, CancellationToken ct)
+    {
+        await EnsureRoomAsync(propertyId, roomId, await OwnerAsync(ct), ct);
+        var service = await _store.GetServiceAsync(propertyId, input.ServiceId, ct);
+        if (service is null || !service.IsActive || input.StartDate.Day != 1 || input.StartDate < NextMonth() ||
+            input.EndDate is not null || input.Quantity <= 0 || input.CustomPrice is < 0 ||
+            input.CustomPrice is { } price && price != decimal.Round(price, 2))
+            throw Validation("ROOM_SERVICE_INVALID", "Thông tin thay đổi dịch vụ không hợp lệ.");
+        var replacement = new RoomServiceEntity { Id = Guid.NewGuid(), RoomId = roomId,
+            ServiceId = input.ServiceId, Quantity = input.Quantity,
+            CustomPrice = input.CustomPrice ?? service.DefaultPrice, StartDate = input.StartDate,
+            CreatedAt = DateTime.UtcNow };
+        if (replacement.CustomPrice is null)
+            throw Validation("SERVICE_PRICE_MISSING", "Dịch vụ chưa có đơn giá.");
+        await _store.ReplaceRoomServiceAsync(propertyId, roomId, assignmentId, replacement, ct);
+        return new RoomServiceResult(replacement, service);
+    }
+
+    private static DateOnly NextMonth() => new DateOnly(VietnamDate.Today.Year, VietnamDate.Today.Month, 1).AddMonths(1);
 
     public async Task<IReadOnlyList<RoomServiceResult>> ListRoomServicesAsync(Guid propertyId, Guid roomId, CancellationToken ct)
     {

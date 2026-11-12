@@ -1491,6 +1491,11 @@ namespace RoomManagement.Data.Migrations
                     b.Property<DateOnly?>("EndDate")
                         .HasColumnType("date");
 
+                    b.Property<int>("Quantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
                     b.Property<Guid>("RoomId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1520,6 +1525,8 @@ namespace RoomManagement.Data.Migrations
                             t.HasCheckConstraint("CK_RoomServices_Dates", "(EndDate IS NULL OR EndDate >= StartDate)");
 
                             t.HasCheckConstraint("CK_RoomServices_Price", "(CustomPrice IS NULL OR CustomPrice >= 0)");
+
+                            t.HasCheckConstraint("CK_RoomServices_Quantity", "(Quantity > 0)");
                         });
                 });
 
@@ -1548,15 +1555,19 @@ namespace RoomManagement.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<Guid?>("PropertyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Unit")
                         .HasColumnType("nvarchar(50)");
 
                     b.HasKey("Id")
                         .HasName("PK_Services");
 
-                    b.HasIndex("Name")
+                    b.HasIndex("PropertyId", "Name")
                         .IsUnique()
-                        .HasDatabaseName("UX_Services_Name");
+                        .HasDatabaseName("UX_Services_Property_Name")
+                        .HasFilter("PropertyId IS NOT NULL");
 
                     b.ToTable("Services", "dbo", t =>
                         {
@@ -2162,6 +2173,14 @@ namespace RoomManagement.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_RoomServices_Services");
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.Service", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.Property", null)
+                        .WithMany()
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.TenantPhoneChallenge", b =>

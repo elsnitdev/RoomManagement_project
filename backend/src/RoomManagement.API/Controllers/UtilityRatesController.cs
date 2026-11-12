@@ -25,4 +25,9 @@ public sealed class UtilityRatesController : ControllerBase
     public async Task<IActionResult> Create(Guid propertyId, [FromBody] CreateUtilityRateRequest request, CancellationToken ct) =>
         StatusCode(StatusCodes.Status201Created, new ApiResponse<UtilityRateResponse>(
             UtilityRateResponse.From(await _service.CreateRateAsync(propertyId, request.ToInput(), ct))));
+
+    [HttpPost("revisions")]
+    public async Task<IActionResult> Replace(Guid propertyId, [FromBody] CreateUtilityRateRequest request, CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, new ApiResponse<UtilityRateResponse>(
+            UtilityRateResponse.From(await _service.ReplaceRateAsync(propertyId, request.ToInput(), ct))));
 }

@@ -16,6 +16,7 @@ public interface IBillingInputStore
     Task<UtilityRate?> RateAtAsync(Guid propertyId, UtilityType type, DateOnly date, CancellationToken ct);
     /// <summary>Lưu đơn giá mới nếu thời gian áp dụng không chồng lấn.</summary>
     Task AddRateAsync(UtilityRate rate, CancellationToken ct);
+    Task ReplaceRateAsync(UtilityRate rate, CancellationToken ct);
     /// <summary>Lấy lịch sử chỉ số điện nước của phòng, mới nhất trước.</summary>
     Task<IReadOnlyList<MeterReading>> ListReadingsAsync(Guid roomId, UtilityType? type, CancellationToken ct);
     /// <summary>Tìm chỉ số điện hoặc nước của phòng trong tháng chỉ định.</summary>
@@ -29,13 +30,17 @@ public interface IBillingInputStore
     /// <summary>Kiểm tra người dùng có phải quản trị viên đang hoạt động hay không.</summary>
     Task<bool> ActiveAdminAsync(string userId, CancellationToken ct);
     /// <summary>Lấy danh mục dịch vụ, sắp xếp theo tên.</summary>
-    Task<IReadOnlyList<Service>> ListServicesAsync(CancellationToken ct);
+    Task<IReadOnlyList<Service>> ListServicesAsync(Guid propertyId, CancellationToken ct);
     /// <summary>Tìm dịch vụ theo mã định danh.</summary>
-    Task<Service?> GetServiceAsync(Guid serviceId, CancellationToken ct);
+    Task<Service?> GetServiceAsync(Guid propertyId, Guid serviceId, CancellationToken ct);
     /// <summary>Thêm dịch vụ mới vào danh mục.</summary>
     Task AddServiceAsync(Service service, CancellationToken ct);
+    Task<Service> UpdateServiceAsync(Guid propertyId, Guid serviceId, string name, string? description,
+        string? unit, decimal? defaultPrice, bool isActive, CancellationToken ct);
     /// <summary>Lấy các dịch vụ đã gán cho phòng cùng thông tin dịch vụ.</summary>
     Task<IReadOnlyList<RoomServiceResult>> ListRoomServicesAsync(Guid roomId, CancellationToken ct);
     /// <summary>Gán dịch vụ cho phòng nếu thời gian áp dụng không chồng lấn.</summary>
     Task AddRoomServiceAsync(RoomService assignment, CancellationToken ct);
+    Task<RoomService> ReplaceRoomServiceAsync(Guid propertyId, Guid roomId, Guid assignmentId,
+        RoomService replacement, CancellationToken ct);
 }

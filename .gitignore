@@ -31,6 +31,7 @@ dist/
 # Environment
 .env
 .env.local
+.azurite/
 backend/src/RoomManagement.API/appsettings.Local.json
 backend/artifacts/LocalLoginUsers.sql
 backend/artifacts/*.log

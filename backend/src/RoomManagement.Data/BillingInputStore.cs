@@ -52,6 +52,31 @@ public sealed class BillingInputStore : IBillingInputStore
         await tx.CommitAsync(ct);
     }
 
+    public async Task ReplaceRateAsync(UtilityRate rate, CancellationToken ct)
+    {
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var invoiceExists = await (from invoice in _db.Invoices
+            join room in _db.Rooms on invoice.RoomId equals room.Id
+            where room.PropertyId == rate.PropertyId && invoice.InvoiceType == InvoiceType.Monthly &&
+                invoice.Status != InvoiceStatus.Cancelled && invoice.BillingYear != null && invoice.BillingMonth != null &&
+                (invoice.BillingYear > rate.EffectiveFrom.Year ||
+                 invoice.BillingYear == rate.EffectiveFrom.Year && invoice.BillingMonth >= rate.EffectiveFrom.Month)
+            select invoice.Id).AnyAsync(ct);
+        if (invoiceExists) throw Conflict("UTILITY_RATE_INVOICE_EXISTS", "Kỳ áp dụng đã có hóa đơn.");
+        var current = await _db.UtilityRates.SingleOrDefaultAsync(x => x.PropertyId == rate.PropertyId &&
+            x.UtilityType == rate.UtilityType && x.EffectiveFrom < rate.EffectiveFrom &&
+            (x.EffectiveTo == null || x.EffectiveTo >= rate.EffectiveFrom), ct);
+        if (current is null) throw Conflict("UTILITY_RATE_NOT_FOUND", "Không có giá hiện hành để thay thế.");
+        if (await _db.UtilityRates.AnyAsync(x => x.PropertyId == rate.PropertyId &&
+            x.UtilityType == rate.UtilityType && x.Id != current.Id && x.EffectiveFrom >= rate.EffectiveFrom, ct))
+            throw Conflict("UTILITY_RATE_OVERLAP", "Đã có giá cho kỳ này hoặc kỳ sau.");
+        current.EffectiveTo = rate.EffectiveFrom.AddDays(-1);
+        await _db.SaveChangesAsync(ct);
+        _db.UtilityRates.Add(rate);
+        await SaveAsync("UTILITY_RATE_CONFLICT", ct);
+        await tx.CommitAsync(ct);
+    }
+
     /// <inheritdoc />
     public async Task<IReadOnlyList<MeterReading>> ListReadingsAsync(Guid roomId, UtilityType? type, CancellationToken ct)
     {
@@ -100,18 +125,29 @@ public sealed class BillingInputStore : IBillingInputStore
         _db.Users.AnyAsync(x => x.Id == userId && x.Role == UserRoles.Admin && x.IsActive, ct);
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<Service>> ListServicesAsync(CancellationToken ct) =>
-        await _db.Services.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct);
+    public async Task<IReadOnlyList<Service>> ListServicesAsync(Guid propertyId, CancellationToken ct) =>
+        await _db.Services.AsNoTracking().Where(x => x.PropertyId == propertyId).OrderBy(x => x.Name).ToListAsync(ct);
 
     /// <inheritdoc />
-    public Task<Service?> GetServiceAsync(Guid serviceId, CancellationToken ct) =>
-        _db.Services.AsNoTracking().SingleOrDefaultAsync(x => x.Id == serviceId, ct);
+    public Task<Service?> GetServiceAsync(Guid propertyId, Guid serviceId, CancellationToken ct) =>
+        _db.Services.AsNoTracking().SingleOrDefaultAsync(x => x.Id == serviceId && x.PropertyId == propertyId, ct);
 
     /// <inheritdoc />
     public async Task AddServiceAsync(Service service, CancellationToken ct)
     {
         _db.Services.Add(service);
         await SaveAsync("SERVICE_NAME_EXISTS", ct);
+    }
+
+    public async Task<Service> UpdateServiceAsync(Guid propertyId, Guid serviceId, string name,
+        string? description, string? unit, decimal? defaultPrice, bool isActive, CancellationToken ct)
+    {
+        var service = await _db.Services.SingleOrDefaultAsync(x => x.Id == serviceId && x.PropertyId == propertyId, ct)
+            ?? throw new BusinessException(BusinessErrorType.NotFound, "SERVICE_NOT_FOUND", "Không tìm thấy dịch vụ của khu trọ.");
+        service.Name = name; service.Description = description; service.Unit = unit;
+        service.DefaultPrice = defaultPrice; service.IsActive = isActive;
+        await SaveAsync("SERVICE_NAME_EXISTS", ct);
+        return service;
     }
 
     /// <inheritdoc />
@@ -126,6 +162,12 @@ public sealed class BillingInputStore : IBillingInputStore
     public async Task AddRoomServiceAsync(RoomService assignment, CancellationToken ct)
     {
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var hasInvoice = await _db.Invoices.AnyAsync(x => x.RoomId == assignment.RoomId &&
+            x.InvoiceType == InvoiceType.Monthly && x.Status != InvoiceStatus.Cancelled &&
+            x.BillingYear != null && x.BillingMonth != null &&
+            (x.BillingYear > assignment.StartDate.Year ||
+             x.BillingYear == assignment.StartDate.Year && x.BillingMonth >= assignment.StartDate.Month), ct);
+        if (hasInvoice) throw Conflict("ROOM_SERVICE_INVOICE_EXISTS", "Kỳ áp dụng đã có hóa đơn.");
         var overlap = await _db.RoomServices.AnyAsync(x => x.RoomId == assignment.RoomId &&
             x.ServiceId == assignment.ServiceId &&
             (assignment.EndDate == null || x.StartDate <= assignment.EndDate.Value) &&
@@ -134,6 +176,37 @@ public sealed class BillingInputStore : IBillingInputStore
         _db.RoomServices.Add(assignment);
         await SaveAsync("ROOM_SERVICE_CONFLICT", ct);
         await tx.CommitAsync(ct);
+    }
+
+    public async Task<RoomService> ReplaceRoomServiceAsync(Guid propertyId, Guid roomId, Guid assignmentId,
+        RoomService replacement, CancellationToken ct)
+    {
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var existing = await _db.RoomServices.SingleOrDefaultAsync(x => x.Id == assignmentId &&
+            x.RoomId == roomId && x.ServiceId == replacement.ServiceId, ct)
+            ?? throw new BusinessException(BusinessErrorType.NotFound, "ROOM_SERVICE_NOT_FOUND", "Không tìm thấy dịch vụ của phòng.");
+        if (existing.StartDate >= replacement.StartDate ||
+            existing.EndDate is { } end && end < replacement.StartDate)
+            throw Conflict("ROOM_SERVICE_OVERLAP", "Kỳ áp dụng dịch vụ không hợp lệ.");
+        if (await _db.RoomServices.AnyAsync(x => x.RoomId == roomId &&
+            x.ServiceId == replacement.ServiceId && x.Id != existing.Id &&
+            (x.EndDate == null || x.EndDate >= replacement.StartDate), ct))
+            throw Conflict("ROOM_SERVICE_OVERLAP", "Đã có phiên bản dịch vụ khác cho kỳ này.");
+        var hasInvoice = await (from invoice in _db.Invoices
+            join room in _db.Rooms on invoice.RoomId equals room.Id
+            where room.Id == roomId && room.PropertyId == propertyId &&
+                invoice.InvoiceType == InvoiceType.Monthly && invoice.Status != InvoiceStatus.Cancelled &&
+                invoice.BillingYear != null && invoice.BillingMonth != null &&
+                (invoice.BillingYear > replacement.StartDate.Year ||
+                 invoice.BillingYear == replacement.StartDate.Year && invoice.BillingMonth >= replacement.StartDate.Month)
+            select invoice.Id).AnyAsync(ct);
+        if (hasInvoice) throw Conflict("ROOM_SERVICE_INVOICE_EXISTS", "Kỳ áp dụng đã có hóa đơn.");
+        existing.EndDate = replacement.StartDate.AddDays(-1);
+        await _db.SaveChangesAsync(ct);
+        _db.RoomServices.Add(replacement);
+        await SaveAsync("ROOM_SERVICE_CONFLICT", ct);
+        await tx.CommitAsync(ct);
+        return replacement;
     }
 
     /// <summary>Lưu thay đổi và chuyển lỗi trùng dữ liệu thành lỗi nghiệp vụ.</summary>

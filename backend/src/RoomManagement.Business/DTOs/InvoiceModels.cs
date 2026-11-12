@@ -8,7 +8,7 @@ public sealed record InvoiceFilter(int Page, int PageSize, Guid? RoomId,
     short? Year, byte? Month, InvoiceStatus? Status);
 public sealed record CalculatedInvoiceItem(InvoiceItemType Type, string Description,
     decimal Quantity, decimal UnitPrice, decimal Amount, Guid? ReferenceId);
-public sealed record BillableRoomService(Guid ServiceId, string Name, decimal UnitPrice);
+public sealed record BillableRoomService(Guid ServiceId, string Name, decimal UnitPrice, int Quantity);
 public sealed record InvoicePreviewResult(Guid ContractId, Guid RoomId, short Year, byte Month,
     DateOnly IssueDate, DateOnly DueDate, IReadOnlyList<CalculatedInvoiceItem> Items,
     decimal TotalAmount);

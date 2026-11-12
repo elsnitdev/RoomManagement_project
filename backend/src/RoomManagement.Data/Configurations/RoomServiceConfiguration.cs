@@ -12,11 +12,13 @@ public sealed class RoomServiceConfiguration : IEntityTypeConfiguration<RoomServ
         {
             table.HasCheckConstraint("CK_RoomServices_Dates", @"(EndDate IS NULL OR EndDate >= StartDate)");
             table.HasCheckConstraint("CK_RoomServices_Price", @"(CustomPrice IS NULL OR CustomPrice >= 0)");
+            table.HasCheckConstraint("CK_RoomServices_Quantity", @"(Quantity > 0)");
         });
         builder.HasKey(e => e.Id).HasName("PK_RoomServices");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.RoomId).HasColumnType("uniqueidentifier").IsRequired();
         builder.Property(e => e.ServiceId).HasColumnType("uniqueidentifier").IsRequired();
+        builder.Property(e => e.Quantity).HasColumnType("int").IsRequired().HasDefaultValue(1);
         builder.Property(e => e.CustomPrice).HasColumnType("decimal(18,2)");
         builder.Property(e => e.StartDate).HasColumnType("date").IsRequired();
         builder.Property(e => e.EndDate).HasColumnType("date");

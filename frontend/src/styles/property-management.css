@@ -97,7 +97,7 @@
 .pm-batch-stepper li strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .pm-batch-stepper li.is-current { color:#17458c; background:#eaf2ff; border-color:#a9c7f5; }
 .pm-batch-stepper li.is-current span { color:#fff; background:#1d4ed8; }
-.pm-batch-stepper li.is-done span { color:#fff; background:#25845d; }
+.pm-batch-stepper li.is-done span { color:#fff; background:#0d8c19; }
 .pm-batch-stage { display:grid; gap:18px; min-width:0; }
 .pm-batch-stage-heading { align-items:flex-end; padding-bottom:13px; border-bottom:1px solid var(--batch-line); }
 .pm-batch-stage-heading h3 { margin:3px 0 4px; font-size:19px; color:#1c304c; }
