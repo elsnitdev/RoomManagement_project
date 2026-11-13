@@ -7,7 +7,7 @@ using RoomManagement.Domain.Entities;
 
 namespace RoomManagement.Tests;
 
-internal sealed class TestUserStore : IUserStore, ILandlordApprovalStore
+internal sealed class TestUserStore : IUserStore, ILandlordApprovalStore, ILandlordStore
 {
     public const string Password = "OnlyForAutomatedTests!42";
     public ConcurrentDictionary<string, AppUser> Users { get; } = new();
@@ -54,4 +54,6 @@ internal sealed class TestUserStore : IUserStore, ILandlordApprovalStore
         Task.FromResult<IReadOnlyList<AppUser>>(Users.Values.Where(u => u.Role == UserRoles.Landlord && u.ApprovalStatus == ApprovalStatuses.Pending).ToList());
     public Task<AppUser?> FindLandlordByIdAsync(string userId, CancellationToken cancellationToken = default) => FindByIdAsync(userId, cancellationToken);
     public Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default) => Task.FromResult(true);
+    public Task<bool> IsActiveLandlordAsync(string userId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Users.TryGetValue(userId, out var u) && u.Role == UserRoles.Landlord && u.IsActive && u.ApprovalStatus == ApprovalStatuses.Approved);
 }

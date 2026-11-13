@@ -63,6 +63,7 @@ const titleMap = {
   room: "Chi tiết phòng",
   tenants: "Hồ sơ người ở",
   notices: "Thông báo quan trọng",
+  notifications: "Thông báo quan trọng",
   contracts: "Hợp đồng",
   billing: "Hóa đơn & công nợ",
   requests: "Yêu cầu người thuê",
@@ -244,7 +245,7 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && (
+          {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && page !== "requests" && page !== "notices" && page !== "notifications" && page !== "tenants" && (
             <div className="sidebar-help">
               <span className="help-icon">
                 {activeRole === "tenant" ? <CircleAlert size={18} aria-hidden="true" /> : <Icon name="alert" size={18} />}
@@ -283,7 +284,7 @@ export default function App() {
             </span>
           </div>
           <div className="topbar-right">
-            {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && (
+            {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && page !== "requests" && page !== "notices" && page !== "notifications" && page !== "tenants" && (
               <span className="demo-chip">
                 <span className="preview-dot" /> Dữ liệu mẫu
               </span>

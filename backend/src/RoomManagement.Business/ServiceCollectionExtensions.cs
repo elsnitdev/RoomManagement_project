@@ -18,6 +18,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ILandlordApprovalService, LandlordApprovalService>();
         services.AddScoped<ITenantProfileService, TenantProfileService>();
         services.AddScoped<ITenantRegistrationService, TenantRegistrationService>();
+        services.AddScoped<IRequestService, RequestService>();
+        services.AddScoped<RequestService>();
 
         return services;
     }

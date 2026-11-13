@@ -23,6 +23,8 @@ public sealed class ApiExceptionHandler : IExceptionHandler
   {
     var (status, title, code) = exception switch
     {
+      BusinessException { Type: BusinessErrorType.Forbidden } business =>
+          (StatusCodes.Status403Forbidden, "Không có quyền truy cập", business.Code),
       BusinessException { Type: BusinessErrorType.NotFound } business =>
           (StatusCodes.Status404NotFound, "Không tìm thấy dữ liệu", business.Code),
       BusinessException { Type: BusinessErrorType.Conflict } business =>

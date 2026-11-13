@@ -12,6 +12,7 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
     public const string SigningKey = "OnlyForAutomatedTests-A-64-byte-signing-key-with-no-production-use!";
     public TestUserStore Store { get; } = new();
     public TestTenantProfileStore TenantProfileStore { get; } = new();
+    public TestRequestStore RequestStore { get; } = new();
     public Dictionary<string, string?> Overrides { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -34,9 +35,13 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IUserStore>();
             services.RemoveAll<ILandlordApprovalStore>();
             services.RemoveAll<ITenantProfileStore>();
+            services.RemoveAll<ILandlordStore>();
+            services.RemoveAll<IRequestStore>();
             services.AddSingleton<IUserStore>(Store);
             services.AddSingleton<ILandlordApprovalStore>(Store);
             services.AddSingleton<ITenantProfileStore>(TenantProfileStore);
+            services.AddSingleton<ILandlordStore>(Store);
+            services.AddSingleton<IRequestStore>(RequestStore);
         });
     }
 }

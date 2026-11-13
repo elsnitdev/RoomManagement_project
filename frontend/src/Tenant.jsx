@@ -7,6 +7,7 @@ import {
 import { initialUsers } from './mockData'
 import { tenantMockInvoiceItems, tenantMockNotices, tenantMockProfiles } from './tenantMockData'
 import { contractApi } from './services/api/contractApi'
+import { requestApi } from './services/api/requestApi'
 import { TenantRules } from './components/contracts/ContractRules'
 import './components/contracts/contracts.css'
 import './Tenant.css'
@@ -139,33 +140,456 @@ function ContractsPage({ notify }) {
   return <><Header page="contracts" /><TenantRules />{loading ? <section className="tn-card tn-contract-state" role="status"><FileText size={28} aria-hidden="true" /><strong>Đang tải hợp đồng…</strong></section> : error ? <section className="tn-card tn-contract-state" role="alert"><AlertCircle size={28} aria-hidden="true" /><strong>Không thể tải hợp đồng</strong><p>{error}</p><button type="button" className="tn-action tn-action--secondary" onClick={() => setRevision(value => value + 1)}>Thử lại</button></section> : contracts.length ? <div className="tn-contract-layout"><div className="tn-contract-intro"><div><span>THÔNG TIN THUÊ PHÒNG</span><h2>Hợp đồng của bạn</h2><p>Kiểm tra thời hạn, tiền thuê và những người cùng ở trong phòng.</p></div><strong>{contracts.length} hợp đồng</strong></div><div className="tn-contract-cards">{contracts.map(contract => <article className="tn-card tn-contract-card" key={contract.id}><div className="tn-contract-card-head"><div><span className="tn-contract-kicker">MÃ HỢP ĐỒNG · {contract.contractCode}</span><h3>Phòng {contract.roomNumber}</h3></div><span className={`contract-status contract-status--${contract.status?.toLowerCase()}`}>{statusText[contract.status] || contract.status}</span></div><div className="tn-contract-amounts"><div><small>TIỀN THUÊ HÀNG THÁNG</small><strong>{money(contract.monthlyRent)}</strong></div><div><small>TIỀN CỌC</small><strong>{money(contract.depositAmount)}</strong></div></div><dl className="tn-contract-facts"><div><dt>Ngày bắt đầu</dt><dd>{formatDate(contract.startDate)}</dd></div><div><dt>Ngày kết thúc dự kiến</dt><dd>{formatDate(contract.endDate)}</dd></div>{contract.closedOn && <div><dt>Kết thúc thực tế</dt><dd>{formatDate(contract.closedOn)}</dd></div>}<div><dt>Hạn thanh toán</dt><dd>{contract.paymentDueDay ? `Ngày ${contract.paymentDueDay} hằng tháng` : 'Chưa thiết lập'}</dd></div></dl><div className="tn-contract-people"><h4><UserRound size={17} aria-hidden="true" /> Người trong hợp đồng <span>{contract.tenants?.length || 0}</span></h4>{contract.tenants?.length ? <ul>{contract.tenants.map(tenant => <li key={tenant.id}><span className="tn-contract-avatar" aria-hidden="true">{tenant.fullName?.trim().slice(0, 1).toLocaleUpperCase('vi-VN') || 'N'}</span><div><strong>{tenant.fullName}</strong><small>Vào ở {formatDate(tenant.joinDate)}{tenant.leaveDate ? ` · Rời ${formatDate(tenant.leaveDate)}` : ''}</small></div></li>)}</ul> : <p>Chưa có người thuê được ghi nhận.</p>}</div>{contract.note && <div className="tn-contract-note"><strong>Ghi chú từ chủ trọ</strong><p>{contract.note}</p></div>}{contract.closureReason && <div className="tn-contract-note"><strong>Lý do kết thúc</strong><p>{contract.closureReason}</p></div>}<div className="tn-contract-card-footer"><button type="button" className="tn-inline-action" onClick={() => copyCode(contract.contractCode, notify)}><Copy size={15} aria-hidden="true" /> Sao chép mã hợp đồng</button></div></article>)}</div></div> : <section className="tn-card tn-contract-state"><FileText size={29} aria-hidden="true" /><strong>Chưa có hợp đồng</strong><p>Khi chủ trọ kích hoạt hợp đồng gắn với tài khoản của bạn, thông tin sẽ xuất hiện tại đây.</p></section>}</>
 }
 
-function RequestsPage({ room, tenantName, requests, setRequests, notify }) {
-  const [category, setCategory] = useState('Sửa chữa')
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [error, setError] = useState('')
-  const [filter, setFilter] = useState('all')
-  const filtered = requests.filter(request => filter === 'all' || (filter === 'open' ? request.status !== 'done' : request.status === 'done'))
-  function submit(event) {
-    event.preventDefault()
-    if (!room) return setError('Tài khoản cần được liên kết với phòng trước khi gửi yêu cầu.')
-    if (title.trim().length < 5) return setError('Tiêu đề cần ít nhất 5 ký tự.')
-    if (description.trim().length < 15) return setError('Mô tả cần ít nhất 15 ký tự để người quản lý hiểu vấn đề.')
-    const date = new Intl.DateTimeFormat('vi-VN').format(new Date())
-    setRequests?.(current => [{ id: `YC-${Date.now()}`, title: title.trim(), description: description.trim(), category, room: room.number, tenant: tenantName, date, status: 'new', priority: 'Trung bình' }, ...current])
-    setTitle('')
-    setDescription('')
-    setError('')
-    notify?.('Đã gửi yêu cầu mẫu.')
-  }
-  return <><Header page="requests" /><div className="tn-request-layout"><section className="tn-card tn-request-form"><div className="tn-section-head"><div><span>GỬI TỚI QUẢN LÝ</span><h2>Tạo yêu cầu</h2></div><Wrench size={19} aria-hidden="true" /></div><p className="tn-small-note">Nêu rõ vị trí và tình trạng để được hỗ trợ nhanh hơn. Biểu mẫu hiện dùng dữ liệu mẫu.</p><form onSubmit={submit} noValidate><label>Loại yêu cầu<select value={category} onChange={event => setCategory(event.target.value)}><option>Sửa chữa</option><option>Tiện ích</option><option>Khác</option></select></label><label>Tiêu đề<input value={title} onChange={event => { setTitle(event.target.value); setError('') }} maxLength={100} placeholder="Ví dụ: Máy lạnh không hoạt động" required /></label><label>Mô tả chi tiết<textarea value={description} onChange={event => { setDescription(event.target.value); setError('') }} maxLength={1000} rows={5} placeholder="Mô tả vấn đề, thời điểm phát hiện và vị trí trong phòng..." required /></label>{error && <p className="tn-form-error" role="alert"><AlertCircle size={15} aria-hidden="true" />{error}</p>}<button className="tn-submit" type="submit" disabled={!room}><Send size={16} aria-hidden="true" /> Gửi yêu cầu</button></form></section><section className="tn-card tn-request-history"><div className="tn-section-head"><div><span>THEO DÕI</span><h2>Yêu cầu đã gửi</h2></div><small>{requests.length} yêu cầu</small></div><div className="tn-filter-bar" role="group" aria-label="Lọc yêu cầu"><button type="button" className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')} aria-pressed={filter === 'all'}>Tất cả <span>{requests.length}</span></button><button type="button" className={filter === 'open' ? 'is-active' : ''} onClick={() => setFilter('open')} aria-pressed={filter === 'open'}>Đang theo dõi <span>{requests.filter(item => item.status !== 'done').length}</span></button><button type="button" className={filter === 'done' ? 'is-active' : ''} onClick={() => setFilter('done')} aria-pressed={filter === 'done'}>Hoàn tất <span>{requests.filter(item => item.status === 'done').length}</span></button></div>{filtered.length ? <ul>{filtered.map(request => <li key={request.id}><div><strong>{request.title}</strong><small>{request.id} · {request.date} · {request.category || 'Khác'}</small>{request.description && <p>{request.description}</p>}</div><StateTag label={requestLabels[request.status] || 'Đã gửi'} tone={request.status === 'done' ? 'success' : request.status === 'progress' ? 'warning' : 'neutral'} /></li>)}</ul> : <Empty icon={ClipboardList} title="Không có yêu cầu phù hợp" description="Thử chọn trạng thái khác để xem yêu cầu." />}</section></div></>
+const tenantStatusMap = {
+  Open: { label: 'Chờ xử lý', tone: 'neutral' },
+  InProgress: { label: 'Đang xử lý', tone: 'warning' },
+  Resolved: { label: 'Đã giải quyết', tone: 'success' },
+  Closed: { label: 'Đã đóng', tone: 'danger' },
 }
 
-function NoticesPage({ notices, readIds, onRead, onReadAll, navigate }) {
+const formatDateTime = value => {
+  if (!value) return ''
+  try {
+    return new Intl.DateTimeFormat('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(value))
+  } catch {
+    return String(value)
+  }
+}
+
+function RequestsPage({ notify }) {
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
+  const [selectedPropertyId, setSelectedPropertyId] = useState('')
+  const [activeStays, setActiveStays] = useState([])
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [listError, setListError] = useState('')
   const [filter, setFilter] = useState('all')
-  const unread = notices.filter(notice => !readIds.includes(notice.id))
-  const visible = filter === 'unread' ? unread : notices
-  return <><Header page="notices" /><section className="tn-card tn-notices"><div className="tn-section-head"><div><span>THÔNG BÁO CHO BẠN</span><h2>Cần chú ý</h2></div><small>{unread.length} chưa đọc</small></div><div className="tn-notice-toolbar"><div className="tn-filter-bar" role="group" aria-label="Lọc thông báo"><button type="button" className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')} aria-pressed={filter === 'all'}>Tất cả <span>{notices.length}</span></button><button type="button" className={filter === 'unread' ? 'is-active' : ''} onClick={() => setFilter('unread')} aria-pressed={filter === 'unread'}>Chưa đọc <span>{unread.length}</span></button></div><button type="button" className="tn-inline-action" onClick={onReadAll} disabled={!unread.length}><CheckCheck size={15} aria-hidden="true" /> Đánh dấu tất cả đã đọc</button></div>{visible.length ? <ul>{visible.map(notice => { const isRead = readIds.includes(notice.id); return <li key={notice.id} className={isRead ? 'is-read' : 'is-unread'}><span className={`tn-notice-icon tn-notice-icon--${notice.tone}`}><notice.icon size={18} aria-hidden="true" /></span><div><strong>{notice.title}</strong><p>{notice.description}</p><small>{notice.meta}</small><div className="tn-notice-actions">{notice.target && <button type="button" className="tn-inline-action" onClick={() => { onRead(notice.id); navigate(`tenant/${notice.target}`) }}>Xem liên quan <ArrowRight size={14} aria-hidden="true" /></button>}{!isRead && <button type="button" className="tn-inline-action" onClick={() => onRead(notice.id)}><Check size={14} aria-hidden="true" /> Đã đọc</button>}</div></div><StateTag label={isRead ? 'Đã đọc' : notice.label} tone={isRead ? 'neutral' : notice.tone} /></li> })}</ul> : <Empty icon={Bell} title={filter === 'unread' ? 'Đã đọc hết thông báo' : 'Chưa có thông báo'} description={filter === 'unread' ? 'Các thông báo mới sẽ xuất hiện tại đây.' : 'Thông tin liên quan đến hóa đơn và yêu cầu sẽ xuất hiện tại đây.'} />}</section></>
+  const [selectedRequest, setSelectedRequest] = useState(null)
+
+  const loadData = async signal => {
+    setLoading(true)
+    setListError('')
+    try {
+      const [stays, requestsRes] = await Promise.all([
+        requestApi.getMyRequestProperties({ signal }).catch(() => []),
+        requestApi.getMyRequests({ page: 1, pageSize: 50, signal }),
+      ])
+      setActiveStays(stays)
+      if (stays.length === 1) {
+        setSelectedPropertyId(stays[0].propertyId)
+      }
+      const items = requestsRes?.data || []
+      setRequests(items)
+    } catch (e) {
+      if (!signal?.aborted) {
+        setListError(e.message || 'Không thể tải danh sách yêu cầu.')
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setLoading(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    loadData(controller.signal)
+    return () => controller.abort()
+  }, [])
+
+  const filtered = requests.filter(req => {
+    if (filter === 'all') return true
+    if (filter === 'open') return req.status === 'Open' || req.status === 'InProgress'
+    return req.status === 'Resolved' || req.status === 'Closed'
+  })
+
+  async function submit(event) {
+    event.preventDefault()
+    const cleanTitle = title.trim()
+    const cleanContent = content.trim()
+    if (activeStays.length > 1 && !selectedPropertyId) {
+      setError('Vui lòng chọn khu trọ bạn muốn gửi yêu cầu.')
+      return
+    }
+    if (!cleanTitle) {
+      setError('Tiêu đề không được để trống.')
+      return
+    }
+    if (!cleanContent) {
+      setError('Nội dung không được để trống.')
+      return
+    }
+    setSubmitting(true)
+    setError('')
+    try {
+      const created = await requestApi.createTenantRequest({
+        propertyId: selectedPropertyId || undefined,
+        title: cleanTitle,
+        content: cleanContent,
+      })
+      setRequests(current => [created, ...current])
+      setTitle('')
+      setContent('')
+      setSelectedRequest(created)
+      notify?.('Đã gửi yêu cầu tới chủ trọ thành công.')
+    } catch (e) {
+      setError(e.message || 'Không thể gửi yêu cầu. Vui lòng thử lại.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function inspectRequest(req) {
+    setSelectedRequest(req)
+    try {
+      const fresh = await requestApi.getMyRequestById(req.id)
+      setSelectedRequest(fresh)
+      setRequests(current => current.map(item => (item.id === fresh.id ? fresh : item)))
+    } catch {
+      // ignore background refresh error
+    }
+  }
+
+  return (
+    <>
+      <Header page="requests" />
+      <div className="tn-request-layout">
+        <section className="tn-card tn-request-form">
+          <div className="tn-section-head">
+            <div>
+              <span>GỬI TỚI CHỦ TRỌ</span>
+              <h2>Tạo yêu cầu mới</h2>
+            </div>
+            <Wrench size={19} aria-hidden="true" />
+          </div>
+          <p className="tn-small-note">
+            Nhập tiêu đề và nội dung chi tiết. Bạn có thể theo dõi chủ trọ đã xem yêu cầu hay chưa và tiến độ xử lý trực tiếp tại đây.
+          </p>
+          <form onSubmit={submit} noValidate>
+            {activeStays.length > 1 && (
+              <label>
+                Khu trọ áp dụng
+                <select
+                  value={selectedPropertyId}
+                  onChange={e => setSelectedPropertyId(e.target.value)}
+                  required
+                >
+                  <option value="">-- Chọn khu trọ --</option>
+                  {activeStays.map(stay => (
+                    <option key={stay.propertyId} value={stay.propertyId}>
+                      {stay.propertyName} (Phòng {stay.roomNumber})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label>
+              Tiêu đề yêu cầu
+              <input
+                value={title}
+                onChange={event => {
+                  setTitle(event.target.value)
+                  setError('')
+                }}
+                maxLength={250}
+                placeholder="Ví dụ: Đèn hành lang hoặc máy lạnh cần kiểm tra"
+                required
+              />
+            </label>
+            <label>
+              Nội dung chi tiết
+              <textarea
+                value={content}
+                onChange={event => {
+                  setContent(event.target.value)
+                  setError('')
+                }}
+                maxLength={4000}
+                rows={5}
+                placeholder="Mô tả rõ tình trạng, vị trí phòng và thời gian thuận tiện để chủ trọ hỗ trợ..."
+                required
+              />
+            </label>
+            {error && (
+              <p className="tn-form-error" role="alert">
+                <AlertCircle size={15} aria-hidden="true" />
+                {error}
+              </p>
+            )}
+            <button className="tn-submit" type="submit" disabled={submitting}>
+              <Send size={16} aria-hidden="true" />
+              {submitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
+            </button>
+          </form>
+        </section>
+
+        <section className="tn-card tn-request-history">
+          <div className="tn-section-head">
+            <div>
+              <span>THEO DÕI TRẠNG THÁI</span>
+              <h2>Yêu cầu đã gửi</h2>
+            </div>
+            <small>{requests.length} yêu cầu</small>
+          </div>
+          <div className="tn-filter-bar" role="group" aria-label="Lọc yêu cầu">
+            <button
+              type="button"
+              className={filter === 'all' ? 'is-active' : ''}
+              onClick={() => setFilter('all')}
+              aria-pressed={filter === 'all'}
+            >
+              Tất cả <span>{requests.length}</span>
+            </button>
+            <button
+              type="button"
+              className={filter === 'open' ? 'is-active' : ''}
+              onClick={() => setFilter('open')}
+              aria-pressed={filter === 'open'}
+            >
+              Đang xử lý{' '}
+              <span>
+                {requests.filter(i => i.status === 'Open' || i.status === 'InProgress').length}
+              </span>
+            </button>
+            <button
+              type="button"
+              className={filter === 'done' ? 'is-active' : ''}
+              onClick={() => setFilter('done')}
+              aria-pressed={filter === 'done'}
+            >
+              Đã kết thúc{' '}
+              <span>
+                {requests.filter(i => i.status === 'Resolved' || i.status === 'Closed').length}
+              </span>
+            </button>
+          </div>
+
+          {loading ? (
+            <Empty icon={ClipboardList} title="Đang tải yêu cầu..." description="Vui lòng đợi giây lát." />
+          ) : listError ? (
+            <Empty icon={AlertCircle} title="Không thể tải yêu cầu" description={listError} />
+          ) : filtered.length ? (
+            <ul>
+              {filtered.map(request => {
+                const st = tenantStatusMap[request.status] || { label: request.status, tone: 'neutral' }
+                const isSelected = selectedRequest?.id === request.id
+                return (
+                  <li
+                    key={request.id}
+                    style={{
+                      cursor: 'pointer',
+                      background: isSelected ? '#f4f8ff' : undefined,
+                      paddingLeft: isSelected ? '10px' : undefined,
+                      paddingRight: isSelected ? '10px' : undefined,
+                      borderRadius: '8px',
+                    }}
+                    onClick={() => inspectRequest(request)}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <strong>{request.title}</strong>
+                      <small>
+                        {request.propertyName} · Phòng {request.roomNumber} · Gửi lúc{' '}
+                        {formatDateTime(request.createdAt)}
+                      </small>
+                      <p>{request.content}</p>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                        <StateTag
+                          label={
+                            request.landlordIsRead
+                              ? `Chủ trọ đã xem${request.landlordReadAt ? ` lúc ${formatDateTime(request.landlordReadAt)}` : ''}`
+                              : 'Chủ trọ chưa xem'
+                          }
+                          tone={request.landlordIsRead ? 'success' : 'neutral'}
+                        />
+                        <StateTag label={st.label} tone={st.tone} />
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <Empty
+              icon={ClipboardList}
+              title="Chưa có yêu cầu nào"
+              description="Khi bạn gửi yêu cầu hỗ trợ tới chủ trọ, danh sách và trạng thái xem sẽ hiển thị tại đây."
+            />
+          )}
+        </section>
+      </div>
+    </>
+  )
+}
+
+function NoticesPage({ notify }) {
+  const [announcements, setAnnouncements] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [filter, setFilter] = useState('all')
+  const [selectedNotice, setSelectedNotice] = useState(null)
+
+  const loadAnnouncements = async signal => {
+    setLoading(true)
+    setError('')
+    try {
+      const response = await requestApi.getMyAnnouncements({ page: 1, pageSize: 50, signal })
+      setAnnouncements(response?.data || [])
+    } catch (e) {
+      if (!signal?.aborted) {
+        setError(e.message || 'Không thể tải thông báo từ chủ trọ.')
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setLoading(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    loadAnnouncements(controller.signal)
+    return () => controller.abort()
+  }, [])
+
+  const unread = announcements.filter(item => !item.isRead)
+  const visible = filter === 'unread' ? unread : announcements
+
+  async function handleRead(notice) {
+    setSelectedNotice(notice)
+    if (notice.isRead) return
+    try {
+      const updated = await requestApi.markAnnouncementAsRead(notice.id)
+      setAnnouncements(current => current.map(item => (item.id === updated.id ? updated : item)))
+      setSelectedNotice(updated)
+    } catch (e) {
+      notify?.(e.message || 'Không thể đánh dấu đã đọc.')
+    }
+  }
+
+  async function handleReadAll() {
+    for (const item of unread) {
+      try {
+        const updated = await requestApi.markAnnouncementAsRead(item.id)
+        setAnnouncements(current => current.map(x => (x.id === updated.id ? updated : x)))
+      } catch {
+        // ignore
+      }
+    }
+    notify?.('Đã đánh dấu đọc toàn bộ thông báo.')
+  }
+
+  return (
+    <>
+      <Header page="notices" />
+      <section className="tn-card tn-notices">
+        <div className="tn-section-head">
+          <div>
+            <span>THÔNG BÁO TỪ CHỦ TRỌ</span>
+            <h2>Bảng tin khu trọ</h2>
+          </div>
+          <small>{unread.length} chưa đọc</small>
+        </div>
+        <div className="tn-notice-toolbar">
+          <div className="tn-filter-bar" role="group" aria-label="Lọc thông báo">
+            <button
+              type="button"
+              className={filter === 'all' ? 'is-active' : ''}
+              onClick={() => setFilter('all')}
+              aria-pressed={filter === 'all'}
+            >
+              Tất cả <span>{announcements.length}</span>
+            </button>
+            <button
+              type="button"
+              className={filter === 'unread' ? 'is-active' : ''}
+              onClick={() => setFilter('unread')}
+              aria-pressed={filter === 'unread'}
+            >
+              Chưa đọc <span>{unread.length}</span>
+            </button>
+          </div>
+          <button
+            type="button"
+            className="tn-inline-action"
+            onClick={handleReadAll}
+            disabled={!unread.length}
+          >
+            <CheckCheck size={15} aria-hidden="true" /> Đánh dấu tất cả đã đọc
+          </button>
+        </div>
+
+        {loading ? (
+          <Empty icon={Bell} title="Đang tải thông báo..." description="Vui lòng đợi giây lát." />
+        ) : error ? (
+          <Empty icon={AlertCircle} title="Không thể tải thông báo" description={error} />
+        ) : visible.length ? (
+          <ul>
+            {visible.map(notice => {
+              const isRead = notice.isRead
+              const isSelected = selectedNotice?.id === notice.id
+              return (
+                <li
+                  key={notice.id}
+                  className={isRead ? 'is-read' : 'is-unread'}
+                  style={{
+                    cursor: 'pointer',
+                    background: isSelected ? '#f4f8ff' : undefined,
+                    paddingLeft: '10px',
+                    paddingRight: '10px',
+                    borderRadius: '8px',
+                  }}
+                  onClick={() => handleRead(notice)}
+                >
+                  <span className={`tn-notice-icon tn-notice-icon--${isRead ? 'neutral' : 'warning'}`}>
+                    <Bell size={18} aria-hidden="true" />
+                  </span>
+                  <div>
+                    <strong>{notice.title}</strong>
+                    <p style={{ whiteSpace: 'pre-wrap' }}>{notice.content}</p>
+                    <small>
+                      {notice.propertyName} · Phòng {notice.roomNumber} · Người gửi:{' '}
+                      {notice.senderFullName} · {formatDateTime(notice.createdAt)}
+                      {isRead && notice.readAt ? ` · Đã xem lúc ${formatDateTime(notice.readAt)}` : ''}
+                    </small>
+                    {!isRead && (
+                      <div className="tn-notice-actions">
+                        <button
+                          type="button"
+                          className="tn-inline-action"
+                          onClick={e => {
+                            e.stopPropagation()
+                            handleRead(notice)
+                          }}
+                        >
+                          <Check size={14} aria-hidden="true" /> Đánh dấu đã đọc
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <StateTag label={isRead ? 'Đã đọc' : 'Mới'} tone={isRead ? 'neutral' : 'warning'} />
+                </li>
+              )
+            })}
+          </ul>
+        ) : (
+          <Empty
+            icon={Bell}
+            title={filter === 'unread' ? 'Đã đọc hết thông báo' : 'Chưa có thông báo từ chủ trọ'}
+            description="Các thông báo mới từ chủ trọ sẽ xuất hiện tại đây."
+          />
+        )}
+      </section>
+    </>
+  )
 }
 
 function ProfilePage({ user, profile, onSave, notify }) {
@@ -211,8 +635,8 @@ export default function Tenant({ page = 'overview', user, navigate, notify, room
   if (page === 'room') return <div className="tn-page"><RoomPage room={room} property={property} navigate={navigate} /></div>
   if (page === 'billing') return <div className="tn-page"><BillingPage invoices={myInvoices} notify={notify} /></div>
   if (page === 'contracts') return <div className="tn-page"><ContractsPage contracts={myContracts} navigate={navigate} notify={notify} /></div>
-  if (page === 'requests') return <div className="tn-page"><RequestsPage room={room} tenantName={tenantName} requests={myRequests} setRequests={setRequests} notify={notify} /></div>
-  if (page === 'notices') return <div className="tn-page"><NoticesPage notices={notices} readIds={readIds} onRead={markRead} onReadAll={() => setReadIds(notices.map(notice => notice.id))} navigate={navigate} /></div>
+  if (page === 'requests') return <div className="tn-page"><RequestsPage notify={notify} /></div>
+  if (page === 'notices' || page === 'notifications') return <div className="tn-page"><NoticesPage notify={notify} /></div>
   if (page === 'profile') return <div className="tn-page"><ProfilePage user={user} profile={profile} onSave={setProfile} notify={notify} /></div>
   return <div className="tn-page"><Overview name={profile.fullName || displayName} room={room} property={property} currentInvoice={currentInvoice} openRequests={myRequests.filter(request => request.status !== 'done').length} notices={unreadNotices} navigate={navigate} /></div>
 }
