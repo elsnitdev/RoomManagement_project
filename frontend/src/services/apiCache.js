@@ -1,16 +1,16 @@
 const cache = new Map()
 
-export function invalidateApiCache(key) {
-  if (!key) {
-    cache.clear()
-    return
-  }
-  for (const cachedKey of cache.keys()) {
-    if (cachedKey === key || cachedKey.startsWith(`${key}:`)) {
-      cache.delete(cachedKey)
+  export function invalidateApiCache(key) {
+    if (!key) {
+      cache.clear()
+      return
+    }
+    for (const cachedKey of cache.keys()) {
+      if (cachedKey === key || cachedKey.startsWith(`${key}:`)) {
+        cache.delete(cachedKey)
+      }
     }
   }
-}
 
 export function loadCached(key, loader, { ttlMs = 30_000, force = false } = {}) {
   const existing = cache.get(key)

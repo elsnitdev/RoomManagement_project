@@ -24,6 +24,7 @@ bin/
 obj/
 backend/docs/
 plans/
+docs/
 # Frontend
 node_modules/
 dist/
