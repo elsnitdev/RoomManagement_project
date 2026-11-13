@@ -45,7 +45,7 @@ public sealed class MyRulesEvidenceController(ContractRulesEvidenceService servi
 }
 
 [ApiController]
-[Authorize(Roles = UserRoles.Landlord)]
+[Authorize(Roles = UserRoles.LandlordOrManager)]
 [Route("api/properties/{propertyId:guid}/contracts/{contractId:guid}/tenants/{linkId:guid}/rules-evidence")]
 public sealed class LandlordRulesEvidenceController(ContractRulesEvidenceService service) : ControllerBase
 {

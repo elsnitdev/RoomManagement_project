@@ -41,4 +41,23 @@ public sealed class UserDto
     /// Thời điểm tài khoản được khởi tạo (giờ chuẩn UTC).
     /// </summary>
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>Bắt buộc đổi mật khẩu tạm ở lần đăng nhập đầu.</summary>
+    public bool MustChangePassword { get; set; }
+
+    /// <summary>ID Chủ trọ sở hữu (chỉ có giá trị khi Role là Manager).</summary>
+    public string? LandlordUserId { get; set; }
+
+    /// <summary>Trạng thái xác minh danh tính SĐT/CCCD (Unverified / Pending / Verified).</summary>
+    public string IdentityVerificationStatus { get; set; } = string.Empty;
+
+    /// <summary>Thời điểm xác minh danh tính (nếu đã xác minh).</summary>
+    public DateTime? IdentityVerifiedAt { get; set; }
+
+    public string? FullName { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string? CitizenId { get; set; }
+    public DateOnly? DateOfBirth { get; set; }
+    public string? Address { get; set; }
+    public DateTime? DeletedAt { get; set; }
 }

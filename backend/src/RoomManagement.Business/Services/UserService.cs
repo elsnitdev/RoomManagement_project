@@ -229,10 +229,28 @@ public sealed class UserService : IUserService
         var user = await _userStore.FindByIdAsync(userId, cancellationToken)
             ?? throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{userId}'.");
 
+        var nextFullName = TrimOrNull(dto.FullName) ?? user.FullName;
+        var nextPhoneNumber = TrimOrNull(dto.PhoneNumber) ?? user.PhoneNumber;
+        var nextCitizenId = TrimOrNull(dto.CitizenId) ?? user.CitizenId;
+
+        if (user.Role == UserRoles.Tenant && await _userStore.HasConfirmedOrActiveContractAsync(user.Id, cancellationToken))
+        {
+            var identityChanged =
+                !string.Equals(nextFullName, user.FullName, StringComparison.Ordinal) ||
+                !string.Equals(nextPhoneNumber, user.PhoneNumber, StringComparison.Ordinal) ||
+                !string.Equals(nextCitizenId, user.CitizenId, StringComparison.Ordinal);
+            if (identityChanged)
+            {
+                throw new BusinessRuleException(
+                    "Không thể tự thay đổi họ tên, số điện thoại hoặc số CCCD khi đã có hợp đồng đã xác nhận.",
+                    code: "IDENTITY_LOCKED_ON_CONFIRMED_CONTRACT");
+            }
+        }
+
         // BƯỚC 2: Gộp dữ liệu mới vào dữ liệu cũ
-        user.FullName = TrimOrNull(dto.FullName) ?? user.FullName;
-        user.PhoneNumber = TrimOrNull(dto.PhoneNumber) ?? user.PhoneNumber;
-        user.CitizenId = TrimOrNull(dto.CitizenId) ?? user.CitizenId;
+        user.FullName = nextFullName;
+        user.PhoneNumber = nextPhoneNumber;
+        user.CitizenId = nextCitizenId;
         user.DateOfBirth = dto.DateOfBirth ?? user.DateOfBirth;
         user.Address = TrimOrNull(dto.Address) ?? user.Address;
 
@@ -248,10 +266,119 @@ public sealed class UserService : IUserService
 
         // BƯỚC 5: Yêu cầu Store lưu thay đổi
         await _userStore.SaveChangesAsync(cancellationToken);
+        if (user.Role == UserRoles.Tenant)
+            await _userStore.SyncTenantProfileFromUserAsync(user, cancellationToken);
 
         _logger.LogInformation("Người dùng {UserName} (ID: {UserId}) đã cập nhật hồ sơ cá nhân.", user.UserName, user.Id);
 
         return BuildProfileStatus(user);
+    }
+
+    public async Task<UserDto> GetMyProfileAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _userStore.FindByIdAsNoTrackingAsync(userId, cancellationToken)
+            ?? throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{userId}'.");
+        if (user.DeletedAt is not null)
+            throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{userId}'.");
+        return user.ToUserDto();
+    }
+
+    public async Task<(IReadOnlyList<UserDto> Items, int TotalCount)> ListUsersByAdminAsync(
+        string? role, string? keyword, bool? isActive, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var (items, totalCount) = await _userStore.ListUsersAsync(role, keyword, isActive, page, pageSize, cancellationToken);
+        return (items.Select(u => u.ToUserDto()).ToList(), totalCount);
+    }
+
+    public async Task<UserDto> SetUserLockByAdminAsync(
+        string adminUserId, string targetUserId, bool isLocked, CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(adminUserId, targetUserId, StringComparison.Ordinal))
+            throw new BusinessRuleException("Không thể tự khóa tài khoản quản trị đang đăng nhập.", "CANNOT_LOCK_SELF");
+
+        var user = await _userStore.FindByIdAsync(targetUserId, cancellationToken)
+            ?? throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{targetUserId}'.");
+        if (user.DeletedAt is not null)
+            throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{targetUserId}'.");
+        if (user.Role == UserRoles.Admin)
+            throw new BusinessRuleException("Không thể khóa tài khoản Admin.", "CANNOT_LOCK_ADMIN");
+
+        user.IsActive = !isLocked;
+        await _userStore.SaveChangesAsync(cancellationToken);
+        return user.ToUserDto();
+    }
+
+    public async Task<UserDto> UpdateUserByAdminAsync(
+        string adminUserId, string targetUserId, AdminUpdateUserDto dto, CancellationToken cancellationToken = default)
+    {
+        var user = await _userStore.FindByIdAsync(targetUserId, cancellationToken)
+            ?? throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{targetUserId}'.");
+        if (user.DeletedAt is not null)
+            throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{targetUserId}'.");
+        if (user.Role == UserRoles.Admin && !string.Equals(adminUserId, targetUserId, StringComparison.Ordinal))
+            throw new BusinessRuleException("Không thể chỉnh sửa tài khoản Admin khác.", "CANNOT_EDIT_ADMIN");
+
+        var nextEmail = TrimOrNull(dto.Email);
+        if (nextEmail is not null)
+        {
+            var normalizedEmail = Normalize(nextEmail);
+            if (!string.Equals(normalizedEmail, user.NormalizedEmail, StringComparison.Ordinal))
+            {
+                await EnsureEmailAvailableAsync(nextEmail, normalizedEmail, cancellationToken);
+                user.Email = nextEmail;
+                user.NormalizedEmail = normalizedEmail;
+            }
+        }
+
+        user.FullName = TrimOrNull(dto.FullName) ?? user.FullName;
+        user.PhoneNumber = TrimOrNull(dto.PhoneNumber) ?? user.PhoneNumber;
+        user.CitizenId = TrimOrNull(dto.CitizenId) ?? user.CitizenId;
+        user.DateOfBirth = dto.DateOfBirth ?? user.DateOfBirth;
+        user.Address = TrimOrNull(dto.Address) ?? user.Address;
+
+        if (!string.IsNullOrWhiteSpace(dto.IdentityVerificationStatus))
+        {
+            var status = dto.IdentityVerificationStatus.Trim();
+            if (status != IdentityVerificationStatuses.Unverified &&
+                status != IdentityVerificationStatuses.Pending &&
+                status != IdentityVerificationStatuses.Verified)
+            {
+                throw new AppValidationException("Trạng thái xác minh danh tính không hợp lệ.", "INVALID_VERIFICATION_STATUS");
+            }
+            user.IdentityVerificationStatus = status;
+            user.IdentityVerifiedAt = status == IdentityVerificationStatuses.Verified ? DateTime.UtcNow : null;
+        }
+
+        UserProfileRules.EnsureValidFormat(user);
+
+        if (!string.IsNullOrWhiteSpace(user.CitizenId))
+            await EnsureCitizenIdAvailableAsync(user.CitizenId, excludeUserId: user.Id, cancellationToken);
+
+        await _userStore.SaveChangesAsync(cancellationToken);
+        if (user.Role == UserRoles.Tenant)
+            await _userStore.SyncTenantProfileFromUserAsync(user, cancellationToken);
+
+        _logger.LogInformation("Admin '{AdminId}' đã cập nhật thông tin tài khoản '{UserId}'.", adminUserId, user.Id);
+        return user.ToUserDto();
+    }
+
+    public async Task<UserDto> DeactivateUserByAdminAsync(
+        string adminUserId, string targetUserId, CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(adminUserId, targetUserId, StringComparison.Ordinal))
+            throw new BusinessRuleException("Không thể tự vô hiệu hóa tài khoản quản trị đang đăng nhập.", "CANNOT_DELETE_SELF");
+
+        var user = await _userStore.FindByIdAsync(targetUserId, cancellationToken)
+            ?? throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{targetUserId}'.");
+        if (user.DeletedAt is not null)
+            throw new AppNotFoundException($"Không tìm thấy người dùng có Id '{targetUserId}'.");
+        if (user.Role == UserRoles.Admin)
+            throw new BusinessRuleException("Không thể xóa tài khoản Admin.", "CANNOT_DELETE_ADMIN");
+
+        user.IsActive = false;
+        user.DeletedAt = DateTime.UtcNow;
+        await _userStore.SaveChangesAsync(cancellationToken);
+        return user.ToUserDto();
     }
 
     // =========================================================================

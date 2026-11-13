@@ -7,7 +7,6 @@ import {
   getLandlordTenants,
   getLandlordTenantById,
   createLandlordTenant,
-  updateLandlordTenant,
   mapTenantApiError,
 } from "./services/api";
 
@@ -29,7 +28,6 @@ export default function TenantManager({ notify, navigate }) {
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedSnapshot, setSelectedSnapshot] = useState(null);
-  const [isEditing, setIsEditing] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [draft, setDraft] = useState(emptyDraft);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -90,60 +88,14 @@ export default function TenantManager({ notify, navigate }) {
     pagedTenants.find((item) => item.id === selectedId) ||
     (selectedSnapshot?.id === selectedId ? selectedSnapshot : null);
 
-  // Đồng bộ dữ liệu mới nhất vào form sửa nếu người dùng bấm "Sửa" trực tiếp từ bảng
-  useEffect(() => {
-    if (
-      isEditing &&
-      detailResponse?.data &&
-      detailResponse.data.id === selectedId
-    ) {
-      const fresh = detailResponse.data;
-      setDraft({
-        fullName: fresh.fullName || "",
-        phoneNumber: fresh.phoneNumber || "",
-        email: fresh.email || "",
-        citizenId: fresh.citizenId || "",
-        dateOfBirth: fresh.dateOfBirth
-          ? String(fresh.dateOfBirth).split("T")[0]
-          : "",
-        gender: fresh.gender || "",
-        permanentAddress: fresh.permanentAddress || "",
-      });
-    }
-  }, [detailResponse, isEditing, selectedId]);
-
   function openCreateForm() {
     setSelectedId(null);
     setSelectedSnapshot(null);
-    setIsEditing(false);
     setDraft(emptyDraft);
     setFieldErrors({});
     setGeneralError("");
     setShowAddForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function openEditForm(tenant) {
-    setShowAddForm(false);
-    setIsEditing(true);
-    setSelectedId(tenant.id);
-    setSelectedSnapshot(tenant);
-    setDraft({
-      fullName: tenant.fullName || "",
-      phoneNumber: tenant.phoneNumber || "",
-      email: tenant.email || "",
-      citizenId: tenant.citizenId || "",
-      dateOfBirth: tenant.dateOfBirth
-        ? String(tenant.dateOfBirth).split("T")[0]
-        : "",
-      gender: tenant.gender || "",
-      permanentAddress: tenant.permanentAddress || "",
-    });
-    setFieldErrors({});
-    setGeneralError("");
-    setTimeout(() => {
-      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
   }
 
   function openDetail(tenant) {
@@ -152,7 +104,6 @@ export default function TenantManager({ notify, navigate }) {
       return;
     }
     setShowAddForm(false);
-    setIsEditing(false);
     setSelectedId(tenant.id);
     setSelectedSnapshot(tenant);
     setFieldErrors({});
@@ -193,7 +144,7 @@ export default function TenantManager({ notify, navigate }) {
     setIsSubmitting(true);
 
     try {
-      // Chuẩn bị payload chuẩn theo Backend API Contract (CreateTenantProfileRequest / UpdateTenantProfileRequest)
+      // Chuẩn bị payload chuẩn theo Backend API Contract (CreateTenantProfileRequest)
       const payload = {
         fullName: draft.fullName.trim(),
         phoneNumber: draft.phoneNumber.trim(),
@@ -204,47 +155,30 @@ export default function TenantManager({ notify, navigate }) {
         permanentAddress: draft.permanentAddress?.trim() || null,
       };
 
-      if (isEditing && selectedId) {
-        const response = await updateLandlordTenant(selectedId, payload);
-        const updatedRecord = response?.data || {
-          ...selectedTenant,
-          ...payload,
-          id: selectedId,
-        };
-        setSelectedSnapshot(updatedRecord);
-        setIsEditing(false);
-        reloadList();
-        reloadDetail();
-        notify?.(
-          response?.message ||
-            `Đã cập nhật hồ sơ người ở "${payload.fullName}".`,
-        );
-      } else {
-        const response = await createLandlordTenant(payload);
-        const createdRecord = response?.data;
-        setShowAddForm(false);
-        setDraft(emptyDraft);
+      const response = await createLandlordTenant(payload);
+      const createdRecord = response?.data;
+      setShowAddForm(false);
+      setDraft(emptyDraft);
 
-        if (createdRecord?.id) {
-          setSelectedId(createdRecord.id);
-          setSelectedSnapshot(createdRecord);
-        }
-
-        if (page !== 1) {
-          setPage(1);
-        } else {
-          reloadList();
-        }
-
-        const shortCode = createdRecord?.id
-          ? ` (Mã: ${String(createdRecord.id).substring(0, 8)})`
-          : "";
-        notify?.(
-          response?.message
-            ? `${response.message}${shortCode}`
-            : `Đã tạo hồ sơ người ở "${payload.fullName}"${shortCode}.`,
-        );
+      if (createdRecord?.id) {
+        setSelectedId(createdRecord.id);
+        setSelectedSnapshot(createdRecord);
       }
+
+      if (page !== 1) {
+        setPage(1);
+      } else {
+        reloadList();
+      }
+
+      const shortCode = createdRecord?.id
+        ? ` (Mã: ${String(createdRecord.id).substring(0, 8)})`
+        : "";
+      notify?.(
+        response?.message
+          ? `${response.message}${shortCode}`
+          : `Đã tạo hồ sơ người ở "${payload.fullName}"${shortCode}.`,
+      );
     } catch (err) {
       const mapped = mapTenantApiError(err);
       setFieldErrors(mapped.fieldErrors);
@@ -257,16 +191,18 @@ export default function TenantManager({ notify, navigate }) {
   return (
     <>
       <Heading
-        eyebrow="NGƯỜI THUÊ & NHÂN KHẨU"
-        title="Hồ sơ người ở"
-        description="Lưu thông tin nhân khẩu trước khi lập hợp đồng, kể cả khi khách thuê chưa tạo tài khoản."
+        eyebrow="NGƯỜI THUÊ THEO HỢP ĐỒNG"
+        title="Người thuê trong khu trọ"
+        description="Xem người thuê đang hoặc đã có hợp đồng thuộc các khu trọ bạn được phép quản lý. Để mời người thuê mới vào phòng, hãy tra cứu SĐT + CCCD tại mục Hợp đồng."
         action={
-          <Button
-            icon="plus"
-            onClick={showAddForm ? () => setShowAddForm(false) : openCreateForm}
-          >
-            {showAddForm ? "Đóng biểu mẫu" : "Thêm hồ sơ người ở"}
-          </Button>
+          navigate ? (
+            <Button
+              variant="secondary"
+              onClick={() => navigate("landlord/contracts")}
+            >
+              Đi tới Hợp đồng
+            </Button>
+          ) : null
         }
       />
 
@@ -613,16 +549,8 @@ export default function TenantManager({ notify, navigate }) {
                           className="table-link"
                           type="button"
                           onClick={() => openDetail(item)}
-                          style={{ marginRight: "12px" }}
                         >
                           Chi tiết <Icon name="chevron" size={15} />
-                        </button>
-                        <button
-                          className="text-link"
-                          type="button"
-                          onClick={() => openEditForm(item)}
-                        >
-                          Sửa
                         </button>
                       </td>
                     </tr>
@@ -688,7 +616,7 @@ export default function TenantManager({ notify, navigate }) {
         )}
       </section>
 
-      {/* CHI TIẾT & CHỈNH SỬA HỒ SƠ */}
+      {/* CHI TIẾT HỒ SƠ */}
       {selectedId && (
         <section
           className="content-card detail-panel"
@@ -714,7 +642,6 @@ export default function TenantManager({ notify, navigate }) {
                   onClick={() => {
                     setSelectedId(null);
                     setSelectedSnapshot(null);
-                    setIsEditing(false);
                   }}
                 >
                   Đóng
@@ -753,14 +680,6 @@ export default function TenantManager({ notify, navigate }) {
                 <div
                   style={{ display: "flex", gap: "8px", alignItems: "center" }}
                 >
-                  {!isEditing && (
-                    <Button
-                      variant="secondary"
-                      onClick={() => openEditForm(selectedTenant)}
-                    >
-                      Sửa hồ sơ
-                    </Button>
-                  )}
                   <button
                     className="icon-button"
                     type="button"
@@ -768,7 +687,6 @@ export default function TenantManager({ notify, navigate }) {
                     onClick={() => {
                       setSelectedId(null);
                       setSelectedSnapshot(null);
-                      setIsEditing(false);
                     }}
                   >
                     <Icon name="close" />
@@ -776,260 +694,86 @@ export default function TenantManager({ notify, navigate }) {
                 </div>
               </div>
 
-              {isEditing ? (
-                /* BIỂU MẪU CHỈNH SỬA */
-                <form onSubmit={handleSave} className="form-grid" noValidate>
-                  {generalError && (
-                    <p className="form-error field--wide" role="alert">
-                      <Icon name="alert" size={16} /> {generalError}
-                    </p>
-                  )}
+              {/* XEM CHI TIẾT THÔNG TIN */}
+              <div className="detail-grid">
+                <Info label="Họ và tên" value={selectedTenant.fullName} />
+                <Info
+                  label="Số điện thoại"
+                  value={selectedTenant.phoneNumber}
+                />
+                <Info
+                  label="Số CCCD"
+                  value={selectedTenant.citizenId || "—"}
+                />
+                <Info label="Email" value={selectedTenant.email || "—"} />
+                <Info
+                  label="Giới tính"
+                  value={
+                    GENDER_LABELS[selectedTenant.gender] || "Chưa xác định"
+                  }
+                />
+                <Info
+                  label="Ngày sinh"
+                  value={
+                    selectedTenant.dateOfBirth
+                      ? new Date(
+                          selectedTenant.dateOfBirth,
+                        ).toLocaleDateString("vi-VN")
+                      : "—"
+                  }
+                />
+                <Info
+                  label="Địa chỉ thường trú"
+                  value={selectedTenant.permanentAddress || "—"}
+                  wide
+                />
+                <Info
+                  label="Tình trạng tài khoản"
+                  value={
+                    selectedTenant.userId
+                      ? `Đã liên kết (User: ${selectedTenant.userId})`
+                      : "Chưa có tài khoản (Không yêu cầu đăng nhập)"
+                  }
+                />
+                <Info
+                  label="Ngày khởi tạo hồ sơ"
+                  value={
+                    selectedTenant.createdAt
+                      ? new Date(selectedTenant.createdAt).toLocaleString(
+                          "vi-VN",
+                        )
+                      : "—"
+                  }
+                />
+                {selectedTenant.updatedAt && (
+                  <Info
+                    label="Cập nhật gần nhất"
+                    value={new Date(
+                      selectedTenant.updatedAt,
+                    ).toLocaleString("vi-VN")}
+                  />
+                )}
+              </div>
 
-                  <Field label="Họ và tên" required>
-                    <input
-                      required
-                      maxLength={150}
-                      disabled={isSubmitting}
-                      value={draft.fullName}
-                      onChange={(e) =>
-                        handleDraftChange("fullName", e.target.value)
-                      }
-                      aria-invalid={Boolean(fieldErrors.fullName)}
-                    />
-                    {fieldErrors.fullName && (
-                      <small style={{ color: "#dc2626", fontSize: "11px" }}>
-                        {fieldErrors.fullName}
-                      </small>
-                    )}
-                  </Field>
-
-                  <Field label="Số điện thoại" required>
-                    <input
-                      required
-                      type="tel"
-                      maxLength={20}
-                      disabled={isSubmitting}
-                      value={draft.phoneNumber}
-                      onChange={(e) =>
-                        handleDraftChange("phoneNumber", e.target.value)
-                      }
-                      aria-invalid={Boolean(fieldErrors.phoneNumber)}
-                    />
-                    {fieldErrors.phoneNumber && (
-                      <small style={{ color: "#dc2626", fontSize: "11px" }}>
-                        {fieldErrors.phoneNumber}
-                      </small>
-                    )}
-                  </Field>
-
-                  <Field label="Số CCCD / CMND">
-                    <input
-                      maxLength={12}
-                      disabled={isSubmitting}
-                      value={draft.citizenId}
-                      onChange={(e) =>
-                        handleDraftChange("citizenId", e.target.value)
-                      }
-                      aria-invalid={Boolean(fieldErrors.citizenId)}
-                    />
-                    {fieldErrors.citizenId && (
-                      <small style={{ color: "#dc2626", fontSize: "11px" }}>
-                        {fieldErrors.citizenId}
-                      </small>
-                    )}
-                  </Field>
-
-                  <Field label="Email">
-                    <input
-                      type="email"
-                      maxLength={150}
-                      disabled={isSubmitting}
-                      value={draft.email}
-                      onChange={(e) =>
-                        handleDraftChange("email", e.target.value)
-                      }
-                      aria-invalid={Boolean(fieldErrors.email)}
-                    />
-                    {fieldErrors.email && (
-                      <small style={{ color: "#dc2626", fontSize: "11px" }}>
-                        {fieldErrors.email}
-                      </small>
-                    )}
-                  </Field>
-
-                  <Field label="Ngày sinh">
-                    <input
-                      type="date"
-                      disabled={isSubmitting}
-                      value={draft.dateOfBirth}
-                      onChange={(e) =>
-                        handleDraftChange("dateOfBirth", e.target.value)
-                      }
-                      aria-invalid={Boolean(fieldErrors.dateOfBirth)}
-                    />
-                    {fieldErrors.dateOfBirth && (
-                      <small style={{ color: "#dc2626", fontSize: "11px" }}>
-                        {fieldErrors.dateOfBirth}
-                      </small>
-                    )}
-                  </Field>
-
-                  <Field label="Giới tính">
-                    <select
-                      disabled={isSubmitting}
-                      value={draft.gender}
-                      onChange={(e) =>
-                        handleDraftChange("gender", e.target.value)
-                      }
-                      aria-invalid={Boolean(fieldErrors.gender)}
-                    >
-                      {GENDER_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                    {fieldErrors.gender && (
-                      <small style={{ color: "#dc2626", fontSize: "11px" }}>
-                        {fieldErrors.gender}
-                      </small>
-                    )}
-                  </Field>
-
-                  <Field label="Địa chỉ thường trú" wide>
-                    <textarea
-                      rows="2"
-                      maxLength={300}
-                      disabled={isSubmitting}
-                      value={draft.permanentAddress}
-                      onChange={(e) =>
-                        handleDraftChange("permanentAddress", e.target.value)
-                      }
-                      aria-invalid={Boolean(fieldErrors.permanentAddress)}
-                    />
-                    {fieldErrors.permanentAddress && (
-                      <small style={{ color: "#dc2626", fontSize: "11px" }}>
-                        {fieldErrors.permanentAddress}
-                      </small>
-                    )}
-                  </Field>
-
-                  <div className="notice field--wide">
-                    <Icon name="alert" size={16} />
-                    <span>
-                      Lưu ý nghiệp vụ: Việc sửa hồ sơ người ở không tự ý làm
-                      thay đổi các chứng từ hợp đồng đã chốt trước đó.
-                    </span>
-                  </div>
-
-                  <div
-                    className="detail-actions field--wide"
-                    style={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      gap: "9px",
-                    }}
+              {navigate && (
+                <div
+                  style={{
+                    marginTop: "24px",
+                    paddingTop: "20px",
+                    borderTop: "1px solid #eef1f6",
+                  }}
+                >
+                  <button
+                    className="text-link"
+                    type="button"
+                    onClick={() =>
+                      navigate(`landlord/tenants/${selectedTenant.id}`)
+                    }
                   >
-                    <Button
-                      variant="secondary"
-                      disabled={isSubmitting}
-                      onClick={() => {
-                        setIsEditing(false);
-                        setFieldErrors({});
-                        setGeneralError("");
-                      }}
-                    >
-                      Hủy chỉnh sửa
-                    </Button>
-                    <Button type="submit" disabled={isSubmitting}>
-                      {isSubmitting ? "Đang lưu..." : "Lưu thay đổi"}
-                    </Button>
-                  </div>
-                </form>
-              ) : (
-                /* XEM CHI TIẾT THÔNG TIN */
-                <>
-                  <div className="detail-grid">
-                    <Info label="Họ và tên" value={selectedTenant.fullName} />
-                    <Info
-                      label="Số điện thoại"
-                      value={selectedTenant.phoneNumber}
-                    />
-                    <Info
-                      label="Số CCCD"
-                      value={selectedTenant.citizenId || "—"}
-                    />
-                    <Info label="Email" value={selectedTenant.email || "—"} />
-                    <Info
-                      label="Giới tính"
-                      value={
-                        GENDER_LABELS[selectedTenant.gender] || "Chưa xác định"
-                      }
-                    />
-                    <Info
-                      label="Ngày sinh"
-                      value={
-                        selectedTenant.dateOfBirth
-                          ? new Date(
-                              selectedTenant.dateOfBirth,
-                            ).toLocaleDateString("vi-VN")
-                          : "—"
-                      }
-                    />
-                    <Info
-                      label="Địa chỉ thường trú"
-                      value={selectedTenant.permanentAddress || "—"}
-                      wide
-                    />
-                    <Info
-                      label="Tình trạng tài khoản"
-                      value={
-                        selectedTenant.userId
-                          ? `Đã liên kết (User: ${selectedTenant.userId})`
-                          : "Chưa có tài khoản (Không yêu cầu đăng nhập)"
-                      }
-                    />
-                    <Info
-                      label="Ngày khởi tạo hồ sơ"
-                      value={
-                        selectedTenant.createdAt
-                          ? new Date(selectedTenant.createdAt).toLocaleString(
-                              "vi-VN",
-                            )
-                          : "—"
-                      }
-                    />
-                    {selectedTenant.updatedAt && (
-                      <Info
-                        label="Cập nhật gần nhất"
-                        value={new Date(
-                          selectedTenant.updatedAt,
-                        ).toLocaleString("vi-VN")}
-                      />
-                    )}
-                  </div>
-
-                  {navigate && (
-                    <div
-                      style={{
-                        marginTop: "24px",
-                        paddingTop: "20px",
-                        borderTop: "1px solid #eef1f6",
-                      }}
-                    >
-                      <button
-                        className="text-link"
-                        type="button"
-                        onClick={() =>
-                          navigate(`landlord/tenants/${selectedTenant.id}`)
-                        }
-                      >
-                        Xem phòng hiện tại và lịch sử hợp đồng{" "}
-                        <Icon name="arrow" size={15} />
-                      </button>
-                    </div>
-                  )}
-                </>
+                    Xem phòng hiện tại và lịch sử hợp đồng{" "}
+                    <Icon name="arrow" size={15} />
+                  </button>
+                </div>
               )}
             </>
           ) : null}

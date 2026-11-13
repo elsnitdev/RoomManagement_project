@@ -11,7 +11,10 @@ public sealed class TenantProfileDto
     /// <summary>ID tài khoản người dùng đăng nhập nếu đã liên kết (null nếu chưa có tài khoản).</summary>
     public string? UserId { get; set; }
 
-    /// <summary>ID chủ trọ khởi tạo hồ sơ.</summary>
+    /// <summary>ID chủ trọ sở hữu hồ sơ.</summary>
+    public string? OwnerLandlordUserId { get; set; }
+
+    /// <summary>ID tài khoản khởi tạo hồ sơ (Chủ trọ hoặc Quản lý).</summary>
     public string? CreatedByUserId { get; set; }
 
     /// <summary>Họ và tên người thuê.</summary>

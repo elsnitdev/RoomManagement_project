@@ -116,8 +116,9 @@ public sealed class PaymentStore : IPaymentStore
 
     /// <inheritdoc />
     public async Task<OwnerPaymentResult> ReviewAsync(Guid paymentId, string ownerId,
-        ReviewPaymentInput input, CancellationToken ct)
+        ReviewPaymentInput input, CancellationToken ct, string? actorUserId = null)
     {
+        var actor = actorUserId ?? ownerId;
         var invoiceId = await (from paymentRow in _db.Payments.AsNoTracking()
                                join invoiceRow in InvoiceAccessQueries.OwnedInvoices(_db, ownerId).AsNoTracking()
                                    on paymentRow.InvoiceId equals invoiceRow.Id
@@ -150,14 +151,14 @@ public sealed class PaymentStore : IPaymentStore
         payment.Status = input.Status;
         payment.VerifiedAmount = input.Status == PaymentStatus.Success ? input.VerifiedAmount : null;
         payment.VerifiedAt = input.Status == PaymentStatus.Success ? now : null;
-        payment.VerifiedByUserId = input.Status == PaymentStatus.Success ? ownerId : null;
+        payment.VerifiedByUserId = input.Status == PaymentStatus.Success ? actor : null;
         if (input.Status == PaymentStatus.Success) payment.PaidAt ??= now;
         _db.PaymentReviewEvents.Add(new PaymentReviewEvent
         {
             Id = Guid.NewGuid(), PaymentId = payment.Id,
             PreviousStatus = PaymentStatus.Pending, NewStatus = input.Status,
             NewVerifiedAmount = payment.VerifiedAmount, Reason = input.Reason,
-            ReviewedByUserId = ownerId, ReviewedAt = now
+            ReviewedByUserId = actor, ReviewedAt = now
         });
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -166,8 +167,9 @@ public sealed class PaymentStore : IPaymentStore
 
     /// <inheritdoc />
     public async Task<OwnerPaymentResult> RecordReceivedAsync(Guid invoiceId, string ownerId,
-        RecordReceivedPaymentInput input, CancellationToken ct)
+        RecordReceivedPaymentInput input, CancellationToken ct, string? actorUserId = null)
     {
+        var actor = actorUserId ?? ownerId;
         if (!await InvoiceAccessQueries.OwnedInvoices(_db, ownerId)
                 .AnyAsync(x => x.Id == invoiceId, ct))
             throw NotFound();
@@ -180,7 +182,7 @@ public sealed class PaymentStore : IPaymentStore
             .SingleOrDefaultAsync(x => x.IdempotencyKey == key, ct);
         if (existing is not null)
         {
-            if (existing.InvoiceId != invoiceId || existing.SubmittedByUserId != ownerId ||
+            if (existing.InvoiceId != invoiceId || existing.SubmittedByUserId != actor ||
                 existing.ClaimedAmount != input.Amount || existing.PaymentMethod != input.Method ||
                 input.PaidAt is { } paidAt && existing.PaidAt != paidAt.UtcDateTime ||
                 existing.TransactionCode != input.TransactionCode || existing.Note != input.Note ||
@@ -202,10 +204,10 @@ public sealed class PaymentStore : IPaymentStore
         var now = DateTime.UtcNow;
         var payment = new Payment
         {
-            Id = Guid.NewGuid(), InvoiceId = invoiceId, SubmittedByUserId = ownerId,
+            Id = Guid.NewGuid(), InvoiceId = invoiceId, SubmittedByUserId = actor,
             ClaimedAmount = input.Amount, VerifiedAmount = input.Amount,
             PaymentMethod = input.Method, Status = PaymentStatus.Success,
-            PaidAt = input.PaidAt?.UtcDateTime ?? now, VerifiedAt = now, VerifiedByUserId = ownerId,
+            PaidAt = input.PaidAt?.UtcDateTime ?? now, VerifiedAt = now, VerifiedByUserId = actor,
             TransactionCode = input.TransactionCode, IdempotencyKey = key,
             Note = input.Note, CreatedAt = now
         };
@@ -216,7 +218,7 @@ public sealed class PaymentStore : IPaymentStore
             PreviousStatus = PaymentStatus.Pending, NewStatus = PaymentStatus.Success,
             NewVerifiedAmount = input.Amount,
             Reason = "Chủ trọ ghi nhận đã nhận tiền trực tiếp.",
-            ReviewedByUserId = ownerId, ReviewedAt = now
+            ReviewedByUserId = actor, ReviewedAt = now
         });
         try
         {
@@ -239,8 +241,9 @@ public sealed class PaymentStore : IPaymentStore
     }
 
     public async Task<Refund> RecordOverpaymentRefundAsync(Guid invoiceId, string ownerId,
-        decimal amount, string? transactionCode, Guid idempotencyKey, CancellationToken ct)
+        decimal amount, string? transactionCode, Guid idempotencyKey, CancellationToken ct, string? actorUserId = null)
     {
+        var actor = actorUserId ?? ownerId;
         if (!await InvoiceAccessQueries.OwnedInvoices(_db, ownerId).AnyAsync(x => x.Id == invoiceId, ct))
             throw NotFound();
         await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
@@ -251,7 +254,7 @@ public sealed class PaymentStore : IPaymentStore
         var existing = await _db.Refunds.AsNoTracking().SingleOrDefaultAsync(x => x.IdempotencyKey == key, ct);
         if (existing is not null)
         {
-            if (existing.InvoiceId != invoiceId || existing.CreatedByUserId != ownerId ||
+            if (existing.InvoiceId != invoiceId || existing.CreatedByUserId != actor ||
                 existing.Amount != amount || existing.TransactionCode != transactionCode || !existing.IsOverpaymentRefund)
                 throw new BusinessException(BusinessErrorType.Conflict, "REFUND_IDEMPOTENCY_CONFLICT", "Khóa xác nhận đã được dùng cho khoản hoàn khác.");
             return existing;
@@ -266,7 +269,7 @@ public sealed class PaymentStore : IPaymentStore
         var refund = new Refund { Id = Guid.NewGuid(), InvoiceId = invoiceId, Amount = amount,
             IsOverpaymentRefund = true, Status = RefundStatus.Success, RefundedAt = now,
             Reason = "Chủ trọ xác nhận đã hoàn tiền thu vượt ngoài hệ thống.", TransactionCode = transactionCode,
-            IdempotencyKey = key, CreatedByUserId = ownerId, CreatedAt = now };
+            IdempotencyKey = key, CreatedByUserId = actor, CreatedAt = now };
         _db.Refunds.Add(refund);
         try { await _db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); }
         catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })

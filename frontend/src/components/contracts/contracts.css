@@ -8,3 +8,34 @@
 .contract-page :is(input,select,textarea):disabled{background:#f4f6f8;color:#8aa0b2}@media(max-width:1120px){.contract-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.contract-workspace{grid-template-columns:minmax(260px,320px) minmax(0,1fr)}.contract-add-person{grid-template-columns:1fr 1fr}.contract-add-person button{grid-column:1/-1}}@media(max-width:760px){.contract-header{align-items:stretch;flex-direction:column}.contract-header-actions{grid-template-columns:1fr auto}.contract-workspace{grid-template-columns:1fr}.contract-list{max-height:420px}.contract-detail-panel,.contract-create{padding:17px}.contract-detail-empty{min-height:180px}.contract-form-footer{align-items:stretch;flex-direction:column;gap:10px}}@media(max-width:540px){.contract-header-actions{grid-template-columns:1fr}.contract-header-actions button{grid-column:1;grid-row:3}.contract-stats{gap:8px}.contract-stats>div{grid-template-columns:1fr;padding:12px}.contract-stats>div>span{display:none}.contract-stats small{white-space:normal}.contract-fields,.contract-amounts,.contract-facts,.contract-add-person{grid-template-columns:1fr}.contract-add-person button{grid-column:auto}.contract-form-footer>div{justify-content:stretch}.contract-form-footer .contract-button{flex:1}.contract-people li{flex-wrap:wrap}.contract-people .contract-text-button{margin-left:44px}}
 .tn-contract-layout{display:grid;gap:20px}.tn-contract-intro{display:flex;justify-content:space-between;align-items:end;gap:16px}.tn-contract-intro span{color:#2667a0;font-size:11px;font-weight:800;letter-spacing:.1em}.tn-contract-intro h2{font-size:21px;margin:6px 0}.tn-contract-intro p{font-size:13px;color:#72849a;margin:0}.tn-contract-intro>strong{font-size:12px;color:#24629a;background:#edf6fd;border-radius:999px;padding:8px 12px;white-space:nowrap}.tn-contract-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:16px}.tn-contract-card{min-width:0}.tn-contract-card-head{display:flex;justify-content:space-between;align-items:start;gap:12px}.tn-contract-kicker{font-size:11px;font-weight:800;letter-spacing:.06em;color:#3377ac;overflow-wrap:anywhere}.tn-contract-card-head h3{font-size:20px;margin:6px 0 0}.tn-contract-amounts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0}.tn-contract-amounts>div{display:grid;gap:7px;background:#f2f8fd;border:1px solid #dceaf5;border-radius:10px;padding:13px}.tn-contract-amounts>div:nth-child(2){background:#f8fafc;border-color:#e7edf2}.tn-contract-amounts small{font-size:10px;letter-spacing:.06em;font-weight:800;color:#718ba2}.tn-contract-amounts strong{font-size:17px;white-space:nowrap}.tn-contract-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin:0 0 18px}.tn-contract-facts>div{border-bottom:1px solid #e7edf2;padding:10px 5px 10px 0}.tn-contract-facts dt{font-size:11px;color:#798da0}.tn-contract-facts dd{font-size:12px;font-weight:750;margin:5px 0 0}.tn-contract-people{border-top:1px solid #e5edf3;padding-top:16px}.tn-contract-people h4{display:flex;align-items:center;gap:7px;font-size:14px;margin:0}.tn-contract-people h4 span{font-size:11px;color:#306994;background:#e9f3fb;border-radius:999px;padding:2px 6px}.tn-contract-people ul{list-style:none;padding:0;margin:12px 0 0}.tn-contract-people li{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #eef2f5}.tn-contract-people li:last-child{border-bottom:0}.tn-contract-avatar{display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:50%;background:#e8f1f9;color:#26689a;font-weight:800}.tn-contract-people li strong,.tn-contract-people li small{display:block}.tn-contract-people li strong{font-size:12px}.tn-contract-people li small,.tn-contract-people>p{font-size:11px;color:#778b9d;margin-top:4px}.tn-contract-note{margin-top:14px;padding:12px 14px;background:#f7f9fb;border-radius:9px;font-size:12px}.tn-contract-note p{margin:5px 0 0;color:#677c90;line-height:1.5}.tn-contract-card-footer{margin-top:15px;padding-top:12px;border-top:1px solid #e7edf2}.tn-contract-card-footer button{min-height:40px}.tn-contract-state{display:grid;justify-items:center;gap:8px;padding:45px 20px;text-align:center;color:#6c88a0}.tn-contract-state strong{color:#355879;font-size:16px}.tn-contract-state p{font-size:12px;max-width:350px;line-height:1.5;margin:0}.tn-contract-state button{margin-top:10px}.tn-contract-layout :is(button,input):focus-visible,.tn-contract-state button:focus-visible{outline:3px solid #83b4e7;outline-offset:2px}@media(max-width:1000px){.tn-contract-cards{grid-template-columns:1fr}}@media(max-width:540px){.tn-contract-intro{align-items:start;flex-direction:column}.tn-contract-amounts,.tn-contract-facts{grid-template-columns:1fr}.tn-contract-card-head{flex-wrap:wrap}}
 .contract-search:focus-within{border-color:#2167aa;outline:3px solid #83b4e7;outline-offset:2px}.contract-status--upcoming{background:#fff3e6;color:#9b5a10}
+
+.ct-lookup-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.ct-lookup-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+@media (max-width: 720px) {
+  .ct-lookup-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.contract-status--pendingtenantconfirmation {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.contract-status--pendingoperatorconfirmation {
+  background: #dbeafe;
+  color: #1e40af;
+}

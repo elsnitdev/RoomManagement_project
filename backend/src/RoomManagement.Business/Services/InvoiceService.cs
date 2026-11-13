@@ -24,13 +24,11 @@ public sealed class InvoiceService
         _calculator = calculator;
     }
 
-    private async Task<string> OwnerAsync(CancellationToken ct)
-    {
-        var owner = _current.GetUserId();
-        if (!await _landlords.IsActiveLandlordAsync(owner, ct))
-            throw Invalid("LANDLORD_UNAVAILABLE", "Chủ trọ không khả dụng.");
-        return owner;
-    }
+    private async Task<OperatorContext> OperatorAsync(CancellationToken ct) =>
+        await OperatorAccessGuard.RequireOperatorAsync(_current, _landlords, ct);
+
+    private async Task<string> OwnerAsync(CancellationToken ct) =>
+        (await OperatorAsync(ct)).OwnerLandlordUserId;
 
     public async Task<MonthlyBillingWorklist> MonthlyWorklistAsync(Guid propertyId,
         short? year, byte? month, CancellationToken ct)
@@ -40,8 +38,10 @@ public sealed class InvoiceService
         var m = month ?? (byte)previous.Month;
         if (y is < 2000 or > 2100 || m is < 1 or > 12 || new DateOnly(y, m, 1) > previous)
             throw Validation("INVOICE_PERIOD_INVALID", "Kỳ chốt hóa đơn không hợp lệ.");
-        var owner = await OwnerAsync(ct);
-        if (!await _inputs.PropertyOwnedAsync(propertyId, owner, ct))
+        var context = await OperatorAsync(ct);
+        var owner = context.OwnerLandlordUserId;
+        if (!await _landlords.HasPropertyAccessAsync(context.ActorUserId, propertyId, ct) ||
+            !await _inputs.PropertyOwnedAsync(propertyId, owner, ct))
             throw NotFound("PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
         var candidates = await _invoices.ListMonthlyCandidatesAsync(propertyId, owner, y, m, ct);
         var first = new DateOnly(y, m, 1);
@@ -83,7 +83,9 @@ public sealed class InvoiceService
 
     public async Task<InvoicePreviewResult> PreviewMonthlyAsync(Guid propertyId, MonthlyInvoiceInput input, CancellationToken ct)
     {
-        var owner = await OwnerAsync(ct);
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlords, ct, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+        var owner = context.OwnerLandlordUserId;
         if (input.Year is < 2000 or > 2100 || input.Month is < 1 or > 12 ||
             input.DiscountAmount < 0 || input.DiscountAmount != decimal.Round(input.DiscountAmount, 2) ||
             input.DiscountReason is { Length: > 255 } ||
@@ -175,7 +177,9 @@ public sealed class InvoiceService
 
     public async Task<Invoice> CreateDepositAsync(Guid contractId, CancellationToken ct)
     {
-        var owner = await OwnerAsync(ct);
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureContractAccessAsync(context, contractId, _landlords, ct);
+        var owner = context.OwnerLandlordUserId;
         var contract = await _invoices.GetOwnedContractByIdAsync(contractId, owner, ct)
             ?? throw NotFound("CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
         if (contract.Status is not (ContractStatus.Draft or ContractStatus.Active) || contract.DepositAmount <= 0)
@@ -202,7 +206,9 @@ public sealed class InvoiceService
 
     public async Task<Invoice> CreateOneOffAsync(Guid propertyId, OneOffInvoiceInput input, CancellationToken ct)
     {
-        var owner = await OwnerAsync(ct);
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlords, ct, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+        var owner = context.OwnerLandlordUserId;
         if (input.Type is not (InvoiceType.Damage or InvoiceType.Other) ||
             input.Note is { Length: > 1000 } ||
             input.Items is null || input.Items.Count is < 1 or > 50 ||
@@ -265,7 +271,9 @@ public sealed class InvoiceService
     {
         if (input.Items is null || input.Items.Count > 100)
             throw Validation("INVOICE_ITEMS_INVALID", "Danh sách khoản tiền không hợp lệ.");
-        return await _invoices.ReplaceDraftItemsAsync(invoiceId, await OwnerAsync(ct),
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct);
+        return await _invoices.ReplaceDraftItemsAsync(invoiceId, context.OwnerLandlordUserId,
             ValidateEditable(input.Items, true), ct);
     }
 
@@ -277,17 +285,25 @@ public sealed class InvoiceService
             string.IsNullOrWhiteSpace(input.Reason) || input.Reason.Trim().Length > 500 ||
             string.IsNullOrWhiteSpace(input.IdempotencyKey) || input.IdempotencyKey.Length > 100)
             throw Validation("INVOICE_ADJUSTMENT_INVALID", "Khoản cộng/trừ không hợp lệ.");
-        return await _invoices.AddAdjustmentAsync(invoiceId, await OwnerAsync(ct),
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct);
+        return await _invoices.AddAdjustmentAsync(invoiceId, context.OwnerLandlordUserId,
             input with { Reason = input.Reason.Trim(), IdempotencyKey = input.IdempotencyKey.Trim() }, ct);
     }
 
-    public async Task<IReadOnlyList<InvoiceAdjustment>> ListAdjustmentsAsync(Guid invoiceId, CancellationToken ct) =>
-        await _invoices.ListAdjustmentsAsync(invoiceId, await OwnerAsync(ct), ct);
+    public async Task<IReadOnlyList<InvoiceAdjustment>> ListAdjustmentsAsync(Guid invoiceId, CancellationToken ct)
+    {
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct);
+        return await _invoices.ListAdjustmentsAsync(invoiceId, context.OwnerLandlordUserId, ct);
+    }
 
     public async Task<InvoiceAttention> AttentionAsync(Guid propertyId, CancellationToken ct)
     {
-        var owner = await OwnerAsync(ct);
-        if (!await _inputs.PropertyOwnedAsync(propertyId, owner, ct))
+        var context = await OperatorAsync(ct);
+        var owner = context.OwnerLandlordUserId;
+        if (!await _landlords.HasPropertyAccessAsync(context.ActorUserId, propertyId, ct) ||
+            !await _inputs.PropertyOwnedAsync(propertyId, owner, ct))
             throw NotFound("PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
         return await _invoices.AttentionAsync(propertyId, owner, ct);
     }
@@ -324,7 +340,9 @@ public sealed class InvoiceService
 
     public async Task<Invoice?> FindDepositAsync(Guid contractId, CancellationToken ct)
     {
-        var owner = await OwnerAsync(ct);
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureContractAccessAsync(context, contractId, _landlords, ct);
+        var owner = context.OwnerLandlordUserId;
         _ = await _invoices.GetOwnedContractByIdAsync(contractId, owner, ct)
             ?? throw NotFound("CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
         return await _invoices.GetOwnedDepositAsync(contractId, owner, ct);
@@ -332,12 +350,14 @@ public sealed class InvoiceService
 
     public async Task<PageResult<InvoiceSummaryResult>> ListAsync(Guid propertyId, InvoiceFilter filter, CancellationToken ct)
     {
-        var owner = await OwnerAsync(ct);
+        var context = await OperatorAsync(ct);
+        var owner = context.OwnerLandlordUserId;
         if (filter.Page is < 1 or > 1000000 || filter.PageSize is < 1 or > 100 ||
             filter.Year is < 2000 or > 2100 || filter.Month is < 1 or > 12 ||
             filter.Status is { } status && !Enum.IsDefined(status))
             throw Validation("INVOICE_FILTER_INVALID", "Bộ lọc hóa đơn không hợp lệ.");
-        if (!await _inputs.PropertyOwnedAsync(propertyId, owner, ct))
+        if (!await _landlords.HasPropertyAccessAsync(context.ActorUserId, propertyId, ct) ||
+            !await _inputs.PropertyOwnedAsync(propertyId, owner, ct))
             throw NotFound("PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
         var (items, total) = await _invoices.ListOwnedAsync(propertyId, owner, filter, ct);
         return new PageResult<InvoiceSummaryResult>(items, total, filter.Page, filter.PageSize);
@@ -345,8 +365,9 @@ public sealed class InvoiceService
 
     public async Task<InvoiceDetailResult> GetDetailAsync(Guid invoiceId, CancellationToken ct)
     {
-        var owner = await OwnerAsync(ct);
-        return await _invoices.GetOwnedDetailAsync(invoiceId, owner, ct)
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct);
+        return await _invoices.GetOwnedDetailAsync(invoiceId, context.OwnerLandlordUserId, ct)
             ?? throw NotFound("INVOICE_NOT_FOUND", "Không tìm thấy hóa đơn.");
     }
 
@@ -379,11 +400,19 @@ public sealed class InvoiceService
         _invoices.CanTenantDeclarePaymentAsync(invoiceId, tenantUserId,
             VietnamDate.Today, ct);
 
-    public async Task<Invoice> IssueAsync(Guid invoiceId, CancellationToken ct) =>
-        await _invoices.IssueAsync(invoiceId, await OwnerAsync(ct), ct);
+    public async Task<Invoice> IssueAsync(Guid invoiceId, CancellationToken ct)
+    {
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct);
+        return await _invoices.IssueAsync(invoiceId, context.OwnerLandlordUserId, ct);
+    }
 
-    public async Task<Invoice> CancelAsync(Guid invoiceId, CancellationToken ct) =>
-        await _invoices.CancelAsync(invoiceId, await OwnerAsync(ct), ct);
+    public async Task<Invoice> CancelAsync(Guid invoiceId, CancellationToken ct)
+    {
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct);
+        return await _invoices.CancelAsync(invoiceId, context.OwnerLandlordUserId, ct);
+    }
 
     private static DateOnly VietnamToday() => DateOnly.FromDateTime(DateTime.UtcNow.AddHours(7));
     private static BusinessException Validation(string code, string message) => new(BusinessErrorType.Validation, code, message);

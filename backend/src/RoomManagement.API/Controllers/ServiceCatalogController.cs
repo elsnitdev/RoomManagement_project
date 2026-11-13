@@ -8,7 +8,7 @@ using RoomManagement.Domain;
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRoles.Landlord)]
+[Authorize(Roles = UserRoles.LandlordOrManager)]
 [Route("api/properties/{propertyId:guid}/services")]
 public sealed class ServiceCatalogController : ControllerBase
 {

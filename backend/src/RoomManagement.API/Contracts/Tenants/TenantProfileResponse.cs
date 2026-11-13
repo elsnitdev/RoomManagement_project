@@ -14,6 +14,7 @@ public sealed class TenantProfileResponse
     public string? UserId { get; init; }
 
     /// <summary>ID của chủ trọ khởi tạo hồ sơ.</summary>
+    public string? OwnerLandlordUserId { get; init; }
     public string? CreatedByUserId { get; init; }
 
     /// <summary>Họ và tên người thuê.</summary>
@@ -50,6 +51,7 @@ public sealed class TenantProfileResponse
     {
         Id = dto.Id,
         UserId = dto.UserId,
+        OwnerLandlordUserId = dto.OwnerLandlordUserId,
         CreatedByUserId = dto.CreatedByUserId,
         FullName = dto.FullName,
         PhoneNumber = dto.PhoneNumber,

@@ -82,4 +82,32 @@ public interface IContractStore
   Task<IReadOnlyList<ContractTenurePeriod>> ListTenurePeriodsAsync(Guid tenantId, Guid roomId,
       DateOnly asOf, CancellationToken ct);
 
+  Task<ContractTenant> AddTenantByUserAsync(Contract contract, string userId, DateOnly joinDate,
+      bool isContactPerson, ContractTenantRole role, CancellationToken ct)
+      => throw new NotSupportedException();
+
+  Task<Contract> SendOfferSafelyAsync(Contract contract, string actorUserId, CancellationToken ct)
+      => throw new NotSupportedException();
+
+  Task<Contract> UpdateOfferTermsSafelyAsync(Contract contract, UpdateContractOfferInput input,
+      string actorUserId, CancellationToken ct)
+      => throw new NotSupportedException();
+
+  Task<Contract> ConfirmOfferByTenantAsync(Guid contractId, string tenantUserId,
+      ConfirmContractOfferInput input, CancellationToken ct)
+      => throw new NotSupportedException();
+
+  Task<Contract> RejectOfferByTenantAsync(Guid contractId, string tenantUserId,
+      string reason, CancellationToken ct)
+      => throw new NotSupportedException();
+
+  Task ActivateSafelyAsync(Contract contract, string actorUserId, CancellationToken ct)
+      => ActivateSafelyAsync(contract, ct);
+
+  Task NotifyContractTenantsAsync(Guid contractId, string type, string title, string message,
+      string? actorUserId, CancellationToken ct)
+      => Task.CompletedTask;
+
+  Task RecordClosedActorAsync(Guid contractId, string actorUserId, CancellationToken ct)
+      => Task.CompletedTask;
 }

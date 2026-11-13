@@ -12,12 +12,12 @@ public sealed class PaymentEvidenceService(ICurrentLandlord current, ILandlordSt
 
     private async Task<string> AuthorizeAsync(Guid paymentId, CancellationToken ct)
     {
-        var owner = current.GetUserId();
-        if (paymentId == Guid.Empty || string.IsNullOrWhiteSpace(owner) ||
-            !await landlords.IsActiveLandlordAsync(owner, ct) ||
-            !await evidence.OwnsConfirmedPaymentAsync(paymentId, owner, ct))
+        var context = await OperatorAccessGuard.RequireOperatorAsync(current, landlords, ct);
+        if (paymentId == Guid.Empty ||
+            !await landlords.HasPaymentAccessAsync(context.ActorUserId, paymentId, ct) ||
+            !await evidence.OwnsConfirmedPaymentAsync(paymentId, context.OwnerLandlordUserId, ct))
             throw new BusinessException(BusinessErrorType.NotFound, "PAYMENT_NOT_FOUND", "Không tìm thấy khoản thanh toán đã xác nhận.");
-        return owner;
+        return context.OwnerLandlordUserId;
     }
 
     public async Task<IReadOnlyList<PaymentEvidence>> ListAsync(Guid paymentId, CancellationToken ct)

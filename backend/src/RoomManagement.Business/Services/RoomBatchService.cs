@@ -21,16 +21,15 @@ public sealed class RoomBatchService
         _store = store;
     }
 
-    private async Task<string> OwnerAsync(Guid propertyId, bool requireActive, CancellationToken ct)
+    private async Task<OperatorContext> OwnerAsync(Guid propertyId, bool requireActive, CancellationToken ct)
     {
-        var owner = _current.GetUserId();
-        if (string.IsNullOrWhiteSpace(owner) || !await _landlords.IsActiveLandlordAsync(owner, ct))
-            throw new BusinessException(BusinessErrorType.InvalidOperation, "LANDLORD_UNAVAILABLE", "Chủ trọ hiện tại không khả dụng.");
-        var property = await _properties.GetAsync(propertyId, owner, ct)
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_current, _landlords, ct);
+        await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlords, ct);
+        var property = await _properties.GetAsync(propertyId, context.OwnerLandlordUserId, ct)
             ?? throw new BusinessException(BusinessErrorType.NotFound, "PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
         if (requireActive && !property.IsActive)
             throw new BusinessException(BusinessErrorType.InvalidOperation, "PROPERTY_INACTIVE", "Không thể thêm phòng vào khu trọ ngừng hoạt động.");
-        return owner;
+        return context;
     }
 
     public async Task<IReadOnlyList<RoomRow>> ListRowsAsync(Guid propertyId, CancellationToken ct)
@@ -92,10 +91,10 @@ public sealed class RoomBatchService
 
     public async Task<RoomBatchCreateResult> CreateAsync(Guid propertyId, RoomBatchPlan plan, string fingerprint, Guid idempotencyKey, CancellationToken ct)
     {
-        var owner = await OwnerAsync(propertyId, false, ct);
+        var context = await OwnerAsync(propertyId, false, ct);
         Validate(plan);
         if (string.IsNullOrWhiteSpace(fingerprint) || idempotencyKey == Guid.Empty)
             throw new BusinessException(BusinessErrorType.Validation, "ROOM_BATCH_CONFIRMATION_REQUIRED", "Hãy xem trước danh sách phòng trước khi lưu.");
-        return await _store.CreateAsync(propertyId, owner, plan, fingerprint, idempotencyKey, ct);
+        return await _store.CreateAsync(propertyId, context.OwnerLandlordUserId, plan, fingerprint, idempotencyKey, ct);
     }
 }

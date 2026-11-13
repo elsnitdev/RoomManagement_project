@@ -7,6 +7,7 @@ import Landlord from "./Landlord";
 import Tenant from "./Tenant";
 import Profile from "./Profile";
 import PropertyManagement from "./components/PropertyManagement";
+import ManagerManagement from "./components/ManagerManagement";
 import RoomManagementPage from "./pages/RoomManagementPage";
 import RoomDetailPage from "./pages/RoomDetailPage";
 import CreateRoomPage from "./pages/CreateRoomPage";
@@ -38,12 +39,14 @@ const adminNav = [
 const landlordNav = [
   { id: "overview", label: "Tổng quan", icon: "grid" },
   { id: "properties", label: "Khu trọ", icon: "building" },
+  { id: "managers", label: "Quản lý nhân sự", icon: "users" },
   { id: "tenants", label: "Người ở", icon: "users" },
   { id: "contracts", label: "Hợp đồng", icon: "file" },
   { id: "billing", label: "Hóa đơn", icon: "receipt" },
   { id: "requests", label: "Yêu cầu", icon: "chat" },
   { id: "profile", label: "Hồ sơ", icon: "users" },
 ];
+const managerNav = landlordNav.filter((item) => item.id !== "managers");
 const tenantNav = [
   { id: "overview", label: "Tổng quan", icon: LayoutDashboard },
   { id: "room", label: "Chỗ ở của tôi", icon: House },
@@ -59,6 +62,7 @@ const titleMap = {
   users: "Tài khoản người dùng",
   services: "Danh mục dịch vụ",
   properties: "Khu trọ",
+  managers: "Quản lý nhân sự",
   rooms: "Danh sách phòng",
   room: "Chi tiết phòng",
   tenants: "Hồ sơ người ở",
@@ -71,7 +75,7 @@ const titleMap = {
 const fromHash = () => window.location.hash.replace(/^#\/?/, "") || "login";
 
 export default function App() {
-  const { user, isAuthenticated, signOut } = useAuth();
+  const { user, isAuthenticated, signOut, updateUser } = useAuth();
   const [route, setRoute] = useState(fromHash);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState("");
@@ -89,12 +93,13 @@ export default function App() {
   const userRoute =
     user?.role === "Admin"
       ? "admin"
-      : user?.role === "Landlord"
+      : user?.role === "Landlord" || user?.role === "Manager"
         ? "landlord"
         : user?.role === "Tenant"
           ? "tenant"
           : null;
-  const canAccess = isAuthenticated && routeRole === userRoute;
+  const mustChangePassword = Boolean(isAuthenticated && user?.mustChangePassword);
+  const canAccess = isAuthenticated && !mustChangePassword && routeRole === userRoute;
   const isPublic = !protectedRoute;
   useEffect(() => {
     const onHash = () => {
@@ -117,14 +122,24 @@ export default function App() {
         : page === "tenants" && detailId
           ? "Chi tiết người thuê"
         : titleMap[page] ||
-          (route === "register" ? "Đăng ký chủ trọ" : route === "tenant-register" ? "Đăng ký người thuê" : "Đăng nhập");
+          (route === "register"
+            ? "Đăng ký chủ trọ"
+            : route === "tenant-register"
+              ? "Đăng ký người thuê"
+              : route === "change-password"
+                ? "Đổi mật khẩu tạm"
+                : "Đăng nhập");
     document.title = `${route.startsWith('tenant/room') ? 'Chỗ ở của tôi' : title} | Nhà Trọ Xanh`;
   }, [route]);
   useEffect(() => {
+    if (mustChangePassword && route !== "change-password") {
+      window.location.hash = "/change-password";
+      return;
+    }
     if (protectedRoute && !canAccess) {
       window.location.hash = userRoute ? `/${userRoute}/overview` : "/login";
     }
-  }, [protectedRoute, canAccess, userRoute]);
+  }, [mustChangePassword, route, protectedRoute, canAccess, userRoute]);
   useEffect(() => {
     if (
       canAccess &&
@@ -172,7 +187,14 @@ export default function App() {
         ? "Tạo phòng"
         : roomAction ? "Chi tiết phòng" : "Quản lý phòng"
       : titleMap[page];
-  const items = activeRole === "admin" ? adminNav : activeRole === "tenant" ? tenantNav : landlordNav;
+  const items =
+    activeRole === "admin"
+      ? adminNav
+      : activeRole === "tenant"
+        ? tenantNav
+        : user?.role === "Manager"
+          ? managerNav
+          : landlordNav;
   return (
     <div className="app-shell">
       <button
@@ -244,7 +266,7 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && (
+          {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && page !== "managers" && page !== "users" && (
             <div className="sidebar-help">
               <span className="help-icon">
                 {activeRole === "tenant" ? <CircleAlert size={18} aria-hidden="true" /> : <Icon name="alert" size={18} />}
@@ -283,18 +305,26 @@ export default function App() {
             </span>
           </div>
           <div className="topbar-right">
-            {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && (
+            {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && page !== "managers" && page !== "users" && (
               <span className="demo-chip">
                 <span className="preview-dot" /> Dữ liệu mẫu
               </span>
             )}
             <div className="topbar-profile">
               <span className="avatar">
-                {activeRole === "admin" ? "AD" : activeRole === "tenant" ? "NT" : "NA"}
+                {activeRole === "admin" ? "AD" : activeRole === "tenant" ? "NT" : user?.role === "Manager" ? "QL" : "NA"}
               </span>
               <span>
                 <strong>{user?.userName || "Người dùng"}</strong>
-                <small>{activeRole === "admin" ? "Admin" : activeRole === "tenant" ? "Người thuê" : `Chủ trọ · Mã ${user?.landlordCode || "đang cập nhật"}`}</small>
+                <small>
+                  {activeRole === "admin"
+                    ? "Admin"
+                    : activeRole === "tenant"
+                      ? "Người thuê"
+                      : user?.role === "Manager"
+                        ? "Quản lý khu trọ"
+                        : `Chủ trọ · Mã ${user?.landlordCode || "đang cập nhật"}`}
+                </small>
               </span>
             </div>
           </div>
@@ -310,6 +340,7 @@ export default function App() {
             <Tenant
               page={page}
               user={user}
+              updateUser={updateUser}
               navigate={navigate}
               notify={notify}
               rooms={rooms}
@@ -334,6 +365,8 @@ export default function App() {
               navigate={navigate}
               notify={notify}
             />
+          ) : activeRole === "landlord" && page === "managers" && user?.role === "Landlord" ? (
+            <ManagerManagement notify={notify} />
           ) : activeRole === "landlord" && page === "billing" ? (
             <LandlordBilling invoiceId={roomId === 'rooms' ? undefined : roomId} initialPropertyId={roomId === 'rooms' ? propertySection : undefined} initialRoomId={roomId === 'rooms' ? roomAction : undefined} navigate={navigate} />
           ) : activeRole === "landlord" && page === "contracts" ? (

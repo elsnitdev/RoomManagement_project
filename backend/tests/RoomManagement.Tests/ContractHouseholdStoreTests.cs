@@ -145,6 +145,13 @@ public sealed class ContractHouseholdStoreTests
         var mine = await store.GetDetailMineAsync(contract.Id, tenantUser, default);
         Assert.Single(mine!.Tenants);
         Assert.Equal(second, mine.Tenants[0].TenantId);
+        Assert.Equal(2, mine.Members.Count);
+        Assert.Contains(mine.Members, member => member.Id == firstLink.Id && member.FullName == "Đại diện");
+        Assert.Contains(mine.Members, member => member.Id == secondLink.Id && member.FullName == "Thành viên");
+        var response = RoomManagement.API.Contracts.Contracts.ContractDetailResponse.From(mine);
+        Assert.Equal(2, response.Members.Count);
+        Assert.Equal(2, response.MemberCount);
+        Assert.Single(response.Tenants);
         Assert.NotNull(mine.Tenants[0].CurrentCommitmentId);
         Assert.Single(mine.Tenants[0].TenureSpans);
         Assert.Single(mine.MoveOutNotices!);

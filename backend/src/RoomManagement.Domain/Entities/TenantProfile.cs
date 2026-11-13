@@ -18,7 +18,12 @@ public sealed class TenantProfile // từ khóa sealed: ngăn không cho class k
     public string? UserId { get; set; }
 
     /// <summary>
-    /// ID của Chủ trọ đã tạo ra hồ sơ này. Dùng để phân quyền: chủ trọ nào tạo thì chủ trọ đó được xem/sửa.
+    /// ID của Chủ trọ sở hữu hồ sơ này (tách biệt với CreatedByUserId là actor tạo hồ sơ).
+    /// </summary>
+    public string? OwnerLandlordUserId { get; set; }
+
+    /// <summary>
+    /// ID của tài khoản đã tạo ra hồ sơ này (Landlord hoặc Manager) dùng để lưu vết audit.
     /// </summary>
     public string? CreatedByUserId { get; set; }
 

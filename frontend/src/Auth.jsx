@@ -2,16 +2,21 @@ import { useState } from "react";
 import { Brand, Button, Field, Icon } from "./ui";
 import { useAuth } from "./contexts/AuthContext";
 import {
-  checkTenantRegistration,
+  changePassword,
+  registerLandlord,
   registerTenant,
-  requestTenantOtp,
-  verifyTenantOtp,
 } from "./services/api/authApi";
+
+function routeForRole(role) {
+  if (role === "Admin") return "admin/overview";
+  if (role === "Landlord" || role === "Manager") return "landlord/overview";
+  if (role === "Tenant") return "tenant/overview";
+  return null;
+}
 
 export default function Auth({ route, navigate }) {
   const [login, setLogin] = useState({
     identity: "",
-    landlordCode: "",
     password: "",
   });
   const [registration, setRegistration] = useState({
@@ -25,41 +30,55 @@ export default function Auth({ route, navigate }) {
     dateOfBirth: "",
     address: "",
   });
+  const [tenantReg, setTenantReg] = useState({
+    userName: "",
+    fullName: "",
+    phoneNumber: "",
+    citizenId: "",
+    dateOfBirth: "",
+    gender: "",
+    email: "",
+    address: "",
+    password: "",
+    confirmPassword: "",
+  });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [registrationName, setRegistrationName] = useState("");
-  const isRegister = route === "register";
-  const isPending = route === "pending";
-  const { signIn, signOut } = useAuth();
+  const { user, signIn, signOut, updateUser } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [tenantPhone, setTenantPhone] = useState("");
-  const [tenantLandlordCode, setTenantLandlordCode] = useState("");
-  const [tenantOtp, setTenantOtp] = useState("");
-  const [tenantTestOtp, setTenantTestOtp] = useState("");
-  const [tenantChallengeId, setTenantChallengeId] = useState(null);
-  const [tenantVerified, setTenantVerified] = useState(false);
-  const [tenantPassword, setTenantPassword] = useState("");
-  const [tenantConfirm, setTenantConfirm] = useState("");
-  const [tenantEligible, setTenantEligible] = useState(false);
-  const update = (key, value) =>
+
+  const isRegister = route === "register";
+  const isTenantRegister = route === "tenant-register";
+  const isPending = route === "pending";
+  const isChangePassword = route === "change-password";
+
+  const updateLandlord = (key, value) =>
     setRegistration((current) => ({ ...current, [key]: value }));
+
+  const updateTenant = (key, value) =>
+    setTenantReg((current) => ({ ...current, [key]: value }));
+
   async function submitLogin(event) {
     event.preventDefault();
-    const identity = login.identity.trim();
-    const userNameOrEmail =
-      /^0[0-9]{9}$/.test(identity) && login.landlordCode.trim()
-        ? `${login.landlordCode.trim().toUpperCase()}:${identity}`
-        : identity;
+    const userNameOrEmail = login.identity.trim();
     if (!userNameOrEmail || !login.password) {
       if (!userNameOrEmail && !login.password) {
-        setError("Vui lòng nhập tên đăng nhập và mật khẩu.");
+        setError("Vui lòng nhập tên đăng nhập, SĐT hoặc email và mật khẩu.");
       } else if (!userNameOrEmail) {
-        setError("Vui lòng nhập tên đăng nhập.");
-      } else if (!login.password) {
+        setError("Vui lòng nhập tên đăng nhập, SĐT hoặc email.");
+      } else {
         setError("Vui lòng nhập mật khẩu.");
       }
       return;
     }
+
     setError("");
     setIsSubmitting(true);
     try {
@@ -68,12 +87,14 @@ export default function Auth({ route, navigate }) {
         password: login.password,
       });
 
-      if (result.user.role === "Admin") {
-        navigate("admin/overview");
-      } else if (result.user.role === "Landlord") {
-        navigate("landlord/overview");
-      } else if (result.user.role === "Tenant") {
-        navigate("tenant/overview");
+      if (result.user?.mustChangePassword) {
+        navigate("change-password");
+        return;
+      }
+
+      const target = routeForRole(result.user?.role);
+      if (target) {
+        navigate(target);
       } else {
         signOut();
         setError("Giao diện cho vai trò này chưa được hỗ trợ.");
@@ -84,91 +105,119 @@ export default function Auth({ route, navigate }) {
       setIsSubmitting(false);
     }
   }
-  function submitRegistration(event) {
+
+  async function submitLandlordRegistration(event) {
     event.preventDefault();
     if (registration.password !== registration.confirmPassword) {
       setError("Mật khẩu xác nhận chưa khớp.");
       return;
     }
     setError("");
-    setRegistrationName(registration.fullName);
-    navigate("pending");
+    setIsSubmitting(true);
+    try {
+      await registerLandlord({
+        userName: registration.userName.trim(),
+        email: registration.email.trim(),
+        password: registration.password,
+        confirmPassword: registration.confirmPassword,
+        fullName: registration.fullName.trim(),
+        phoneNumber: registration.phoneNumber.trim(),
+        citizenId: registration.citizenId.trim(),
+        dateOfBirth: registration.dateOfBirth,
+        address: registration.address.trim(),
+      });
+      setRegistrationName(registration.fullName.trim());
+      navigate("pending");
+    } catch (err) {
+      setError(err.message || "Không thể gửi hồ sơ đăng ký chủ trọ.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
+
   async function submitTenantRegistration(event) {
     event.preventDefault();
+    if (tenantReg.password !== tenantReg.confirmPassword) {
+      setError("Mật khẩu xác nhận chưa khớp.");
+      return;
+    }
     setError("");
     setIsSubmitting(true);
     let accountCreated = false;
+    const loginIdentity = tenantReg.userName.trim() || tenantReg.phoneNumber.trim();
+
     try {
-      if (!tenantEligible) {
-        const code = tenantLandlordCode.trim().toUpperCase();
-        const result = await checkTenantRegistration(code, tenantPhone.trim());
-        if (result.status !== "eligible") {
-          const messages = {
-            profile_not_found:
-              "Chưa có hồ sơ cho số điện thoại này. Vui lòng liên hệ chủ trọ.",
-            ambiguous:
-              "Có nhiều hồ sơ dùng số điện thoại này. Vui lòng liên hệ chủ trọ.",
-            already_registered:
-              "Số điện thoại này đã có tài khoản. Vui lòng đăng nhập.",
-          };
-          setError(messages[result.status] || "Không thể kiểm tra hồ sơ.");
-          return;
-        }
-        const challenge = await requestTenantOtp(code, tenantPhone.trim());
-        setTenantChallengeId(challenge.challengeId);
-        setTenantTestOtp(challenge.testOtp || "");
-        setTenantEligible(true);
-        return;
-      }
-      if (!tenantVerified) {
-        await verifyTenantOtp(
-          tenantLandlordCode.trim().toUpperCase(),
-          tenantPhone.trim(),
-          tenantChallengeId,
-          tenantOtp,
-        );
-        setTenantVerified(true);
-        return;
-      }
-      if (tenantPassword !== tenantConfirm) {
-        setError("Mật khẩu nhập lại không khớp.");
-        return;
-      }
       await registerTenant({
-        landlordCode: tenantLandlordCode.trim().toUpperCase(),
-        phoneNumber: tenantPhone.trim(),
-        challengeId: tenantChallengeId,
-        password: tenantPassword,
-        confirmPassword: tenantConfirm,
+        userName: tenantReg.userName.trim() || null,
+        fullName: tenantReg.fullName.trim(),
+        phoneNumber: tenantReg.phoneNumber.trim(),
+        citizenId: tenantReg.citizenId.trim(),
+        dateOfBirth: tenantReg.dateOfBirth,
+        gender: tenantReg.gender || null,
+        email: tenantReg.email.trim() || null,
+        address: tenantReg.address.trim(),
+        password: tenantReg.password,
+        confirmPassword: tenantReg.confirmPassword,
       });
       accountCreated = true;
+
       const result = await signIn({
-        userNameOrEmail: `${tenantLandlordCode.trim().toUpperCase()}:${tenantPhone.trim()}`,
-        password: tenantPassword,
+        userNameOrEmail: loginIdentity,
+        password: tenantReg.password,
       });
-      if (result.user.role === "Tenant") navigate("tenant/overview");
-      else setError("Tài khoản được tạo nhưng vai trò trả về không hợp lệ.");
+      const target = routeForRole(result.user?.role);
+      if (target) {
+        navigate(target);
+      } else {
+        setError("Tài khoản đã được tạo nhưng vai trò trả về không hợp lệ.");
+      }
     } catch (err) {
       if (accountCreated) {
         setLogin({
-          identity: tenantPhone.trim(),
-          landlordCode: tenantLandlordCode.trim().toUpperCase(),
+          identity: loginIdentity,
           password: "",
         });
         navigate("login");
         setError(
-          "Tài khoản đã được tạo. Vui lòng đăng nhập bằng số điện thoại và mật khẩu vừa đặt.",
+          "Tài khoản đã được tạo. Vui lòng đăng nhập bằng số điện thoại hoặc tên đăng nhập vừa đặt.",
         );
       } else {
-        setError(err.message || "Không thể đăng ký. Vui lòng thử lại.");
+        setError(err.message || "Không thể tạo tài khoản. Vui lòng kiểm tra lại thông tin.");
       }
     } finally {
       setIsSubmitting(false);
     }
   }
+
+  async function submitChangePassword(event) {
+    event.preventDefault();
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setError("Mật khẩu mới và mật khẩu xác nhận chưa khớp.");
+      return;
+    }
+    setError("");
+    setIsSubmitting(true);
+    try {
+      const response = await changePassword({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+        confirmPassword: passwordForm.confirmPassword,
+      });
+      const updatedUser = response?.data || { mustChangePassword: false };
+      updateUser({ ...updatedUser, mustChangePassword: false });
+      const target = routeForRole(updatedUser.role || user?.role) || "landlord/overview";
+      navigate(target);
+    } catch (err) {
+      setError(err.message || "Không thể đổi mật khẩu. Vui lòng kiểm tra lại mật khẩu tạm.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
-    <div className={`auth-page ${isRegister ? "auth-page--register" : ""}`}>
+    <div
+      className={`auth-page ${isRegister || isTenantRegister ? "auth-page--register" : ""}`}
+    >
       <div className="auth-visual">
         <div className="auth-visual-inner">
           <Brand />
@@ -182,7 +231,7 @@ export default function Auth({ route, navigate }) {
               <em>nhẹ nhàng hơn mỗi ngày.</em>
             </h1>
             <p>
-              Theo dõi phòng, người thuê và dòng tiền trong một giao diện rõ
+              Theo dõi phòng, người thuê, hợp đồng và dòng tiền trong một giao diện rõ
               ràng, dễ dùng.
             </p>
           </div>
@@ -198,10 +247,10 @@ export default function Auth({ route, navigate }) {
               <i />
             </div>
             <div className="house-float house-float--one">
-              <Icon name="check" size={15} /> Phòng đã sẵn sàng
+              <Icon name="check" size={15} /> Xác nhận hợp đồng minh bạch
             </div>
             <div className="house-float house-float--two">
-              <Icon name="trend" size={16} /> Quản lý dễ dàng
+              <Icon name="trend" size={16} /> Phân quyền khu trọ rõ ràng
             </div>
           </div>
           <span className="visual-foot">
@@ -213,130 +262,53 @@ export default function Auth({ route, navigate }) {
         <div className="auth-mobile-brand">
           <Brand />
         </div>
-        {isPending ? (
-          <div className="auth-card pending-card">
-            <span className="pending-symbol">
-              <Icon name="clock" size={33} />
-            </span>
-            <span className="eyebrow">ĐĂNG KÝ THÀNH CÔNG</span>
-            <h2>Hồ sơ đang chờ duyệt</h2>
-            <p>
-              Chào {registrationName || "bạn"}, thông tin đăng ký đã được ghi
-              nhận trong bản xem trước. Sau khi được phê duyệt, bạn có thể đăng
-              nhập để quản lý khu trọ.
-            </p>
-            <div className="notice">
-              <Icon name="alert" size={18} />
-              <span>
-                Đây là dữ liệu mẫu phục vụ review giao diện. Chưa có tài khoản
-                thật được tạo.
-              </span>
-            </div>
-            <Button
-              className="full-width"
-              onClick={() => navigate("login")}
-              icon="arrow"
-            >
-              Về trang đăng nhập
-            </Button>
-          </div>
-        ) : route === "tenant-register" ? (
+
+        {isChangePassword ? (
           <div className="auth-card">
-            <button
-              className="text-back"
-              type="button"
-              onClick={() => navigate("login")}
-            >
-              ← Quay lại đăng nhập
-            </button>
-            <span className="eyebrow">DÀNH CHO NGƯỜI THUÊ</span>
-            <h2>Tạo tài khoản</h2>
+            <span className="eyebrow">BẢO MẬT LẦN ĐĂNG NHẬP ĐẦU</span>
+            <h2>Đổi mật khẩu tạm</h2>
             <p className="auth-subtitle">
-              Nhập mã chủ trọ và số điện thoại trong hồ sơ để xác minh tài
-              khoản.
+              Tài khoản Quản lý khu trọ cần đổi sang mật khẩu tự chọn trước khi truy cập các chức năng nghiệp vụ.
             </p>
-            <form onSubmit={submitTenantRegistration}>
-              <Field label="Mã chủ trọ" required>
+            <form onSubmit={submitChangePassword}>
+              <Field label="Mật khẩu tạm hiện tại" required>
                 <input
                   required
-                  maxLength={10}
-                  value={tenantLandlordCode}
-                  onChange={(e) => {
-                    setTenantLandlordCode(e.target.value.toUpperCase());
-                    setTenantEligible(false);
-                    setTenantVerified(false);
-                    setTenantTestOtp("");
-                    setError("");
-                  }}
-                  placeholder="Ví dụ: L000000001"
+                  type="password"
+                  autoComplete="current-password"
+                  value={passwordForm.currentPassword}
+                  onChange={(e) =>
+                    setPasswordForm((c) => ({ ...c, currentPassword: e.target.value }))
+                  }
+                  placeholder="Nhập mật khẩu tạm được chủ trọ cấp"
                 />
               </Field>
-              <Field label="Số điện thoại" required>
+              <Field label="Mật khẩu mới" required>
                 <input
                   required
-                  inputMode="tel"
-                  autoComplete="tel"
-                  pattern="0[0-9]{9}"
-                  maxLength={10}
-                  value={tenantPhone}
-                  onChange={(e) => {
-                    setTenantPhone(e.target.value);
-                    setTenantEligible(false);
-                    setTenantVerified(false);
-                    setTenantTestOtp("");
-                    setError("");
-                  }}
-                  placeholder="Ví dụ: 0912345678"
+                  type="password"
+                  minLength={6}
+                  autoComplete="new-password"
+                  value={passwordForm.newPassword}
+                  onChange={(e) =>
+                    setPasswordForm((c) => ({ ...c, newPassword: e.target.value }))
+                  }
+                  placeholder="Ít nhất 6 ký tự"
                 />
               </Field>
-              {tenantEligible && !tenantVerified && (
-                <Field
-                  label={tenantTestOtp ? "Mã thử nghiệm" : "Mã xác minh SMS"}
+              <Field label="Xác nhận mật khẩu mới" required>
+                <input
                   required
-                >
-                  <input
-                    required
-                    inputMode="numeric"
-                    pattern={tenantTestOtp ? "[0-9]{4}" : "[0-9]{6}"}
-                    maxLength={tenantTestOtp ? 4 : 6}
-                    value={tenantOtp}
-                    onChange={(e) => setTenantOtp(e.target.value)}
-                    placeholder={
-                      tenantTestOtp ? "Nhập mã 1111" : "Nhập mã 6 chữ số"
-                    }
-                  />
-                </Field>
-              )}
-              {tenantEligible && !tenantVerified && tenantTestOtp && (
-                <p className="notice" role="status">
-                  Mã thử nghiệm: <strong>1111</strong>. Chỉ dùng trên máy phát
-                  triển; mã này không xác minh quyền sở hữu số điện thoại.
-                </p>
-              )}
-              {tenantVerified && (
-                <>
-                  <Field label="Mật khẩu" required>
-                    <input
-                      required
-                      type="password"
-                      autoComplete="new-password"
-                      minLength={6}
-                      value={tenantPassword}
-                      onChange={(e) => setTenantPassword(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="Nhập lại mật khẩu" required>
-                    <input
-                      required
-                      type="password"
-                      autoComplete="new-password"
-                      minLength={6}
-                      value={tenantConfirm}
-                      onChange={(e) => setTenantConfirm(e.target.value)}
-                    />
-                  </Field>
-                </>
-              )}
+                  type="password"
+                  minLength={6}
+                  autoComplete="new-password"
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) =>
+                    setPasswordForm((c) => ({ ...c, confirmPassword: e.target.value }))
+                  }
+                  placeholder="Nhập lại mật khẩu mới"
+                />
+              </Field>
               {error && (
                 <p className="form-error" role="alert">
                   {error}
@@ -347,13 +319,185 @@ export default function Auth({ route, navigate }) {
                 type="submit"
                 disabled={isSubmitting}
               >
-                {isSubmitting
-                  ? "Đang xử lý..."
-                  : tenantVerified
-                    ? "Tạo tài khoản và đăng nhập"
-                    : tenantEligible
-                      ? "Xác nhận mã"
-                      : "Kiểm tra hồ sơ"}
+                {isSubmitting ? "Đang cập nhật..." : "Lưu mật khẩu mới và tiếp tục"}
+              </button>
+            </form>
+            <p className="auth-register">
+              <button
+                type="button"
+                onClick={() => {
+                  signOut();
+                  setError("");
+                  navigate("login");
+                }}
+              >
+                Đăng xuất và dùng tài khoản khác
+              </button>
+            </p>
+          </div>
+        ) : isPending ? (
+          <div className="auth-card pending-card">
+            <span className="pending-symbol">
+              <Icon name="clock" size={33} />
+            </span>
+            <span className="eyebrow">ĐĂNG KÝ THÀNH CÔNG</span>
+            <h2>Hồ sơ đang chờ duyệt</h2>
+            <p>
+              Chào {registrationName || "bạn"}, hồ sơ đăng ký chủ trọ đã được gửi thành công. Sau khi quản trị viên phê duyệt, bạn có thể đăng nhập để quản lý khu trọ.
+            </p>
+            <Button
+              className="full-width"
+              onClick={() => navigate("login")}
+              icon="arrow"
+            >
+              Về trang đăng nhập
+            </Button>
+          </div>
+        ) : isTenantRegister ? (
+          <div className="auth-card auth-card--wide">
+            <button
+              className="text-back"
+              type="button"
+              onClick={() => {
+                setError("");
+                navigate("login");
+              }}
+            >
+              ← Quay lại đăng nhập
+            </button>
+            <span className="eyebrow">DÀNH CHO NGƯỜI THUÊ</span>
+            <h2>Tự đăng ký tài khoản người thuê</h2>
+            <p className="auth-subtitle">
+              Tạo tài khoản độc lập bằng SĐT và CCCD của bạn. Không cần mã chủ trọ; dùng chung khi thuê nhiều nơi.
+            </p>
+            <div className="notice" role="status">
+              <Icon name="alert" size={18} />
+              <span>
+                Thông tin SĐT và CCCD tự khai sẽ ở trạng thái <strong>Chưa xác minh</strong> cho đến khi hệ thống bổ sung bước xác thực. Bạn vẫn có thể nhận và xác nhận đề nghị hợp đồng.
+              </span>
+            </div>
+            <form onSubmit={submitTenantRegistration}>
+              <div className="form-section-title">Thông tin định danh & liên hệ</div>
+              <div className="form-grid">
+                <Field label="Họ và tên" required>
+                  <input
+                    required
+                    autoComplete="name"
+                    value={tenantReg.fullName}
+                    onChange={(e) => updateTenant("fullName", e.target.value)}
+                    placeholder="Nguyễn Thị Bình"
+                  />
+                </Field>
+                <Field label="Số điện thoại" required>
+                  <input
+                    required
+                    inputMode="tel"
+                    autoComplete="tel"
+                    pattern="0[0-9]{9}"
+                    maxLength={10}
+                    value={tenantReg.phoneNumber}
+                    onChange={(e) => updateTenant("phoneNumber", e.target.value)}
+                    placeholder="0912345678"
+                  />
+                </Field>
+                <Field label="Số CCCD" required>
+                  <input
+                    required
+                    inputMode="numeric"
+                    pattern="[0-9]{12}"
+                    maxLength={12}
+                    title="CCCD gồm 12 chữ số"
+                    value={tenantReg.citizenId}
+                    onChange={(e) => updateTenant("citizenId", e.target.value)}
+                    placeholder="12 chữ số"
+                  />
+                </Field>
+                <Field label="Ngày sinh" required>
+                  <input
+                    required
+                    type="date"
+                    value={tenantReg.dateOfBirth}
+                    onChange={(e) => updateTenant("dateOfBirth", e.target.value)}
+                  />
+                </Field>
+                <Field label="Giới tính">
+                  <select
+                    value={tenantReg.gender}
+                    onChange={(e) => updateTenant("gender", e.target.value)}
+                  >
+                    <option value="">Chọn giới tính (không bắt buộc)</option>
+                    <option value="Male">Nam</option>
+                    <option value="Female">Nữ</option>
+                    <option value="Other">Khác</option>
+                  </select>
+                </Field>
+                <Field label="Email">
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    value={tenantReg.email}
+                    onChange={(e) => updateTenant("email", e.target.value)}
+                    placeholder="ban@email.com (không bắt buộc)"
+                  />
+                </Field>
+                <Field label="Địa chỉ thường trú" required wide>
+                  <input
+                    required
+                    autoComplete="street-address"
+                    value={tenantReg.address}
+                    onChange={(e) => updateTenant("address", e.target.value)}
+                    placeholder="Số nhà, đường, phường/xã, tỉnh/thành phố"
+                  />
+                </Field>
+              </div>
+
+              <div className="form-section-title section-gap">Tài khoản đăng nhập</div>
+              <div className="form-grid">
+                <Field label="Tên đăng nhập (không bắt buộc)" wide>
+                  <input
+                    minLength={3}
+                    maxLength={50}
+                    autoComplete="username"
+                    value={tenantReg.userName}
+                    onChange={(e) => updateTenant("userName", e.target.value)}
+                    placeholder="Để trống nếu muốn đăng nhập bằng SĐT"
+                  />
+                </Field>
+                <Field label="Mật khẩu" required>
+                  <input
+                    required
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={6}
+                    value={tenantReg.password}
+                    onChange={(e) => updateTenant("password", e.target.value)}
+                    placeholder="Ít nhất 6 ký tự"
+                  />
+                </Field>
+                <Field label="Nhập lại mật khẩu" required>
+                  <input
+                    required
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={6}
+                    value={tenantReg.confirmPassword}
+                    onChange={(e) => updateTenant("confirmPassword", e.target.value)}
+                    placeholder="Nhập lại mật khẩu"
+                  />
+                </Field>
+              </div>
+
+              {error && (
+                <p className="form-error" role="alert">
+                  {error}
+                </p>
+              )}
+              <button
+                className="button button--primary full-width auth-submit"
+                type="submit"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Đang tạo tài khoản..." : "Tạo tài khoản người thuê"}
               </button>
             </form>
           </div>
@@ -374,7 +518,7 @@ export default function Auth({ route, navigate }) {
             <p className="auth-subtitle">
               Điền thông tin để gửi hồ sơ xét duyệt.
             </p>
-            <form onSubmit={submitRegistration}>
+            <form onSubmit={submitLandlordRegistration}>
               <div className="form-section-title">Thông tin tài khoản</div>
               <div className="form-grid">
                 <Field label="Tên đăng nhập" required>
@@ -384,7 +528,7 @@ export default function Auth({ route, navigate }) {
                     maxLength="50"
                     autoComplete="username"
                     value={registration.userName}
-                    onChange={(e) => update("userName", e.target.value)}
+                    onChange={(e) => updateLandlord("userName", e.target.value)}
                     placeholder="Ví dụ: nguyenvanan"
                   />
                 </Field>
@@ -394,7 +538,7 @@ export default function Auth({ route, navigate }) {
                     type="email"
                     autoComplete="email"
                     value={registration.email}
-                    onChange={(e) => update("email", e.target.value)}
+                    onChange={(e) => updateLandlord("email", e.target.value)}
                     placeholder="ban@email.com"
                   />
                 </Field>
@@ -405,7 +549,7 @@ export default function Auth({ route, navigate }) {
                     minLength="6"
                     autoComplete="new-password"
                     value={registration.password}
-                    onChange={(e) => update("password", e.target.value)}
+                    onChange={(e) => updateLandlord("password", e.target.value)}
                     placeholder="Ít nhất 6 ký tự"
                   />
                 </Field>
@@ -415,7 +559,7 @@ export default function Auth({ route, navigate }) {
                     type="password"
                     autoComplete="new-password"
                     value={registration.confirmPassword}
-                    onChange={(e) => update("confirmPassword", e.target.value)}
+                    onChange={(e) => updateLandlord("confirmPassword", e.target.value)}
                     placeholder="Nhập lại mật khẩu"
                   />
                 </Field>
@@ -429,7 +573,7 @@ export default function Auth({ route, navigate }) {
                     required
                     autoComplete="name"
                     value={registration.fullName}
-                    onChange={(e) => update("fullName", e.target.value)}
+                    onChange={(e) => updateLandlord("fullName", e.target.value)}
                     placeholder="Nguyễn Văn An"
                   />
                 </Field>
@@ -439,7 +583,7 @@ export default function Auth({ route, navigate }) {
                     inputMode="tel"
                     autoComplete="tel"
                     value={registration.phoneNumber}
-                    onChange={(e) => update("phoneNumber", e.target.value)}
+                    onChange={(e) => updateLandlord("phoneNumber", e.target.value)}
                     placeholder="09xx xxx xxx"
                   />
                 </Field>
@@ -450,7 +594,7 @@ export default function Auth({ route, navigate }) {
                     pattern="[0-9]{12}"
                     title="CCCD gồm 12 chữ số"
                     value={registration.citizenId}
-                    onChange={(e) => update("citizenId", e.target.value)}
+                    onChange={(e) => updateLandlord("citizenId", e.target.value)}
                     placeholder="12 chữ số"
                   />
                 </Field>
@@ -459,7 +603,7 @@ export default function Auth({ route, navigate }) {
                     required
                     type="date"
                     value={registration.dateOfBirth}
-                    onChange={(e) => update("dateOfBirth", e.target.value)}
+                    onChange={(e) => updateLandlord("dateOfBirth", e.target.value)}
                   />
                 </Field>
                 <Field label="Địa chỉ thường trú" required wide>
@@ -467,7 +611,7 @@ export default function Auth({ route, navigate }) {
                     required
                     autoComplete="street-address"
                     value={registration.address}
-                    onChange={(e) => update("address", e.target.value)}
+                    onChange={(e) => updateLandlord("address", e.target.value)}
                     placeholder="Số nhà, đường, phường, quận/huyện, tỉnh/thành"
                   />
                 </Field>
@@ -482,7 +626,7 @@ export default function Auth({ route, navigate }) {
                 type="submit"
                 disabled={isSubmitting}
               >
-                Gửi hồ sơ đăng ký <Icon name="arrow" size={17} />
+                {isSubmitting ? "Đang gửi hồ sơ..." : <>Gửi hồ sơ đăng ký <Icon name="arrow" size={17} /></>}
               </button>
               <p className="form-footnote">
                 Sau khi gửi, hồ sơ cần được quản trị viên phê duyệt.
@@ -494,7 +638,7 @@ export default function Auth({ route, navigate }) {
             <span className="eyebrow">CHÀO MỪNG TRỞ LẠI</span>
             <h2>Đăng nhập</h2>
             <p className="auth-subtitle">
-              Vui lòng nhập thông tin để tiếp tục.
+              Dành cho Chủ trọ, Quản lý khu trọ, Người thuê và Quản trị viên.
             </p>
             <form onSubmit={submitLogin}>
               <Field label="Số điện thoại, tên đăng nhập hoặc email" required>
@@ -505,24 +649,9 @@ export default function Auth({ route, navigate }) {
                   onChange={(e) =>
                     setLogin({ ...login, identity: e.target.value })
                   }
-                  placeholder="Nhập số điện thoại, tên đăng nhập hoặc email"
+                  placeholder="Nhập SĐT, tên đăng nhập hoặc email"
                 />
               </Field>
-              {/^0[0-9]{9}$/.test(login.identity.trim()) && (
-                <Field label="Mã chủ trọ" required>
-                  <input
-                    required
-                    value={login.landlordCode}
-                    onChange={(e) =>
-                      setLogin({
-                        ...login,
-                        landlordCode: e.target.value.toUpperCase(),
-                      })
-                    }
-                    placeholder="Nhập mã chủ trọ"
-                  />
-                </Field>
-              )}
               <Field label="Mật khẩu" required>
                 <div className="password-field">
                   <input

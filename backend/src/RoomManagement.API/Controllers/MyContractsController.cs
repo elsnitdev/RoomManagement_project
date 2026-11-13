@@ -28,4 +28,26 @@ public sealed class MyContractsController : ControllerBase
     public async Task<IActionResult> Get(Guid contractId, CancellationToken ct) =>
         Ok(new ApiResponse<ContractDetailResponse>(ContractDetailResponse.From(
             await _service.GetMineAsync(contractId, User.FindFirst("sub")?.Value ?? "", ct))));
+
+    [HttpPost("{contractId:guid}/confirm")]
+    public async Task<IActionResult> ConfirmOffer(
+        Guid contractId,
+        [FromBody] ConfirmContractOfferRequest request,
+        CancellationToken ct)
+    {
+        var userId = User.FindFirst("sub")?.Value ?? "";
+        var updated = await _service.ConfirmOfferByTenantAsync(contractId, userId, request.ToInput(), ct);
+        return Ok(new ApiResponse<ContractResponse>(ContractResponse.From(updated)));
+    }
+
+    [HttpPost("{contractId:guid}/reject")]
+    public async Task<IActionResult> RejectOffer(
+        Guid contractId,
+        [FromBody] RejectContractOfferRequest request,
+        CancellationToken ct)
+    {
+        var userId = User.FindFirst("sub")?.Value ?? "";
+        var updated = await _service.RejectOfferByTenantAsync(contractId, userId, request.Reason ?? string.Empty, ct);
+        return Ok(new ApiResponse<ContractResponse>(ContractResponse.From(updated)));
+    }
 }

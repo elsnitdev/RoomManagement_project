@@ -189,7 +189,7 @@ public sealed class LandlordTenantsApiTests
         var getJson = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("Khách Cũ", getJson.GetProperty("data").GetProperty("fullName").GetString());
 
-        // 2. PUT Update
+        // 2. PUT Update bị chặn đối với Landlord (chỉ Admin mới được chỉnh sửa)
         var updateRequest = new
         {
             fullName = "Khách Đã Sửa",
@@ -197,11 +197,44 @@ public sealed class LandlordTenantsApiTests
             email = "updated@example.com"
         };
         var updateResponse = await client.PutAsJsonAsync($"/api/landlord/tenants/{profileId}", updateRequest);
-        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
 
         var updateJson = await updateResponse.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("Khách Đã Sửa", updateJson.GetProperty("data").GetProperty("fullName").GetString());
-        Assert.Equal("0909999999", updateJson.GetProperty("data").GetProperty("phoneNumber").GetString());
+        Assert.Equal("ADMIN_ONLY_TENANT_EDIT", updateJson.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Admin_can_update_tenant_account_while_landlord_is_forbidden()
+    {
+        await using var factory = new ApiFactory();
+        var adminUser = factory.Store.AddUser(UserRoles.Admin);
+        var landlordUser = factory.Store.AddUser(UserRoles.Landlord);
+        var tenantUser = factory.Store.AddUser(UserRoles.Tenant);
+        tenantUser.FullName = "Nguyễn Văn Cũ";
+        tenantUser.PhoneNumber = "0901234567";
+        tenantUser.CitizenId = "079201000111";
+
+        using var client = factory.CreateClient();
+
+        // Landlord gọi PUT /api/admin/users/{id} -> 403 Forbidden
+        await SignInAsync(client, landlordUser);
+        var landlordEditRes = await client.PutAsJsonAsync($"/api/admin/users/{tenantUser.Id}", new
+        {
+            fullName = "Không được phép"
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, landlordEditRes.StatusCode);
+
+        // Admin gọi PUT /api/admin/users/{id} -> 200 OK
+        await SignInAsync(client, adminUser);
+        var adminEditRes = await client.PutAsJsonAsync($"/api/admin/users/{tenantUser.Id}", new
+        {
+            fullName = "Nguyễn Văn Mới",
+            phoneNumber = "0912345678"
+        });
+        Assert.Equal(HttpStatusCode.OK, adminEditRes.StatusCode);
+        var json = await adminEditRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Nguyễn Văn Mới", json.GetProperty("data").GetProperty("fullName").GetString());
+        Assert.Equal("0912345678", json.GetProperty("data").GetProperty("phoneNumber").GetString());
     }
 
     private static async Task SignInAsync(HttpClient client, AppUser user)

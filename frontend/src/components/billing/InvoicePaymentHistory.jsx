@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { billingApi } from '../../services/api/billingApi'
 import { formatVietnamDate } from './paymentDate'
+import { EvidenceManager } from './PaymentEvidence'
 
 const money = value => new Intl.NumberFormat('vi-VN').format(Number(value || 0)) + ' ₫'
 const labels = { Pending: 'Chờ xác nhận', Success: 'Đã xác nhận', Failed: 'Từ chối', Cancelled: 'Đã hủy' }
@@ -31,6 +32,7 @@ export default function InvoicePaymentHistory({ invoiceId }) {
         <span>{payment.submittedByName || 'Chủ trọ / người thuê'} · {payment.method === 'Cash' ? 'Tiền mặt' : 'Chuyển khoản'}</span>
         <small>{payment.verifiedAt ? `Xác nhận: ${formatVietnamDate(payment.verifiedAt, true)}` : payment.paidAt ? `Ngày khai: ${formatVietnamDate(payment.paidAt)}` : 'Chưa có thời gian'}{payment.transactionCode ? ` · Mã ${payment.transactionCode}` : ''}</small>
         {payment.reviewReason && <small>Lý do: {payment.reviewReason}</small>}
+        {payment.status === 'Success' && <EvidenceManager paymentId={payment.id} initialOpen />}
       </li>)}</ul> : <p className="bill-empty">Chưa có khoản thanh toán.</p>}
   </section>
 }

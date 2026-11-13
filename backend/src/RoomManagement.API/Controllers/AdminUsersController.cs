@@ -297,4 +297,138 @@ public sealed class AdminUsersController : ControllerBase
                 code: "INTERNAL_SERVER_ERROR"));
         }
     }
+
+    /// <summary>
+    /// Tìm kiếm / liệt kê danh sách tài khoản người dùng (hỗ trợ lọc theo vai trò, trạng thái khóa, từ khóa).
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> ListUsers(
+        [FromQuery] string? role,
+        [FromQuery] string? keyword,
+        [FromQuery] bool? isActive,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var validPage = page > 0 ? page : 1;
+        var validPageSize = pageSize is > 0 and <= 100 ? pageSize : 20;
+        var (items, totalCount) = await _userService.ListUsersByAdminAsync(
+            role, keyword, isActive, validPage, validPageSize, cancellationToken);
+
+        return Ok(new PageResponse<UserResponse>(
+            items.Select(UserResponse.FromDto).ToList(),
+            new PageMeta(validPage, validPageSize, totalCount,
+                (int)Math.Ceiling((double)totalCount / validPageSize))));
+    }
+
+    [HttpPost("{id}/lock")]
+    public async Task<IActionResult> LockUser([FromRoute] string id, CancellationToken cancellationToken)
+    {
+        var adminId = User.FindFirst("sub")?.Value ?? string.Empty;
+        try
+        {
+            var dto = await _userService.SetUserLockByAdminAsync(adminId, id, isLocked: true, cancellationToken);
+            return Ok(new { data = UserResponse.FromDto(dto), message = "Đã khóa tài khoản người dùng." });
+        }
+        catch (AppNotFoundException ex)
+        {
+            return NotFound(ProblemDetailsHelper.Create(404, "Không tìm thấy tài nguyên", ex.Message, code: ex.Code ?? "USER_NOT_FOUND"));
+        }
+        catch (BusinessRuleException ex)
+        {
+            return UnprocessableEntity(ProblemDetailsHelper.Create(422, "Vi phạm quy tắc nghiệp vụ", ex.Message, code: ex.Code ?? "BUSINESS_RULE_VIOLATION"));
+        }
+    }
+
+    [HttpPost("{id}/unlock")]
+    public async Task<IActionResult> UnlockUser([FromRoute] string id, CancellationToken cancellationToken)
+    {
+        var adminId = User.FindFirst("sub")?.Value ?? string.Empty;
+        try
+        {
+            var dto = await _userService.SetUserLockByAdminAsync(adminId, id, isLocked: false, cancellationToken);
+            return Ok(new { data = UserResponse.FromDto(dto), message = "Đã mở khóa tài khoản người dùng." });
+        }
+        catch (AppNotFoundException ex)
+        {
+            return NotFound(ProblemDetailsHelper.Create(404, "Không tìm thấy tài nguyên", ex.Message, code: ex.Code ?? "USER_NOT_FOUND"));
+        }
+        catch (BusinessRuleException ex)
+        {
+            return UnprocessableEntity(ProblemDetailsHelper.Create(422, "Vi phạm quy tắc nghiệp vụ", ex.Message, code: ex.Code ?? "BUSINESS_RULE_VIOLATION"));
+        }
+    }
+
+    public sealed record AdminUpdateUserRequest(
+        string? FullName,
+        string? PhoneNumber,
+        string? Email,
+        string? CitizenId,
+        DateOnly? DateOfBirth,
+        string? Address,
+        string? IdentityVerificationStatus);
+
+    /// <summary>
+    /// Chỉ Admin mới có quyền chỉnh sửa thông tin tài khoản người dùng (bao gồm Tenant) và đồng bộ hồ sơ.
+    /// </summary>
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateUser(
+        [FromRoute] string id,
+        [FromBody] AdminUpdateUserRequest request,
+        CancellationToken cancellationToken)
+    {
+        var adminId = User.FindFirst("sub")?.Value ?? string.Empty;
+        try
+        {
+            var dto = await _userService.UpdateUserByAdminAsync(adminId, id, new AdminUpdateUserDto
+            {
+                FullName = request.FullName,
+                PhoneNumber = request.PhoneNumber,
+                Email = request.Email,
+                CitizenId = request.CitizenId,
+                DateOfBirth = request.DateOfBirth,
+                Address = request.Address,
+                IdentityVerificationStatus = request.IdentityVerificationStatus
+            }, cancellationToken);
+            return Ok(new { data = UserResponse.FromDto(dto), message = "Cập nhật thông tin tài khoản thành công." });
+        }
+        catch (AppValidationException ex)
+        {
+            return BadRequest(ProblemDetailsHelper.Create(400, "Dữ liệu không hợp lệ", ex.Message, code: ex.Code ?? "VALIDATION_FAILED"));
+        }
+        catch (AppNotFoundException ex)
+        {
+            return NotFound(ProblemDetailsHelper.Create(404, "Không tìm thấy tài nguyên", ex.Message, code: ex.Code ?? "USER_NOT_FOUND"));
+        }
+        catch (AppConflictException ex)
+        {
+            return Conflict(ProblemDetailsHelper.Create(409, "Xung đột dữ liệu", ex.Message, code: ex.Code ?? "DUPLICATE_DATA"));
+        }
+        catch (BusinessRuleException ex)
+        {
+            return UnprocessableEntity(ProblemDetailsHelper.Create(422, "Vi phạm quy tắc nghiệp vụ", ex.Message, code: ex.Code ?? "BUSINESS_RULE_VIOLATION"));
+        }
+    }
+
+    /// <summary>
+    /// Vô hiệu hóa (xóa mềm) tài khoản người dùng nhưng giữ nguyên toàn bộ lịch sử hợp đồng, hóa đơn, xác nhận và chứng từ.
+    /// </summary>
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteUser([FromRoute] string id, CancellationToken cancellationToken)
+    {
+        var adminId = User.FindFirst("sub")?.Value ?? string.Empty;
+        try
+        {
+            var dto = await _userService.DeactivateUserByAdminAsync(adminId, id, cancellationToken);
+            return Ok(new { data = UserResponse.FromDto(dto), message = "Đã vô hiệu hóa tài khoản người dùng." });
+        }
+        catch (AppNotFoundException ex)
+        {
+            return NotFound(ProblemDetailsHelper.Create(404, "Không tìm thấy tài nguyên", ex.Message, code: ex.Code ?? "USER_NOT_FOUND"));
+        }
+        catch (BusinessRuleException ex)
+        {
+            return UnprocessableEntity(ProblemDetailsHelper.Create(422, "Vi phạm quy tắc nghiệp vụ", ex.Message, code: ex.Code ?? "BUSINESS_RULE_VIOLATION"));
+        }
+    }
 }

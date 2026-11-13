@@ -9,7 +9,7 @@ using RoomManagement.Domain;
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRoles.Landlord)]
+[Authorize(Roles = UserRoles.LandlordOrManager)]
 [Produces("application/json")]
 [Route("api/properties")]
 public sealed class PropertiesController : ControllerBase
@@ -18,6 +18,7 @@ public sealed class PropertiesController : ControllerBase
     public PropertiesController(PropertyService service) => _service = service;
 
     [HttpPost]
+    [Authorize(Roles = UserRoles.Landlord)]
     [ProducesResponseType(typeof(ApiResponse<PropertyResponse>), StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreatePropertyRequest request, CancellationToken ct)
     {
@@ -48,12 +49,14 @@ public sealed class PropertiesController : ControllerBase
         Ok(new ApiResponse<PropertyResponse>(PropertyResponse.From(await _service.UpdateAsync(propertyId, request.ToInput(), ct))));
 
     [HttpPut("{propertyId:guid}/payment-account")]
+    [Authorize(Roles = UserRoles.Landlord)]
     public async Task<ActionResult<ApiResponse<PropertyResponse>>> UpdatePaymentAccount(Guid propertyId,
         [FromBody] UpdatePaymentAccountRequest request, CancellationToken ct) =>
         Ok(new ApiResponse<PropertyResponse>(PropertyResponse.From(await _service.UpdatePaymentAccountAsync(
             propertyId, request.BankName, request.AccountNumber, request.AccountHolder, request.RowVersion, ct))));
 
     [HttpDelete("{propertyId:guid}")]
+    [Authorize(Roles = UserRoles.Landlord)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Delete(Guid propertyId, CancellationToken ct)
     {

@@ -10,9 +10,12 @@ public sealed class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
     {
         builder.ToTable("Users", "dbo", table =>
         {
-            table.HasCheckConstraint("CK_Users_Role", @"(Role IN (N'Admin', N'Landlord', N'Tenant'))");
+            table.HasCheckConstraint("CK_Users_Role", @"(Role IN (N'Admin', N'Landlord', N'Manager', N'Tenant'))");
             // Chỉ cho phép 3 trạng thái duyệt hợp lệ
             table.HasCheckConstraint("CK_Users_ApprovalStatus", @"(ApprovalStatus IN (N'Pending', N'Approved', N'Rejected'))");
+            // Manager bắt buộc thuộc đúng 1 Landlord; các vai trò khác không có LandlordUserId
+            table.HasCheckConstraint("CK_Users_ManagerLandlord", @"((Role = N'Manager' AND LandlordUserId IS NOT NULL) OR (Role <> N'Manager' AND LandlordUserId IS NULL))");
+            table.HasCheckConstraint("CK_Users_IdentityVerificationStatus", @"(IdentityVerificationStatus IN (N'Unverified', N'Pending', N'Verified'))");
         });
         builder.HasKey(e => e.Id).HasName("PK_Users");
         builder.Property(e => e.Id).HasColumnType("nvarchar(450)").IsRequired().ValueGeneratedNever();
@@ -25,7 +28,13 @@ public sealed class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
         // EF must send false explicitly for pending landlords instead of treating it as an unset value.
         builder.Property(e => e.IsActive).HasColumnType("bit").IsRequired()
             .HasDefaultValueSql(@"1", "DF_Users_IsActive").HasSentinel(true);
+        builder.Property(e => e.LandlordUserId).HasColumnType("nvarchar(450)");
+        builder.Property(e => e.MustChangePassword).HasColumnType("bit").IsRequired()
+            .HasDefaultValueSql(@"0", "DF_Users_MustChangePassword").HasSentinel(false);
+        builder.Property(e => e.DeletedAt).HasColumnType("datetime2(0)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_Users_CreatedAt");
+        builder.HasOne<AppUser>().WithMany().HasForeignKey(e => e.LandlordUserId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Users_LandlordUser");
+        builder.HasIndex(e => e.LandlordUserId).HasDatabaseName("IX_Users_LandlordUserId");
         builder.HasIndex(e => e.NormalizedUserName).HasDatabaseName("UX_Users_NormalizedUserName").IsUnique();
         builder.HasIndex(e => e.NormalizedEmail).HasDatabaseName("UX_Users_NormalizedEmail").IsUnique().HasFilter(@"NormalizedEmail IS NOT NULL");
 
@@ -45,5 +54,8 @@ public sealed class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
         builder.Property(e => e.ApprovalStatus).HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Approved'", "DF_Users_ApprovalStatus");
         builder.Property(e => e.RejectionReason).HasColumnType("nvarchar(500)");
         builder.Property(e => e.ReviewedAt).HasColumnType("datetime2(0)");
+        builder.Property(e => e.IdentityVerificationStatus).HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Unverified'", "DF_Users_IdentityVerificationStatus");
+        builder.Property(e => e.IdentityVerifiedAt).HasColumnType("datetime2(0)");
+        builder.HasIndex(e => e.PhoneNumber).HasDatabaseName("IX_Users_PhoneNumber");
     }
 }

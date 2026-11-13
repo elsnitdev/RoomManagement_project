@@ -67,4 +67,14 @@ public interface IUserStore
     /// </summary>
     /// <param name="cancellationToken">Token hủy thao tác không đồng bộ.</param>
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    Task<bool> HasConfirmedOrActiveContractAsync(string userId, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
+    Task SyncTenantProfileFromUserAsync(AppUser user, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    Task<(IReadOnlyList<AppUser> Items, int TotalCount)> ListUsersAsync(
+        string? role, string? keyword, bool? isActive, int page, int pageSize, CancellationToken cancellationToken = default)
+        => Task.FromResult<(IReadOnlyList<AppUser>, int)>((Array.Empty<AppUser>(), 0));
 }

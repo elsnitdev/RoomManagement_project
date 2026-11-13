@@ -8,5 +8,7 @@ public enum ContractStatus
     Terminated,
     Cancelled,
     PendingMoveOut,
-    PendingSettlement
+    PendingSettlement,
+    PendingTenantConfirmation,
+    PendingOperatorConfirmation
 }

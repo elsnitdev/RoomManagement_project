@@ -2,6 +2,8 @@
 export const tenantMockProfiles = {
   'ngoclinh@email.com': {
     phoneNumber: '0903 418 286',
+    citizenId: '079198004567',
+    dateOfBirth: '1998-04-15',
     address: '24 Nguyễn Văn Trỗi, Phú Nhuận, TP. Hồ Chí Minh',
   },
 }

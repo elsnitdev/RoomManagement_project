@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertCircle,
   ArrowLeft,
   CalendarDays,
   Check,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -11,12 +13,17 @@ import {
   Plus,
   Search,
   Star,
+  Users,
+  X,
 } from "lucide-react";
 import { billingApi } from "../../services/api/billingApi";
 import { contractApi } from "../../services/api/contractApi";
 import { LandlordRules } from "./ContractRules";
 import EarlyExitFlow, { SettlementRefundEvidencePanel } from "./EarlyExitFlow";
-import { getLandlordTenants } from "../../services/api/landlordTenantApi";
+import {
+  getLandlordTenants,
+  lookupTenantExact,
+} from "../../services/api/landlordTenantApi";
 import { listRoomRows } from "../../services/api/RoomRowApi";
 import { endOfMonth, unavailableTenantIds } from "./contractForm";
 import "./contracts.css";
@@ -45,6 +52,8 @@ const initials = (name) => {
 };
 const statusText = {
   Draft: "Bản nháp",
+  PendingTenantConfirmation: "Chờ người thuê xác nhận",
+  PendingOperatorConfirmation: "Chờ chủ trọ đối ký",
   Active: "Đang hiệu lực",
   PendingMoveOut: "Chờ bàn giao",
   PendingSettlement: "Chờ tất toán",
@@ -371,6 +380,12 @@ export default function LandlordContracts({
   const [roomRow, setRoomRow] = useState("");
   const [roomFloor, setRoomFloor] = useState("");
   const [tenantSearch, setTenantSearch] = useState("");
+  const [lookupPhone, setLookupPhone] = useState("");
+  const [lookupCitizenId, setLookupCitizenId] = useState("");
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+  const [lookedUpTenants, setLookedUpTenants] = useState([]);
+  const [showLookupBox, setShowLookupBox] = useState(false);
   const [extraTenantId, setExtraTenantId] = useState("");
   const [extraTenantRole, setExtraTenantRole] = useState("ContractParty");
   const [extraJoinDate, setExtraJoinDate] = useState(today);
@@ -445,7 +460,7 @@ export default function LandlordContracts({
       .then((items) => {
         if (controller.signal.aborted) return;
         const selected = (items || []).filter((item) => item.startDate <= form.startDate && (!item.endDate || item.endDate >= form.startDate));
-        setForm((current) => ({ ...current, roomServices: selected.map((item) => ({ serviceId: item.serviceId, quantity: String(item.quantity), customPrice: item.customPrice == null ? "" : String(item.customPrice) })), servicesConfirmed: false }));
+        setForm((current) => ({ ...current, roomServices: selected.map((item) => ({ serviceId: item.serviceId, quantity: String(item.quantity), customPrice: item.customPrice == null ? "" : String(item.customPrice) })), servicesConfirmed: true }));
       })
       .catch((cause) => { if (!controller.signal.aborted) setServiceLoadError(errorText(cause)); })
       .finally(() => { if (!controller.signal.aborted) setRoomServiceLoading(false); });
@@ -466,7 +481,7 @@ export default function LandlordContracts({
       .catch((cause) => {
         if (!controller.signal.aborted) {
           setTenantAvailabilityError(true);
-          setError(errorText(cause));
+          console.warn("Could not check all contracts for availability:", cause);
         }
       })
       .finally(() => {
@@ -560,17 +575,26 @@ export default function LandlordContracts({
     [rooms, roomRow, roomFloor, roomSearch],
   );
   const unavailableIds = useMemo(
-    () =>
-      unavailableTenantIds(
+    () => {
+      let safeEnd = null;
+      if (mode === "new") {
+        if (form.endMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(form.endMonth)) {
+          try {
+            safeEnd = endOfMonth(form.endMonth);
+          } catch {
+            safeEnd = null;
+          }
+        }
+      } else {
+        safeEnd = detail?.endDate || null;
+      }
+      return unavailableTenantIds(
         activeContracts,
         mode === "new" ? form.startDate : extraJoinDate,
-        mode === "new"
-          ? form.endMonth
-            ? endOfMonth(form.endMonth)
-            : null
-          : detail?.endDate,
+        safeEnd,
         mode === "new" ? null : detail,
-      ),
+      );
+    },
     [
       activeContracts,
       mode,
@@ -580,28 +604,34 @@ export default function LandlordContracts({
       detail,
     ],
   );
+  const allAvailableTenants = useMemo(() => {
+    const map = new Map();
+    for (const t of lookedUpTenants) {
+      map.set(t.id, t);
+    }
+    for (const t of tenants) {
+      if (!map.has(t.id)) map.set(t.id, t);
+    }
+    return Array.from(map.values());
+  }, [lookedUpTenants, tenants]);
   const matchingTenants = useMemo(
     () =>
-      (mode === "new" || tenantSearch.trim()) &&
-      !tenantAvailabilityLoading &&
-      !tenantAvailabilityError
-        ? tenants
-            .filter(
-              (item) =>
-                !unavailableIds.has(item.id) &&
-                `${item.fullName} ${item.email || ""} ${item.phoneNumber || ""}`
+      !tenantAvailabilityLoading && !tenantAvailabilityError
+        ? allAvailableTenants.filter(
+            (item) =>
+              !unavailableIds.has(item.id) &&
+              (!tenantSearch.trim() ||
+                `${item.fullName} ${item.email || ""} ${item.phoneNumber || ""} ${item.citizenId || ""}`
                   .toLocaleLowerCase("vi-VN")
-                  .includes(tenantSearch.trim().toLocaleLowerCase("vi-VN")),
-            )
-            .slice(0, 8)
+                  .includes(tenantSearch.trim().toLocaleLowerCase("vi-VN"))),
+          )
         : [],
     [
-      tenants,
+      allAvailableTenants,
       tenantSearch,
       unavailableIds,
       tenantAvailabilityLoading,
       tenantAvailabilityError,
-      mode,
     ],
   );
   useEffect(() => {
@@ -612,10 +642,29 @@ export default function LandlordContracts({
       ? { ...current, additionalTenantIds: current.additionalTenantIds.filter((id) => !unavailableIds.has(id)) }
       : current);
   }, [unavailableIds, form.tenantId, extraTenantId]);
-  const chosenTenant = tenants.find((item) => item.id === form.tenantId);
-  const extraTenant = tenants.find((item) => item.id === extraTenantId);
+  const chosenTenant = allAvailableTenants.find((item) => item.id === form.tenantId);
+  const extraTenant = allAvailableTenants.find((item) => item.id === extraTenantId);
   const familyMode = form.tenancyMode === "PrimaryTenantWithFamily";
-  const selectedAdditional = tenants.filter((item) => form.additionalTenantIds.includes(item.id));
+  const selectedAdditional = allAvailableTenants.filter((item) => form.additionalTenantIds.includes(item.id));
+  const selectedMembers = [chosenTenant, ...selectedAdditional].filter(Boolean);
+  const availableCandidates = mode === "new"
+    ? matchingTenants.filter((item) => !selectedMembers.some((member) => member.id === item.id || item.userId && member.userId === item.userId)).slice(0, 20)
+    : [];
+
+  const sortedTenantCandidates = useMemo(() => {
+    return [...matchingTenants].sort((a, b) => {
+      const aSelected = a.id === form.tenantId || form.additionalTenantIds.includes(a.id);
+      const bSelected = b.id === form.tenantId || form.additionalTenantIds.includes(b.id);
+      if (aSelected && !bSelected) return -1;
+      if (!aSelected && bSelected) return 1;
+      if (aSelected && bSelected) {
+        if (a.id === form.tenantId) return -1;
+        if (b.id === form.tenantId) return 1;
+      }
+      return (a.fullName || "").localeCompare(b.fullName || "", "vi");
+    });
+  }, [matchingTenants, form.tenantId, form.additionalTenantIds]);
+
   const detailFamilyMode = detail?.tenancyMode === "PrimaryTenantWithFamily";
   const detailHasParty = detail?.tenants?.some((item) => !item.leaveDate && item.role === "ContractParty");
   const alertContracts = contracts.filter(needsSettlement);
@@ -628,43 +677,199 @@ export default function LandlordContracts({
   );
   const patchForm = (key, value) =>
     setForm((current) => ({ ...current, [key]: value }));
-  const toggleAdditionalTenant = (id) => setForm((current) => ({
-    ...current,
-    additionalTenantIds: current.additionalTenantIds.includes(id)
-      ? current.additionalTenantIds.filter((value) => value !== id)
-      : [...current.additionalTenantIds, id],
-  }));
+
+  const toggleTenant = (id) => {
+    setForm((current) => {
+      const isRep = current.tenantId === id;
+      const isAdditional = current.additionalTenantIds.includes(id);
+      const isSelected = isRep || isAdditional;
+
+      if (isSelected) {
+        if (isRep) {
+          // Representative removed: promote first remaining tenant as representative
+          const nextRep = current.additionalTenantIds[0] || "";
+          const nextAdditional = current.additionalTenantIds.slice(1);
+          return {
+            ...current,
+            tenantId: nextRep,
+            additionalTenantIds: nextAdditional,
+          };
+        } else {
+          return {
+            ...current,
+            additionalTenantIds: current.additionalTenantIds.filter((x) => x !== id),
+          };
+        }
+      } else {
+        // Selecting: If no representative yet, this FIRST one becomes representative!
+        if (!current.tenantId) {
+          return {
+            ...current,
+            tenantId: id,
+          };
+        } else {
+          return {
+            ...current,
+            additionalTenantIds: current.additionalTenantIds.includes(id)
+              ? current.additionalTenantIds
+              : [...current.additionalTenantIds, id],
+          };
+        }
+      }
+    });
+  };
+
+  const designateRepresentative = (id) => {
+    setForm((current) => {
+      if (current.tenantId === id) return current;
+
+      const allSelected = [
+        current.tenantId,
+        ...current.additionalTenantIds,
+      ].filter(Boolean);
+
+      // Make `id` the representative, all others become additional
+      const nextAdditional = allSelected.filter((x) => x !== id);
+      return {
+        ...current,
+        tenantId: id,
+        additionalTenantIds: nextAdditional,
+      };
+    });
+  };
+
+  const addMember = (id) => {
+    toggleTenant(id);
+  };
+
+  const removeMember = (id) => {
+    toggleTenant(id);
+  };
+
+  const setRepresentative = (id, checked) => {
+    if (checked) {
+      designateRepresentative(id);
+    } else {
+      setForm((current) => {
+        if (current.tenantId !== id) return current;
+        const nextRep = current.additionalTenantIds[0] || "";
+        const nextAdditional = current.additionalTenantIds.slice(1);
+        return {
+          ...current,
+          tenantId: nextRep,
+          additionalTenantIds: nextAdditional,
+        };
+      });
+    }
+  };
+
+  const handleLookupAndAdd = async () => {
+    setLookupBusy(true);
+    setLookupError("");
+    try {
+      const res = await lookupTenantExact({
+        propertyId: propertyId || null,
+        phoneNumber: lookupPhone.trim(),
+        citizenId: lookupCitizenId.trim(),
+      });
+      const acc = res?.data;
+      if (acc?.userId) {
+        const entry = {
+          id: `user:${acc.userId}`,
+          userId: acc.userId,
+          fullName: acc.fullName || acc.userName || "Người thuê",
+          phoneNumber: acc.phoneNumber,
+          email: acc.email,
+          citizenId: acc.citizenId || lookupCitizenId.trim(),
+          identityVerificationStatus: acc.identityVerificationStatus,
+          isLookupAccount: true,
+        };
+        if (selectedMembers.some((item) => item.userId === entry.userId)) {
+          setLookupError("Người thuê này đã được chọn trong hợp đồng.");
+          return;
+        }
+        if (
+          unavailableIds.has(entry.id) ||
+          tenants.some(
+            (item) => item.userId === entry.userId && unavailableIds.has(item.id),
+          )
+        ) {
+          setLookupError("Người thuê này đã có hợp đồng trùng thời gian.");
+          return;
+        }
+        if (chosenRoom && selectedMembers.length >= chosenRoom.maxOccupants) {
+          setLookupError("Phòng đã đủ số người theo sức chứa.");
+          return;
+        }
+        setLookedUpTenants((cur) => [
+          entry,
+          ...cur.filter((x) => x.id !== entry.id),
+        ]);
+        toggleTenant(entry.id);
+        setLookupPhone("");
+        setLookupCitizenId("");
+        setShowLookupBox(false);
+      }
+    } catch (err) {
+      setLookupError(err.message || "Không tìm thấy tài khoản khớp SĐT và CCCD.");
+    } finally {
+      setLookupBusy(false);
+    }
+  };
+
+  const footerErrorRef = useRef(null);
+
+  const reportError = (message) => {
+    setError(message);
+    setTimeout(() => {
+      footerErrorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 50);
+  };
 
   async function create(event) {
     event.preventDefault();
-    if (tenantAvailabilityLoading || tenantAvailabilityError) {
-      setError(
-        "Chưa kiểm tra được hợp đồng hiện có của người thuê. Vui lòng thử lại.",
+    if (tenantAvailabilityLoading) {
+      reportError(
+        "Đang tải dữ liệu kiểm tra người thuê, vui lòng đợi giây lát.",
       );
       return;
     }
     if (!chosenRoom) {
-      setError("Hãy chọn một phòng còn trống trước khi lưu.");
+      reportError("Vui lòng chọn một phòng còn trống ở Bước 1 trước khi lưu.");
       return;
     }
-    if (!form.endMonth || form.endMonth < form.startDate.slice(0, 7)) {
-      setError("Tháng kết thúc phải từ tháng bắt đầu trở đi.");
+    if (!form.startDate) {
+      reportError("Vui lòng chọn Ngày bắt đầu hợp đồng ở Bước 2.");
       return;
     }
-    if (!chosenTenant?.userId) {
-      setError("Người đứng tên cần có tài khoản liên kết để tự chấp thuận nội quy.");
+    if (!form.endMonth) {
+      reportError("Vui lòng chọn Tháng kết thúc hợp đồng ở Bước 2.");
       return;
     }
-    if (1 + selectedAdditional.length > chosenRoom.maxOccupants) {
-      setError("Số người được chọn vượt sức chứa của phòng.");
+    if (form.endMonth < form.startDate.slice(0, 7)) {
+      reportError("Tháng kết thúc phải từ tháng bắt đầu trở đi.");
       return;
     }
-    if (!familyMode && selectedAdditional.some((item) => !item.userId)) {
-      setError("Mỗi người đồng thuê cần có tài khoản liên kết.");
+    if (!chosenTenant) {
+      reportError("Vui lòng chọn ít nhất một người thuê làm Người đứng tên đại diện ở Bước 3.");
       return;
     }
-    if (roomServiceLoading || serviceLoadError || !form.servicesConfirmed) { setError("Hãy tải, kiểm tra và xác nhận dịch vụ của phòng trước khi lưu hợp đồng."); return; }
-    if (form.roomServices.some((item) => !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0 || item.customPrice !== "" && (!Number.isFinite(Number(item.customPrice)) || Number(item.customPrice) < 0))) { setError("Số lượng hoặc đơn giá dịch vụ không hợp lệ."); return; }
+    if (selectedMembers.length > chosenRoom.maxOccupants) {
+      reportError(`Số người được chọn (${selectedMembers.length}) vượt quá sức chứa tối đa của phòng (${chosenRoom.maxOccupants} người).`);
+      return;
+    }
+    if (roomServiceLoading) {
+      reportError("Đang tải danh mục dịch vụ của phòng, vui lòng đợi trong giây lát.");
+      return;
+    }
+    if (serviceLoadError) {
+      reportError("Không thể tải danh mục dịch vụ phòng: " + serviceLoadError);
+      return;
+    }
+    if (form.roomServices.some((item) => !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0 || item.customPrice !== "" && (!Number.isFinite(Number(item.customPrice)) || Number(item.customPrice) < 0))) {
+      reportError("Số lượng hoặc đơn giá dịch vụ không hợp lệ ở Bước 4.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -692,12 +897,21 @@ export default function LandlordContracts({
       });
       try {
         for (const [index, item] of [chosenTenant, ...selectedAdditional].entries()) {
-          await contractApi.addTenant(propertyId, created.id, {
-            tenantId: item.id,
-            joinDate: form.startDate,
-            isContactPerson: index === 0,
-            role: index === 0 || !familyMode ? "ContractParty" : "AuthorizedOccupant",
-          });
+          if (item.isLookupAccount) {
+            await contractApi.addTenantByUser(propertyId, created.id, {
+              userId: item.userId,
+              joinDate: form.startDate,
+              isContactPerson: index === 0,
+              role: index === 0 || !familyMode ? "ContractParty" : "AuthorizedOccupant",
+            });
+          } else {
+            await contractApi.addTenant(propertyId, created.id, {
+              tenantId: item.id,
+              joinDate: form.startDate,
+              isContactPerson: index === 0,
+              role: index === 0 || !familyMode ? "ContractParty" : "AuthorizedOccupant",
+            });
+          }
         }
       } catch (cause) {
           notify?.(
@@ -715,7 +929,7 @@ export default function LandlordContracts({
         navigate(`landlord/billing/${created.depositInvoiceId}`);
       else routeTo(navigate, `/${propertyId}/${created.id}`);
     } catch (cause) {
-      setError(errorText(cause));
+      reportError(errorText(cause));
     } finally {
       setBusy(false);
     }
@@ -846,7 +1060,7 @@ export default function LandlordContracts({
                       rooms.find((room) => room.id === item.roomId)
                         ?.roomNumber ||
                       "—"}{" "}
-                    ·{" "}
+                    · {item.tenants?.length || 0} người trong hợp đồng ·{" "}
                     {item.tenants
                       ?.map((tenant) => tenant.fullName)
                       .join(", ") || "Chưa có người thuê"}
@@ -1013,6 +1227,22 @@ export default function LandlordContracts({
                 )}
               </div>
             </section>
+            {!chosenRoom && (
+              <div
+                style={{
+                  marginTop: "16px",
+                  padding: "16px",
+                  background: "#f8fafc",
+                  borderRadius: "10px",
+                  border: "1px dashed #cbd5e1",
+                  textAlign: "center",
+                  color: "#64748b",
+                  fontSize: "13.5px",
+                }}
+              >
+                💡 Vui lòng nhấp chọn một phòng còn trống ở trên để tiếp tục điền thời hạn, người thuê và dịch vụ hợp đồng.
+              </div>
+            )}
             {chosenRoom && (
               <>
                 <section className="ct-card">
@@ -1180,114 +1410,332 @@ export default function LandlordContracts({
                       </label>
                     ))}
                   </fieldset>
-                  <div className="ct-member-section">
-                    <div className="ct-member-heading"><h3>Người đứng tên *</h3></div>
-                    <p className="ct-member-note">Cần hồ sơ có tài khoản liên kết để chấp thuận nội quy.</p>
-                  <label>
-                    Tìm hồ sơ người thuê
-                    <div className="ct-search">
-                      <Search size={17} />
-                      <input
-                        type="search"
-                        placeholder="Tên, email hoặc số điện thoại…"
-                        value={tenantSearch}
-                        onChange={(event) =>
-                          setTenantSearch(event.target.value)
-                        }
-                      />
+                  <div className="ct-tenant-unified-box">
+                    <div className="ct-member-heading">
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#1e293b" }}>
+                          Danh sách người thuê tham gia hợp đồng
+                        </h3>
+                        <p style={{ margin: "3px 0 0", fontSize: "12px", color: "#64748b" }}>
+                          Chọn một hoặc nhiều người thuê vào hợp đồng. <strong>Người được chọn đầu tiên sẽ mặc định là Người đứng tên (đại diện)</strong>; bạn có thể tích chọn lại người đại diện bất kỳ lúc nào.
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        {chosenRoom && (
+                          <span
+                            className={`ct-capacity-pill ${
+                              selectedMembers.length > chosenRoom.maxOccupants
+                                ? "ct-capacity-pill--full"
+                                : ""
+                            }`}
+                          >
+                            <Users size={14} />
+                            Đã chọn: {selectedMembers.length}/{chosenRoom.maxOccupants} người
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </label>
-                  {chosenTenant && (
-                    <div className="ct-picked">
-                      <strong>Người đứng tên: {chosenTenant.fullName}</strong>
-                      <span>
-                        {chosenTenant.email || "Chưa có email"} ·{" "}
-                        {chosenTenant.phoneNumber || "Chưa có SĐT"}
-                      </span>
+
+                    {/* Toolbar: Search + Toggle lookup */}
+                    <div className="ct-tenant-toolbar">
+                      <div className="ct-tenant-search-wrap">
+                        <Search size={16} />
+                        <input
+                          type="search"
+                          className="ct-tenant-search-input"
+                          placeholder="Tìm người thuê theo tên, SĐT, CCCD, email..."
+                          value={tenantSearch}
+                          onChange={(e) => setTenantSearch(e.target.value)}
+                        />
+                        {tenantSearch && (
+                          <button
+                            type="button"
+                            className="ct-tenant-search-clear"
+                            aria-label="Xóa từ khóa tìm kiếm"
+                            onClick={() => setTenantSearch("")}
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
-                        onClick={() => patchForm("tenantId", "")}
+                        className="contract-button contract-button--secondary"
+                        onClick={() => setShowLookupBox((prev) => !prev)}
+                        style={{ fontSize: "12px", padding: "6px 12px", minHeight: "38px" }}
                       >
-                        Bỏ chọn
+                        {showLookupBox
+                          ? "Đóng tra cứu SĐT+CCCD"
+                          : "+ Tra cứu tài khoản bằng SĐT + CCCD"}
                       </button>
                     </div>
-                  )}
-                  <div className="ct-tenant-list">
-                    {matchingTenants.length ? (
-                      matchingTenants.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          className={
-                            form.tenantId === item.id ? "is-selected" : ""
-                          }
-                          onClick={() => patchForm("tenantId", item.id)}
-                          disabled={!item.userId || form.additionalTenantIds.includes(item.id)}
-                        >
-                          <strong>{item.fullName}</strong>
-                          <span>
-                            {item.email || "Chưa có email"} ·{" "}
-                            {item.phoneNumber || "Chưa có SĐT"} · {item.userId ? "Có tài khoản" : "Chưa có tài khoản"}
-                          </span>
-                          <small>
-                            {form.tenantId === item.id ? "Đã chọn" : item.userId ? "Chọn" : "Cần liên kết tài khoản"}
-                          </small>
-                        </button>
-                      ))
-                    ) : (
-                      <p className="ct-empty-text">
-                        Không tìm thấy người thuê.{" "}
-                        <button
-                          type="button"
-                          onClick={() => navigate("landlord/tenants")}
-                        >
-                          Đến danh mục người thuê
-                        </button>
+
+                    {/* Collapsible Lookup Box */}
+                    {showLookupBox && (
+                      <div className="ct-lookup-box" style={{ marginTop: "4px" }}>
+                        <p className="ct-member-note" style={{ margin: "0 0 10px" }}>
+                          Nhập <strong>Số điện thoại</strong> và <strong>Số CCCD</strong> để tra cứu tài khoản người thuê trong hệ thống và đưa vào hợp đồng ngay.
+                        </p>
+                        <div className="ct-lookup-fields">
+                          <label>
+                            Số điện thoại
+                            <input
+                              type="tel"
+                              inputMode="tel"
+                              maxLength={10}
+                              placeholder="0912345678"
+                              value={lookupPhone}
+                              onChange={(e) => {
+                                setLookupPhone(e.target.value);
+                                setLookupError("");
+                              }}
+                            />
+                          </label>
+                          <label>
+                            Số CCCD (12 số)
+                            <input
+                              inputMode="numeric"
+                              maxLength={12}
+                              placeholder="12 chữ số"
+                              value={lookupCitizenId}
+                              onChange={(e) => {
+                                setLookupCitizenId(e.target.value);
+                                setLookupError("");
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="contract-button contract-button--secondary"
+                            disabled={
+                              lookupBusy ||
+                              !lookupPhone.trim() ||
+                              !lookupCitizenId.trim()
+                            }
+                            onClick={handleLookupAndAdd}
+                          >
+                            {lookupBusy ? "Đang tra cứu..." : "Thêm vào danh sách"}
+                          </button>
+                        </div>
+                        {lookupError && (
+                          <p className="form-error" role="alert" style={{ marginTop: "8px" }}>
+                            {lookupError}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Warning if members selected without representative */}
+                    {selectedMembers.length > 0 && !chosenTenant && (
+                      <p className="ct-member-warning" role="status">
+                        Vui lòng chỉ định một người làm <strong>Người đứng tên (đại diện)</strong> hợp đồng.
                       </p>
                     )}
-                  </div>
-                  </div>
-                  <div className="ct-member-section">
-                    <div className="ct-member-heading">
-                      <h3>{familyMode ? "Người thân cùng ở" : "Người đồng thuê khác"}</h3>
-                      <span>{chosenRoom ? `${Math.max(0, chosenRoom.maxOccupants - 1 - selectedAdditional.length)} chỗ còn lại` : "Chọn phòng để xem sức chứa"}</span>
-                    </div>
-                    <p className="ct-member-note">{familyMode
-                      ? "Người thân không phải bên ký và không bị ghi là đã tự chấp thuận; chủ trọ duyệt cư trú khi thêm."
-                      : "Mỗi người đồng thuê cần tài khoản liên kết và tự chấp thuận nội quy."}</p>
-                    {selectedAdditional.length > 0 && (
-                      <ul className="ct-member-list">{selectedAdditional.map((item) => (
-                        <li className="ct-member-chip" key={item.id}>{item.fullName}
-                          <button type="button" onClick={() => toggleAdditionalTenant(item.id)} aria-label={`Bỏ ${item.fullName}`}>Bỏ</button>
-                        </li>
-                      ))}</ul>
+
+                    {/* Unified Candidate List */}
+                    {tenantAvailabilityLoading ? (
+                      <p className="ct-empty-text">Đang kiểm tra hợp đồng hiện có…</p>
+                    ) : tenantAvailabilityError ? (
+                      <p className="ct-empty-text">
+                        Đang lấy danh sách người thuê khả dụng…
+                      </p>
+                    ) : sortedTenantCandidates.length ? (
+                      <ul className="ct-unified-tenant-list">
+                        {sortedTenantCandidates.map((item) => {
+                          const isRepresentative = form.tenantId === item.id;
+                          const isAdditional = form.additionalTenantIds.includes(item.id);
+                          const isSelected = isRepresentative || isAdditional;
+                          const isMaxOccupantsReached =
+                            Boolean(chosenRoom) &&
+                            selectedMembers.length >= chosenRoom.maxOccupants;
+
+                          return (
+                            <li
+                              key={item.id}
+                              className={`ct-tenant-item-row ${
+                                isSelected ? "is-selected" : ""
+                              } ${isRepresentative ? "is-representative" : ""}`}
+                            >
+                              {/* 1. Selection Checkbox */}
+                              <div className="ct-tenant-item__select-check">
+                                <input
+                                  type="checkbox"
+                                  id={`select-tenant-${item.id}`}
+                                  checked={isSelected}
+                                  disabled={!isSelected && isMaxOccupantsReached}
+                                  onChange={() => toggleTenant(item.id)}
+                                  title={
+                                    isSelected
+                                      ? "Bỏ chọn người này khỏi hợp đồng"
+                                      : isMaxOccupantsReached
+                                        ? "Phòng đã đủ số người"
+                                        : "Chọn người này vào hợp đồng"
+                                  }
+                                />
+                              </div>
+
+                              {/* 2. Avatar & Info */}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "12px",
+                                  minWidth: 0,
+                                }}
+                              >
+                                <span className="ct-tenant-item__avatar">
+                                  {initials(item.fullName)}
+                                </span>
+                                <div className="ct-tenant-item__info">
+                                  <div className="ct-tenant-item__name-line">
+                                    <label
+                                      htmlFor={`select-tenant-${item.id}`}
+                                      className="ct-tenant-item__name"
+                                      style={{ cursor: "pointer" }}
+                                    >
+                                      {item.fullName}
+                                    </label>
+                                    {isRepresentative && (
+                                      <span
+                                        className="ct-rep-badge"
+                                        title="Người chịu trách nhiệm đại diện ký kết và xác nhận nội quy"
+                                      >
+                                        <CheckCircle2 size={12} /> Người đứng tên đại diện
+                                      </span>
+                                    )}
+                                    {isSelected && !isRepresentative && (
+                                      <span className="ct-member-badge">
+                                        {familyMode ? "Người thân cùng ở" : "Người đồng thuê"}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="ct-tenant-item__meta">
+                                    <span>{item.phoneNumber || "Chưa có SĐT"}</span>
+                                    {item.citizenId && <span>· CCCD: {item.citizenId}</span>}
+                                    {item.email && <span>· {item.email}</span>}
+                                    <span>·</span>
+                                    <span
+                                      style={{
+                                        color: item.userId ? "#15803d" : "#80520b",
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      {item.userId ? "Có tài khoản" : "Chưa có tài khoản"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 3. Representative Checkbox */}
+                              {isSelected ? (
+                                <label
+                                  className={`ct-rep-control ${
+                                    isRepresentative ? "is-active" : ""
+                                  }`}
+                                  title="Tích chọn để chỉ định người này làm Người đứng tên đại diện"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isRepresentative}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        designateRepresentative(item.id);
+                                      }
+                                    }}
+                                  />
+                                  <span>Người đứng tên (đại diện)</span>
+                                </label>
+                              ) : (
+                                <div style={{ fontSize: "11.5px", color: "#94a3b8" }}>
+                                  {isMaxOccupantsReached ? (
+                                    <span>Đủ sức chứa</span>
+                                  ) : (
+                                    <span>Chưa chọn</span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* 4. Action button */}
+                              <div>
+                                {isSelected ? (
+                                  <button
+                                    type="button"
+                                    className="ct-selected-member__remove"
+                                    onClick={() => toggleTenant(item.id)}
+                                    aria-label={`Bỏ ${item.fullName} khỏi hợp đồng`}
+                                    title="Bỏ người này khỏi hợp đồng"
+                                  >
+                                    Bỏ
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="contract-button contract-button--secondary"
+                                    style={{
+                                      minHeight: "32px",
+                                      padding: "4px 10px",
+                                      fontSize: "12px",
+                                    }}
+                                    disabled={isMaxOccupantsReached}
+                                    onClick={() => toggleTenant(item.id)}
+                                  >
+                                    + Chọn
+                                  </button>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <div className="ct-card ct-member-empty">
+                        <p style={{ margin: 0, color: "#64748b" }}>
+                          {tenantSearch.trim()
+                            ? `Không tìm thấy người thuê nào khớp với từ khóa "${tenantSearch}".`
+                            : "Chưa có hồ sơ người thuê khả dụng."}
+                        </p>
+                        <div
+                          style={{
+                            marginTop: "10px",
+                            display: "flex",
+                            gap: "8px",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {tenantSearch.trim() && (
+                            <button
+                              type="button"
+                              className="contract-button contract-button--secondary"
+                              onClick={() => setTenantSearch("")}
+                            >
+                              Xóa bộ lọc tìm kiếm
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="contract-button contract-button--secondary"
+                            onClick={() => navigate("landlord/tenants")}
+                          >
+                            Đến danh mục người thuê
+                          </button>
+                        </div>
+                      </div>
                     )}
-                    <div className="ct-tenant-list">{matchingTenants.filter((item) => item.id !== form.tenantId).map((item) => (
-                      <button key={item.id} type="button"
-                        className={form.additionalTenantIds.includes(item.id) ? "is-selected" : ""}
-                        disabled={!familyMode && !item.userId ||
-                          !form.additionalTenantIds.includes(item.id) && chosenRoom && 1 + selectedAdditional.length >= chosenRoom.maxOccupants}
-                        onClick={() => toggleAdditionalTenant(item.id)}>
-                        <strong>{item.fullName}</strong>
-                        <span>{item.email || "Chưa có email"} · {item.userId ? "Có tài khoản" : "Chưa có tài khoản"}</span>
-                        <small>{form.additionalTenantIds.includes(item.id) ? "Bỏ chọn" : "Thêm"}</small>
-                      </button>
-                    ))}</div>
                   </div>
                 </section>
-                <section className="ct-card">
+                <section className="ct-card ct-service-section">
                   <h2>Dịch vụ áp dụng cho phòng</h2>
                   <p className="ct-member-note">Kiểm tra dịch vụ trước khi lưu hợp đồng. Nếu bắt đầu giữa tháng, phí dịch vụ tháng đầu được tính đủ tháng.</p>
                   {roomServiceLoading ? <p role="status">Đang tải dịch vụ của phòng…</p> : serviceCatalog.filter((item) => item.isActive || form.roomServices.some((entry) => entry.serviceId === item.id)).map((service) => {
                     const selected = form.roomServices.find((entry) => entry.serviceId === service.id);
                     return <div className="ct-service-row" key={service.id}>
-                      <label><input type="checkbox" checked={!!selected} onChange={(event) => setForm((current) => ({ ...current, servicesConfirmed: false, roomServices: event.target.checked ? [...current.roomServices, { serviceId: service.id, quantity: "1", customPrice: String(service.defaultPrice ?? 0) }] : current.roomServices.filter((entry) => entry.serviceId !== service.id) }))} /> {service.name} · {service.unit} · {money(service.defaultPrice)}</label>
+                      <label><input type="checkbox" checked={!!selected} onChange={(event) => setForm((current) => ({ ...current, servicesConfirmed: false, roomServices: event.target.checked ? [...current.roomServices, { serviceId: service.id, quantity: "1", customPrice: String(service.defaultPrice ?? 0) }] : current.roomServices.filter((entry) => entry.serviceId !== service.id) }))} /><span>{service.name} · {service.unit} · {money(service.defaultPrice)}</span></label>
                       {selected && <><label>Số lượng<input type="number" min="1" step="0.01" required value={selected.quantity} onChange={(event) => setForm((current) => ({ ...current, servicesConfirmed: false, roomServices: current.roomServices.map((entry) => entry.serviceId === service.id ? { ...entry, quantity: event.target.value } : entry) }))} /></label><label>Đơn giá riêng<input type="number" min="0" step="1" value={selected.customPrice} onChange={(event) => setForm((current) => ({ ...current, servicesConfirmed: false, roomServices: current.roomServices.map((entry) => entry.serviceId === service.id ? { ...entry, customPrice: event.target.value } : entry) }))} /></label></>}
                     </div>;
                   })}
                   {!serviceCatalog.length && !roomServiceLoading && <p>Phòng chưa có danh mục dịch vụ. Bạn có thể xác nhận không dùng dịch vụ.</p>}
                   {serviceLoadError && <p role="alert" className="contract-message contract-message--warning">Không tải được dịch vụ: {serviceLoadError}</p>}
-                  <label><input type="checkbox" checked={form.servicesConfirmed} disabled={roomServiceLoading || !!serviceLoadError || !form.roomId} onChange={(event) => patchForm("servicesConfirmed", event.target.checked)} /> Tôi đã kiểm tra cấu hình dịch vụ cho hợp đồng này.</label>
+                  <label className="ct-service-confirm"><input type="checkbox" checked={form.servicesConfirmed} disabled={roomServiceLoading || !!serviceLoadError || !form.roomId} onChange={(event) => patchForm("servicesConfirmed", event.target.checked)} /><span>Tôi đã kiểm tra cấu hình dịch vụ cho hợp đồng này.</span></label>
                 </section>
                 <section className="ct-card">
                   <label>
@@ -1302,8 +1750,24 @@ export default function LandlordContracts({
                     />
                   </label>
                 </section>
-                <div className="ct-form-footer">
-                  <span>Mã hợp đồng được hệ thống tạo khi lưu.</span>
+                <div className="ct-form-footer" ref={footerErrorRef}>
+                  {error && (
+                    <div
+                      className="contract-message contract-message--error"
+                      role="alert"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        width: "100%",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                      <span>{error}</span>
+                    </div>
+                  )}
+                  <span>Mã hợp đồng được hệ thống tạo tự động khi lưu.</span>
                   <div>
                     <button
                       type="button"
@@ -1315,7 +1779,7 @@ export default function LandlordContracts({
                     <button
                       type="submit"
                       className="contract-button contract-button--primary"
-                      disabled={busy || !form.endMonth}
+                      disabled={busy}
                     >
                       {busy ? "Đang lưu…" : "Lưu bản nháp"}
                     </button>
@@ -1342,6 +1806,11 @@ export default function LandlordContracts({
                     property={property}
                   />
                 </p>
+                {mode === "detail" && (
+                  <a className="contract-button contract-button--ghost" href="#contract-members">
+                    Xem {detail.tenants?.length || 0} người tham gia
+                  </a>
+                )}
               </div>
               <Status contract={detail} />
             </header>
@@ -1586,6 +2055,12 @@ export default function LandlordContracts({
                   <aside className="ct-card">
                     <h2>Trạng thái và thao tác</h2>
                     <Status contract={detail} />
+                    {detail.tenantConfirmedAt && (
+                      <p className="ct-member-note">
+                        Người thuê đại diện đã xác nhận hợp đồng &amp; nội quy lúc{" "}
+                        {new Date(detail.tenantConfirmedAt).toLocaleString("vi-VN")}.
+                      </p>
+                    )}
                     <div className="ct-actions">
                       {detail.status === "Draft" && (
                         <>
@@ -1596,12 +2071,12 @@ export default function LandlordContracts({
                             onClick={() =>
                               run(
                                 () =>
-                                  contractApi.activate(propertyId, contractId),
-                                "Đã kích hoạt hợp đồng.",
+                                  contractApi.sendOffer(propertyId, contractId),
+                                "Đã gửi đề nghị hợp đồng cho người thuê đại diện.",
                               )
                             }
                           >
-                            Kích hoạt hợp đồng
+                            Gửi đề nghị cho người thuê
                           </button>
                           <button
                             type="button"
@@ -1621,6 +2096,58 @@ export default function LandlordContracts({
                             }}
                           >
                             Hủy bản nháp
+                          </button>
+                        </>
+                      )}
+                      {detail.status === "PendingTenantConfirmation" && (
+                        <>
+                          <p className="ct-member-note">
+                            Đang chờ người thuê đại diện xem và xác nhận đồng ý nội dung hợp đồng cùng nội quy khu trọ.
+                          </p>
+                          <button
+                            type="button"
+                            className="contract-button contract-button--danger"
+                            disabled={busy}
+                            onClick={() => {
+                              if (window.confirm("Hủy đề nghị hợp đồng đang chờ xác nhận?"))
+                                run(
+                                  () => contractApi.cancel(propertyId, contractId),
+                                  "Đã hủy đề nghị hợp đồng.",
+                                );
+                            }}
+                          >
+                            Hủy đề nghị
+                          </button>
+                        </>
+                      )}
+                      {detail.status === "PendingOperatorConfirmation" && (
+                        <>
+                          <button
+                            type="button"
+                            className="contract-button contract-button--primary"
+                            disabled={busy}
+                            onClick={() =>
+                              run(
+                                () => contractApi.activate(propertyId, contractId),
+                                "Đã đối ký và kích hoạt hợp đồng.",
+                              )
+                            }
+                          >
+                            Đối ký &amp; Kích hoạt hợp đồng
+                          </button>
+                          <button
+                            type="button"
+                            className="contract-button contract-button--danger"
+                            disabled={busy}
+                            onClick={() => {
+                              if (window.confirm("Hủy hợp đồng trước khi kích hoạt?"))
+                                run(
+                                  () => contractApi.cancel(propertyId, contractId),
+                                  "Đã hủy hợp đồng.",
+                                );
+                            }}
+                          >
+                            Hủy hợp đồng
                           </button>
                         </>
                       )}
@@ -1690,8 +2217,8 @@ export default function LandlordContracts({
                     {!detail.hasSettlement ? " · Chưa có bản ghi tất toán" : ""}
                   </div>
                 )}
-                <section className="ct-card">
-                  <h2>Người tham gia hợp đồng</h2>
+                <section className="ct-card" id="contract-members">
+                  <h2>Người tham gia hợp đồng ({detail.tenants?.length || 0})</h2>
                   <p className="ct-member-note">{detailFamilyMode ? "Một người đứng tên; người thân chỉ được duyệt cư trú." : "Mỗi người đồng thuê đứng tên và tự chấp thuận nội quy."}</p>
                   <div className="ct-service-review" role="note">
                     <div className="ct-service-review__body">
@@ -1977,7 +2504,7 @@ export default function LandlordContracts({
                                       : ""
                                   }
                                   onClick={() => setExtraTenantId(item.id)}
-                                  disabled={(extraTenantRole === "ContractParty" && !item.userId) ||
+                                  disabled={
                                     detail.tenants?.some((tenant) => tenant.tenantId === item.id && !tenant.leaveDate)}
                                 >
                                   <strong>{item.fullName}</strong>

@@ -20,18 +20,24 @@ public sealed class ContractService
     _store = store;
   }
 
-  private async Task<string> OwnerAsync(CancellationToken ct)
+  private async Task<OperatorContext> OperatorAsync(CancellationToken ct) =>
+      await OperatorAccessGuard.RequireOperatorAsync(_current, _landlords, ct);
+
+  private async Task<OperatorContext> PropertyOperatorAsync(Guid propertyId, CancellationToken ct)
   {
-    var owner = _current.GetUserId();
-    if (string.IsNullOrWhiteSpace(owner) || !await _landlords.IsActiveLandlordAsync(owner, ct))
-      throw new BusinessException(BusinessErrorType.InvalidOperation,
-          "LANDLORD_UNAVAILABLE", "Chủ trọ không khả dụng.");
-    return owner;
+    var context = await OperatorAsync(ct);
+    await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlords, ct,
+        "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+    return context;
   }
 
   public async Task<CreateContractResult> CreateAsync(Guid propertyId, CreateContractInput input, CancellationToken ct)
   {
-    var owner = await OwnerAsync(ct);
+    var context = await OperatorAsync(ct);
+    await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlords, ct,
+        "ROOM_NOT_FOUND", "Không tìm thấy phòng trong khu trọ.");
+    var owner = context.OwnerLandlordUserId;
+    var actor = context.ActorUserId;
     if (!await _store.RoomOwnedAsync(propertyId, input.RoomId, owner, ct))
       throw new BusinessException(BusinessErrorType.NotFound,
           "ROOM_NOT_FOUND", "Không tìm thấy phòng trong khu trọ.");
@@ -103,7 +109,7 @@ public sealed class ContractService
           ClaimedAmount = contract.DepositAmount, VerifiedAmount = contract.DepositAmount,
           PaymentMethod = input.DepositPaymentMethod!.Value, Status = PaymentStatus.Success,
           PaidAt = input.DepositPaidAt?.UtcDateTime ?? now, VerifiedAt = now,
-          VerifiedByUserId = owner, SubmittedByUserId = owner,
+          VerifiedByUserId = actor, SubmittedByUserId = actor,
           IdempotencyKey = $"deposit-initial:{contract.Id:N}",
           Note = "Chủ trọ ghi nhận đã nhận đủ cọc khi tạo hợp đồng.", CreatedAt = now
         };
@@ -113,7 +119,7 @@ public sealed class ContractService
           PreviousStatus = PaymentStatus.Pending, NewStatus = PaymentStatus.Success,
           NewVerifiedAmount = contract.DepositAmount,
           Reason = "Chủ trọ xác nhận đã nhận đủ cọc khi tạo hợp đồng.",
-          ReviewedByUserId = owner, ReviewedAt = now
+          ReviewedByUserId = actor, ReviewedAt = now
         };
       }
     }
@@ -125,8 +131,8 @@ public sealed class ContractService
   public async Task<Contract> GetAsync(Guid propertyId, Guid contractId, CancellationToken ct)
   {
     await _store.ExpireDueAsync(VietnamDate.Today, ct);
-    var owner = await OwnerAsync(ct);
-    return await _store.GetOwnedAsync(propertyId, contractId, owner, ct)
+    var context = await PropertyOperatorAsync(propertyId, ct);
+    return await _store.GetOwnedAsync(propertyId, contractId, context.OwnerLandlordUserId, ct)
         ?? throw new BusinessException(BusinessErrorType.NotFound,
             "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
   }
@@ -134,8 +140,8 @@ public sealed class ContractService
   public async Task<ContractDetail> GetDetailAsync(Guid propertyId, Guid contractId, CancellationToken ct)
   {
     await _store.ExpireDueAsync(VietnamDate.Today, ct);
-    var owner = await OwnerAsync(ct);
-    return await _store.GetDetailOwnedAsync(propertyId, contractId, owner, ct)
+    var context = await PropertyOperatorAsync(propertyId, ct);
+    return await _store.GetDetailOwnedAsync(propertyId, contractId, context.OwnerLandlordUserId, ct)
         ?? throw new BusinessException(BusinessErrorType.NotFound, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
   }
 
@@ -166,31 +172,53 @@ public sealed class ContractService
 
   public async Task<Contract> CancelAsync(Guid propertyId, Guid contractId, CancellationToken ct)
   {
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
-    if (contract.Status != ContractStatus.Draft)
-      throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_CANNOT_CANCEL", "Chỉ có thể hủy hợp đồng nháp.");
-    await _store.CloseSafelyAsync(contract, ContractStatus.Draft, ContractStatus.Cancelled,
+    if (contract.Status is not (ContractStatus.Draft or ContractStatus.PendingTenantConfirmation or ContractStatus.PendingOperatorConfirmation))
+      throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_CANNOT_CANCEL", "Chỉ có thể hủy hợp đồng trước khi kích hoạt.");
+    var expectedStatus = contract.Status;
+    await _store.CloseSafelyAsync(contract, expectedStatus, ContractStatus.Cancelled,
         VietnamDate.Today, null, ct);
+    await _store.RecordClosedActorAsync(contractId, context.ActorUserId, ct);
+    if (expectedStatus != ContractStatus.Draft)
+    {
+      await _store.NotifyContractTenantsAsync(contractId, "ContractCancelled",
+          "Đề nghị hợp đồng đã bị hủy",
+          $"Đề nghị hợp đồng {contract.ContractCode} đã bị phía chủ trọ hủy.",
+          context.ActorUserId, ct);
+    }
     return contract;
   }
 
   public async Task<Contract> TerminateAsync(Guid propertyId, Guid contractId, string reason, CancellationToken ct)
   {
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
     if (contract.Status != ContractStatus.Active || contract.StartDate > VietnamDate.Today ||
         string.IsNullOrWhiteSpace(reason) || reason.Length > 1000)
       throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_CANNOT_TERMINATE", "Không thể kết thúc hợp đồng tại thời điểm này.");
     await _store.StartEarlyExitAsync(contract, reason.Trim(), ct);
+    await _store.RecordClosedActorAsync(contractId, context.ActorUserId, ct);
+    await _store.NotifyContractTenantsAsync(contractId, "ContractTerminated",
+        "Thông báo kết thúc hợp đồng",
+        $"Hợp đồng {contract.ContractCode} đã được ghi nhận kết thúc/trả phòng. Lý do: {reason.Trim()}.",
+        context.ActorUserId, ct);
     return contract;
   }
 
   public async Task<Contract> HandoverAsync(Guid propertyId, Guid contractId, DateOnly handoverOn, CancellationToken ct)
   {
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
     if (contract.Status != ContractStatus.PendingMoveOut || handoverOn < contract.StartDate ||
         handoverOn > VietnamDate.Today || contract.EndDate is { } end && handoverOn > end)
       throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_HANDOVER_INVALID", "Ngày bàn giao không hợp lệ.");
     await _store.HandoverAsync(contract, handoverOn, ct);
+    await _store.RecordClosedActorAsync(contractId, context.ActorUserId, ct);
+    await _store.NotifyContractTenantsAsync(contractId, "ContractMoveOut",
+        "Xác nhận bàn giao trả phòng",
+        $"Hợp đồng {contract.ContractCode} đã hoàn tất bàn giao phòng ngày {handoverOn:yyyy-MM-dd}.",
+        context.ActorUserId, ct);
     return contract;
   }
 
@@ -217,25 +245,31 @@ public sealed class ContractService
   public async Task<Contract> CompleteSettlementAsync(Guid propertyId, Guid contractId,
       string disposition, decimal refundAmount, string? note, CancellationToken ct)
   {
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
     if (contract.Status != ContractStatus.PendingSettlement ||
         disposition is not ("Refunded" or "Offset" or "NoDeposit") || refundAmount < 0 ||
         note is { Length: > 1000 })
       throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_SETTLEMENT_INVALID", "Thông tin tất toán không hợp lệ.");
     await _store.CompleteSettlementAsync(contract, disposition, refundAmount, note, ct);
+    await _store.RecordClosedActorAsync(contractId, context.ActorUserId, ct);
+    await _store.NotifyContractTenantsAsync(contractId, "ContractSettled",
+        "Hoàn tất tất toán hợp đồng",
+        $"Hợp đồng {contract.ContractCode} đã hoàn tất tất toán tiền cọc ({disposition}).",
+        context.ActorUserId, ct);
     return contract;
   }
 
   public async Task<DepositApplication> ApplyDepositAsync(Guid propertyId, Guid contractId, Guid invoiceId,
       decimal amount, string reason, string idempotencyKey, CancellationToken ct)
   {
-    var owner = await OwnerAsync(ct);
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
     if (contract.Status != ContractStatus.PendingSettlement || invoiceId == Guid.Empty || amount <= 0 ||
         amount != decimal.Round(amount, 2) || string.IsNullOrWhiteSpace(reason) || reason.Length > 500 ||
         string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 100)
       throw new BusinessException(BusinessErrorType.Validation, "DEPOSIT_APPLICATION_INVALID", "Thông tin cấn trừ cọc không hợp lệ.");
-    return await _store.ApplyDepositAsync(contract, invoiceId, amount, reason.Trim(), idempotencyKey.Trim(), owner, ct);
+    return await _store.ApplyDepositAsync(contract, invoiceId, amount, reason.Trim(), idempotencyKey.Trim(), context.ActorUserId, ct);
   }
 
   public async Task<Contract> SetLegacyEndDateAsync(Guid propertyId, Guid contractId,
@@ -262,11 +296,11 @@ public sealed class ContractService
   public async Task<PageResult<Contract>> ListAsync(Guid propertyId, ContractFilter filter, CancellationToken ct)
   {
     await _store.ExpireDueAsync(VietnamDate.Today, ct);
-    var owner = await OwnerAsync(ct);
+    var context = await PropertyOperatorAsync(propertyId, ct);
     if (filter.Page < 1 || filter.PageSize is < 1 or > 100)
       throw new BusinessException(BusinessErrorType.Validation,
           "PAGE_INVALID", "Trang hoặc số bản ghi không hợp lệ.");
-    var (items, total) = await _store.ListOwnedAsync(propertyId, owner,
+    var (items, total) = await _store.ListOwnedAsync(propertyId, context.OwnerLandlordUserId,
         filter.RoomId, filter.Status, (filter.Page - 1) * filter.PageSize, filter.PageSize, ct);
     return new PageResult<Contract>(items, total, filter.Page, filter.PageSize);
   }
@@ -274,11 +308,11 @@ public sealed class ContractService
   public async Task<PageResult<ContractDetail>> ListDetailsAsync(Guid propertyId, ContractFilter filter, CancellationToken ct)
   {
     var page = await ListAsync(propertyId, filter, ct);
-    var owner = await OwnerAsync(ct);
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var details = new List<ContractDetail>();
     foreach (var contract in page.Items)
     {
-      var detail = await _store.GetDetailOwnedAsync(propertyId, contract.Id, owner, ct);
+      var detail = await _store.GetDetailOwnedAsync(propertyId, contract.Id, context.OwnerLandlordUserId, ct);
       if (detail is not null) details.Add(detail);
     }
     return new PageResult<ContractDetail>(details, page.TotalItems, page.Page, page.PageSize);
@@ -287,7 +321,7 @@ public sealed class ContractService
   public async Task<ContractTenant> AddTenantAsync(
       Guid propertyId, Guid contractId, AddContractTenantInput input, CancellationToken ct)
   {
-    var owner = await OwnerAsync(ct);
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
     if (contract.Status is not (ContractStatus.Draft or ContractStatus.Active) ||
         input.JoinDate < contract.StartDate ||
@@ -296,7 +330,7 @@ public sealed class ContractService
         (contract.TenancyMode == ContractTenancyMode.CoTenancy && input.Role != ContractTenantRole.ContractParty))
       throw new BusinessException(BusinessErrorType.Validation,
           "CONTRACT_TENANT_INVALID", "Người thuê hoặc ngày tham gia không hợp lệ.");
-    return await _store.AddProfileAsync(contract, input.TenantId, owner,
+    return await _store.AddProfileAsync(contract, input.TenantId, context.OwnerLandlordUserId,
         input.JoinDate, input.IsContactPerson, input.Role, ct);
   }
 
@@ -310,26 +344,81 @@ public sealed class ContractService
     return await _store.SetContactAsync(contract, linkId, ct);
   }
 
+  public async Task<ContractTenant> AddTenantByUserAsync(
+      Guid propertyId, Guid contractId, AddContractTenantByUserInput input, CancellationToken ct)
+  {
+    await PropertyOperatorAsync(propertyId, ct);
+    var contract = await GetAsync(propertyId, contractId, ct);
+    if (contract.Status is not (ContractStatus.Draft or ContractStatus.Active) ||
+        string.IsNullOrWhiteSpace(input.UserId) ||
+        input.JoinDate < contract.StartDate ||
+        (contract.EndDate is { } end && input.JoinDate > end) ||
+        !Enum.IsDefined(input.Role) ||
+        (contract.TenancyMode == ContractTenancyMode.CoTenancy && input.Role != ContractTenantRole.ContractParty))
+      throw new BusinessException(BusinessErrorType.Validation,
+          "CONTRACT_TENANT_INVALID", "Người thuê hoặc ngày tham gia không hợp lệ.");
+    return await _store.AddTenantByUserAsync(contract, input.UserId.Trim(), input.JoinDate,
+        input.IsContactPerson, input.Role, ct);
+  }
+
+  public async Task<Contract> SendOfferAsync(Guid propertyId, Guid contractId, CancellationToken ct)
+  {
+    var context = await PropertyOperatorAsync(propertyId, ct);
+    var contract = await GetAsync(propertyId, contractId, ct);
+    return await _store.SendOfferSafelyAsync(contract, context.ActorUserId, ct);
+  }
+
+  public async Task<Contract> UpdateOfferTermsAsync(Guid propertyId, Guid contractId,
+      UpdateContractOfferInput input, CancellationToken ct)
+  {
+    var context = await PropertyOperatorAsync(propertyId, ct);
+    var contract = await GetAsync(propertyId, contractId, ct);
+    if (input.EndDate is { } end && end < input.StartDate ||
+        input.MonthlyRent < 0 || input.DepositAmount < 0 ||
+        input.PaymentDueDay is < 1 or > 31 ||
+        !Enum.IsDefined(input.TenancyMode))
+      throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_INVALID", "Thông tin hợp đồng không hợp lệ.");
+    return await _store.UpdateOfferTermsSafelyAsync(contract, input, context.ActorUserId, ct);
+  }
+
+  public Task<Contract> ConfirmOfferByTenantAsync(Guid contractId, string tenantUserId,
+      ConfirmContractOfferInput input, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(tenantUserId) || input.OfferVersion < 1 ||
+        string.IsNullOrWhiteSpace(input.TermsHash) || input.RulesVersionId == Guid.Empty)
+      throw new BusinessException(BusinessErrorType.Validation, "CONFIRMATION_INVALID", "Thông tin xác nhận đề nghị không hợp lệ.");
+    return _store.ConfirmOfferByTenantAsync(contractId, tenantUserId, input, ct);
+  }
+
+  public Task<Contract> RejectOfferByTenantAsync(Guid contractId, string tenantUserId,
+      string reason, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(tenantUserId) || reason is { Length: > 1000 })
+      throw new BusinessException(BusinessErrorType.Validation, "REJECTION_INVALID", "Lý do từ chối không hợp lệ.");
+    return _store.RejectOfferByTenantAsync(contractId, tenantUserId, reason, ct);
+  }
+
   public async Task<Contract> ActivateAsync(Guid propertyId, Guid contractId, CancellationToken ct)
   {
     await _store.ExpireDueAsync(VietnamDate.Today, ct);
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
     var room = await _store.GetRoomAsync(contract.RoomId, ct);
-    if (contract.Status != ContractStatus.Draft ||
+    if (contract.Status != ContractStatus.PendingOperatorConfirmation ||
         contract.EndDate is { } end && end < VietnamDate.Today ||
         !await _store.HasCurrentTenantAsync(contractId, ct) ||
         room is null || room.Status != RoomStatus.Available ||
         await _store.HasOverlappingContractAsync(contract, ct))
       throw new BusinessException(BusinessErrorType.InvalidOperation,
-          "CONTRACT_CANNOT_ACTIVATE", "Hợp đồng chưa sẵn sàng kích hoạt.");
-    await _store.ActivateSafelyAsync(contract, ct);
+          "CONTRACT_CANNOT_ACTIVATE", "Hợp đồng chưa được người thuê đại diện xác nhận hoặc phòng không khả dụng.");
+    await _store.ActivateSafelyAsync(contract, context.ActorUserId, ct);
     return contract;
   }
 
   public async Task<MemberCommitment> ConfirmCommitmentAsync(Guid propertyId, Guid contractId,
       Guid linkId, ConfirmMemberCommitmentInput input, CancellationToken ct)
   {
-    var owner = await OwnerAsync(ct);
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
     if (input.CommitmentType != CommitmentType.RoomRulesAgreement ||
         input.SignedOn > VietnamDate.Today ||
@@ -338,7 +427,7 @@ public sealed class ContractService
         input.SignerRelation is { Length: > 100 } ||
         (input.SignerTenantProfileId.HasValue && string.IsNullOrWhiteSpace(input.SignerRelation)))
       throw new BusinessException(BusinessErrorType.Validation, "COMMITMENT_INVALID", "Thông tin cam kết không hợp lệ.");
-    return await _store.ConfirmCommitmentAsync(contract, linkId, input, owner, ct);
+    return await _store.ConfirmCommitmentAsync(contract, linkId, input, context.ActorUserId, ct);
   }
 
   public async Task<IReadOnlyList<MemberCommitment>> ListCommitmentsAsync(Guid propertyId,
@@ -353,12 +442,12 @@ public sealed class ContractService
   public async Task<TenantRequest> CreateMoveOutNoticeAsync(Guid propertyId, Guid contractId,
       CreateMoveOutNoticeInput input, CancellationToken ct)
   {
-    var owner = await OwnerAsync(ct);
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
     if (string.IsNullOrWhiteSpace(input.Title) || input.Title.Length > 200 ||
         string.IsNullOrWhiteSpace(input.Description) || input.Description.Length > 2000)
       throw new BusinessException(BusinessErrorType.Validation, "MOVE_OUT_NOTICE_INVALID", "Nội dung thông báo không hợp lệ.");
-    return await _store.CreateMoveOutNoticeAsync(contract, input, owner, ct);
+    return await _store.CreateMoveOutNoticeAsync(contract, input, context.OwnerLandlordUserId, ct);
   }
 
   public async Task<IReadOnlyList<TenantRequest>> ListMoveOutNoticesAsync(Guid propertyId,
@@ -371,11 +460,11 @@ public sealed class ContractService
   public async Task<TenantRequest> ResolveMoveOutNoticeAsync(Guid propertyId, Guid contractId,
       Guid requestId, string resolutionNote, CancellationToken ct)
   {
-    var owner = await OwnerAsync(ct);
+    var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
     if (string.IsNullOrWhiteSpace(resolutionNote) || resolutionNote.Length > 1000)
       throw new BusinessException(BusinessErrorType.Validation, "RESOLUTION_NOTE_INVALID", "Ghi chú xử lý không hợp lệ.");
-    return await _store.ResolveMoveOutNoticeAsync(contract, requestId, resolutionNote, owner, ct);
+    return await _store.ResolveMoveOutNoticeAsync(contract, requestId, resolutionNote, context.ActorUserId, ct);
   }
 
   public async Task<IReadOnlyList<ContractTenureSpan>> GetTenureAsync(Guid propertyId,

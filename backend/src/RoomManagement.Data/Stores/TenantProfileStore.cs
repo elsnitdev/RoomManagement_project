@@ -1,7 +1,11 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using RoomManagement.Business.DTOs;
+using RoomManagement.Business.DTOs.Tenants;
 using RoomManagement.Business.Exceptions;
 using RoomManagement.Business.Interfaces;
+using RoomManagement.Domain;
+using RoomManagement.Domain.Constants;
 using RoomManagement.Domain.Entities;
 using RoomManagement.Domain.Enums;
 
@@ -52,18 +56,16 @@ public sealed class TenantProfileStore : ITenantProfileStore
         // AnyAsync: tương đương câu lệnh IF EXISTS trong SQL, trả về true nếu có ít nhất 1 bản ghi thỏa mãn
         // (excludeId == null || p.Id != excludeId.Value): nếu đang sửa hồ sơ thì bỏ qua chính hồ sơ đang sửa đó
         return await _dbContext.TenantProfiles
-            .AnyAsync(p => p.CreatedByUserId == landlordId && p.CitizenId == citizenId && (excludeId == null || p.Id != excludeId.Value), ct);
+            .AnyAsync(p => p.OwnerLandlordUserId == landlordId && p.CitizenId == citizenId && (excludeId == null || p.Id != excludeId.Value), ct);
     }
 
     /// <summary>
-    /// Kiểm tra quyền truy cập của chủ trọ đối với hồ sơ người thuê:
-    /// 1. Do chính chủ trọ tạo (CreatedByUserId == landlordId), HOẶC
-    /// 2. Đã có hợp đồng thuê tại phòng thuộc khu trọ do chủ trọ sở hữu.
+    /// Kiểm tra quyền truy cập của chủ trọ/quản lý đối với hồ sơ người thuê trong phạm vi Landlord sở hữu.
     /// </summary>
     public async Task<bool> HasAccessPermissionAsync(string landlordId, Guid tenantProfileId, CancellationToken ct = default)
     {
         return await _dbContext.TenantProfiles.AsNoTracking()
-            .AnyAsync(p => p.Id == tenantProfileId && p.CreatedByUserId == landlordId, ct);
+            .AnyAsync(p => p.Id == tenantProfileId && p.OwnerLandlordUserId == landlordId, ct);
     }
 
     public Task<bool> IsContractContactAsync(Guid tenantProfileId, CancellationToken ct = default) =>
@@ -78,10 +80,10 @@ public sealed class TenantProfileStore : ITenantProfileStore
     public async Task<(IReadOnlyList<TenantProfile> Items, int TotalCount)> GetByLandlordAsync(
         string landlordId, string? keyword, int pageIndex, int pageSize, CancellationToken ct = default)
     {
-        // Mỗi chủ trọ chỉ nhìn thấy hồ sơ do mình tạo.
+        // Lọc theo Landlord sở hữu hồ sơ (dùng chung cho Landlord và các Manager thuộc Landlord đó).
         var query = _dbContext.TenantProfiles
             .AsNoTracking()
-            .Where(p => p.CreatedByUserId == landlordId);
+            .Where(p => p.OwnerLandlordUserId == landlordId);
 
         // Nếu người dùng có nhập từ khóa tìm kiếm (khác null và không phải toàn khoảng trắng)
         if (!string.IsNullOrWhiteSpace(keyword))
@@ -142,5 +144,136 @@ public sealed class TenantProfileStore : ITenantProfileStore
             // Chuyển đổi lỗi kỹ thuật của SQL thành lỗi nghiệp vụ AppConflictException (tương ứng HTTP 409 Conflict)
             throw new AppConflictException("Số CCCD/CMND đã được sử dụng bởi hồ sơ người thuê khác.", "CITIZEN_ID_CONFLICT");
         }
+    }
+
+    public Task<bool> HasContractAccessPermissionAsync(OperatorContext context, Guid tenantProfileId, CancellationToken ct = default)
+    {
+        var accessibleByContract =
+            from link in _dbContext.ContractTenants.AsNoTracking()
+            join contract in _dbContext.Contracts.AsNoTracking() on link.ContractId equals contract.Id
+            join room in _dbContext.Rooms.AsNoTracking() on contract.RoomId equals room.Id
+            join prop in _dbContext.Properties.AsNoTracking() on room.PropertyId equals prop.Id
+            where link.TenantId == tenantProfileId &&
+                  prop.OwnerUserId == context.OwnerLandlordUserId &&
+                  (!context.IsManager || _dbContext.PropertyManagerAssignments.Any(a =>
+                      a.ManagerUserId == context.ActorUserId && a.PropertyId == prop.Id && a.RevokedAt == null))
+            select link.Id;
+
+        if (context.IsManager)
+            return accessibleByContract.AnyAsync(ct);
+
+        return _dbContext.TenantProfiles.AsNoTracking()
+            .AnyAsync(p => p.Id == tenantProfileId &&
+                           (accessibleByContract.Any() ||
+                            (p.UserId == null && p.OwnerLandlordUserId == context.OwnerLandlordUserId)), ct);
+    }
+
+    public async Task<(IReadOnlyList<TenantProfile> Items, int TotalCount)> GetByContractAccessAsync(
+        OperatorContext context, string? keyword, int pageIndex, int pageSize, CancellationToken ct = default)
+    {
+        var contractLinkedTenantIds =
+            from link in _dbContext.ContractTenants.AsNoTracking()
+            join contract in _dbContext.Contracts.AsNoTracking() on link.ContractId equals contract.Id
+            join room in _dbContext.Rooms.AsNoTracking() on contract.RoomId equals room.Id
+            join prop in _dbContext.Properties.AsNoTracking() on room.PropertyId equals prop.Id
+            where prop.OwnerUserId == context.OwnerLandlordUserId &&
+                  (!context.IsManager || _dbContext.PropertyManagerAssignments.Any(a =>
+                      a.ManagerUserId == context.ActorUserId && a.PropertyId == prop.Id && a.RevokedAt == null))
+            select link.TenantId;
+
+        var query = _dbContext.TenantProfiles
+            .AsNoTracking()
+            .Where(p => contractLinkedTenantIds.Contains(p.Id) ||
+                        (!context.IsManager && p.UserId == null && p.OwnerLandlordUserId == context.OwnerLandlordUserId));
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var trimmed = keyword.Trim();
+            query = query.Where(p =>
+                p.FullName.Contains(trimmed) ||
+                (p.PhoneNumber != null && p.PhoneNumber.Contains(trimmed)));
+        }
+
+        var totalCount = await query.CountAsync(ct);
+        var validPageIndex = pageIndex > 0 ? pageIndex : 1;
+        var validPageSize = pageSize > 0 ? pageSize : 10;
+
+        var items = await query
+            .OrderByDescending(p => p.CreatedAt)
+            .Skip((validPageIndex - 1) * validPageSize)
+            .Take(validPageSize)
+            .ToListAsync(ct);
+
+        return (items, totalCount);
+    }
+
+    public async Task<TenantLookupResultDto?> LookupExactTenantAsync(
+        OperatorContext context, Guid? propertyId, string normalizedPhone, string normalizedCitizenId,
+        string maskedPhone, string maskedCitizenId, CancellationToken ct = default)
+    {
+        var matches = await _dbContext.Users.AsNoTracking()
+            .Where(u => u.Role == UserRoles.Tenant &&
+                        u.IsActive &&
+                        u.DeletedAt == null &&
+                        u.ApprovalStatus == ApprovalStatuses.Approved &&
+                        u.PhoneNumber == normalizedPhone &&
+                        u.CitizenId == normalizedCitizenId)
+            .Take(2)
+            .ToListAsync(ct);
+
+        var matchedUser = matches.Count == 1 ? matches[0] : null;
+        TenantProfile? profile = null;
+
+        if (matchedUser is not null)
+        {
+            profile = await _dbContext.TenantProfiles
+                .OrderBy(p => p.OwnerLandlordUserId == null ? 0 : 1)
+                .FirstOrDefaultAsync(p => p.UserId == matchedUser.Id, ct);
+
+            if (profile is null)
+            {
+                profile = new TenantProfile
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = matchedUser.Id,
+                    OwnerLandlordUserId = null,
+                    CreatedByUserId = matchedUser.Id,
+                    FullName = matchedUser.FullName ?? matchedUser.UserName,
+                    PhoneNumber = matchedUser.PhoneNumber,
+                    Email = matchedUser.Email,
+                    CitizenId = matchedUser.CitizenId,
+                    DateOfBirth = matchedUser.DateOfBirth,
+                    PermanentAddress = matchedUser.Address,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _dbContext.TenantProfiles.Add(profile);
+            }
+        }
+
+        _dbContext.TenantLookupAudits.Add(new TenantLookupAudit
+        {
+            Id = Guid.NewGuid(),
+            ActorUserId = context.ActorUserId,
+            OwnerLandlordUserId = context.OwnerLandlordUserId,
+            PropertyId = propertyId,
+            MatchedUserId = matchedUser?.Id,
+            IsMatched = matchedUser is not null,
+            MaskedPhone = maskedPhone,
+            MaskedCitizenId = maskedCitizenId,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        if (matchedUser is null || profile is null)
+            return null;
+
+        return new TenantLookupResultDto(
+            matchedUser.Id,
+            profile.Id,
+            matchedUser.FullName ?? profile.FullName,
+            maskedPhone,
+            maskedCitizenId,
+            matchedUser.IdentityVerificationStatus);
     }
 }

@@ -8,7 +8,7 @@ using RoomManagement.Domain.Entities;
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRoles.Landlord)]
+[Authorize(Roles = UserRoles.LandlordOrManager)]
 [Route("api/properties/{propertyId:guid}/contracts/{contractId:guid}/settlement/refund-evidence")]
 public sealed class SettlementRefundEvidenceController(SettlementRefundEvidenceService service) : ControllerBase
 {

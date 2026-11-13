@@ -56,6 +56,20 @@ export async function updateLandlordTenant(id, payload) {
 }
 
 /**
+ * Tra cứu chính xác 1 tài khoản người thuê bằng cả SĐT và CCCD để lập hợp đồng.
+ */
+export function lookupTenantExact({ propertyId = null, phoneNumber, citizenId }) {
+  return apiRequest(`${BASE_PATH}/lookup`, {
+    method: 'POST',
+    body: {
+      propertyId: propertyId || null,
+      phoneNumber,
+      citizenId,
+    },
+  })
+}
+
+/**
  * Chuyển đổi lỗi API (ApiError / ProblemDetails) thành { generalError, fieldErrors }
  * tương thích với biểu mẫu quản lý hồ sơ người thuê.
  */

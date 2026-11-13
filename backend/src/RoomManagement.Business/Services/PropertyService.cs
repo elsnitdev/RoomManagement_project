@@ -18,17 +18,10 @@ public sealed class PropertyService
         _propertyStore = propertyStore;
     }
 
-    private async Task<string> OwnerAsync(CancellationToken ct)
-    {
-        var ownerId = _currentLandlord.GetUserId();
-        if (string.IsNullOrWhiteSpace(ownerId) || !await _landlordStore.IsActiveLandlordAsync(ownerId, ct))
-            throw new BusinessException(BusinessErrorType.InvalidOperation, "LANDLORD_UNAVAILABLE", "Chủ trọ hiện tại không tồn tại hoặc đã ngừng hoạt động.");
-        return ownerId;
-    }
-
     public async Task<Property> CreateAsync(CreatePropertyInput input, CancellationToken ct)
     {
-        var ownerId = await OwnerAsync(ct);
+        var context = await OperatorAccessGuard.RequireLandlordAsync(_currentLandlord, _landlordStore, ct);
+        var ownerId = context.OwnerLandlordUserId;
         PropertyRoomValidation.Required(input.Name, 150, "Tên khu trọ");
         PropertyRoomValidation.Required(input.Address, 300, "Địa chỉ");
         PropertyRoomValidation.Optional(input.Description, 1000, "Mô tả");
@@ -48,17 +41,20 @@ public sealed class PropertyService
 
     public async Task<PageResult<Property>> ListAsync(PropertyFilter filter, CancellationToken ct)
     {
-        var ownerId = await OwnerAsync(ct);
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_currentLandlord, _landlordStore, ct);
         PropertyRoomValidation.Page(filter.Page, filter.PageSize);
         PropertyRoomValidation.Search(filter.Search);
-        var (items, total) = await _propertyStore.ListAsync(ownerId, filter.Search?.Trim(), filter.IsActive, (filter.Page - 1) * filter.PageSize, filter.PageSize, ct);
+        var (items, total) = await _propertyStore.ListForOperatorAsync(
+            context.ActorUserId, context.OwnerLandlordUserId, context.IsManager,
+            filter.Search?.Trim(), filter.IsActive, (filter.Page - 1) * filter.PageSize, filter.PageSize, ct);
         return new PageResult<Property>(items, total, filter.Page, filter.PageSize);
     }
 
     public async Task<Property> GetAsync(Guid propertyId, CancellationToken ct)
     {
-        var ownerId = await OwnerAsync(ct);
-        return await _propertyStore.GetAsync(propertyId, ownerId, ct)
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_currentLandlord, _landlordStore, ct);
+        await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlordStore, ct);
+        return await _propertyStore.GetAsync(propertyId, context.OwnerLandlordUserId, ct)
             ?? throw new BusinessException(BusinessErrorType.NotFound, "PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
     }
 
@@ -81,7 +77,9 @@ public sealed class PropertyService
     public async Task<Property> UpdatePaymentAccountAsync(Guid propertyId, string? bankName,
         string? accountNumber, string? accountHolder, string rowVersion, CancellationToken ct)
     {
-        var property = await GetAsync(propertyId, ct);
+        var context = await OperatorAccessGuard.RequireLandlordAsync(_currentLandlord, _landlordStore, ct);
+        var property = await _propertyStore.GetAsync(propertyId, context.OwnerLandlordUserId, ct)
+            ?? throw new BusinessException(BusinessErrorType.NotFound, "PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
         RowVersionGuard.Verify(rowVersion, property.RowVersion);
         var fields = new[] { bankName, accountNumber, accountHolder };
         if (fields.Any(value => !string.IsNullOrWhiteSpace(value)))
@@ -100,7 +98,9 @@ public sealed class PropertyService
 
     public async Task DeleteAsync(Guid propertyId, CancellationToken ct)
     {
-        var property = await GetAsync(propertyId, ct);
+        var context = await OperatorAccessGuard.RequireLandlordAsync(_currentLandlord, _landlordStore, ct);
+        var property = await _propertyStore.GetAsync(propertyId, context.OwnerLandlordUserId, ct)
+            ?? throw new BusinessException(BusinessErrorType.NotFound, "PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
         var blocker = await _propertyStore.GetDeleteBlockerAsync(propertyId, ct);
         if (blocker is not null)
         {

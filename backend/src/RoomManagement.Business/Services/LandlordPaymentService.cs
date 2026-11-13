@@ -19,19 +19,15 @@ public sealed class LandlordPaymentService
         _payments = payments;
     }
 
-    private async Task<string> OwnerAsync(CancellationToken ct)
-    {
-        var owner = _current.GetUserId();
-        if (string.IsNullOrWhiteSpace(owner) || !await _landlords.IsActiveLandlordAsync(owner, ct))
-            throw new BusinessException(BusinessErrorType.InvalidOperation,
-                "LANDLORD_UNAVAILABLE", "Chủ trọ không khả dụng.");
-        return owner;
-    }
+    private async Task<OperatorContext> OperatorAsync(CancellationToken ct) =>
+        await OperatorAccessGuard.RequireOperatorAsync(_current, _landlords, ct);
 
     public async Task<IReadOnlyList<OwnerPaymentResult>> ListAsync(Guid invoiceId, CancellationToken ct)
     {
         if (invoiceId == Guid.Empty) throw NotFound();
-        return await _payments.ListOwnedAsync(invoiceId, await OwnerAsync(ct), ct);
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct, "PAYMENT_NOT_FOUND", "Không tìm thấy khoản thanh toán.");
+        return await _payments.ListOwnedAsync(invoiceId, context.OwnerLandlordUserId, ct);
     }
 
     public async Task<OwnerPaymentResult> ReviewAsync(Guid paymentId,
@@ -47,8 +43,10 @@ public sealed class LandlordPaymentService
             input.Status == PaymentStatus.Failed && input.VerifiedAmount is not null)
             throw new BusinessException(BusinessErrorType.Validation,
                 "PAYMENT_REVIEW_INVALID", "Thông tin xác nhận thanh toán không hợp lệ.");
-        return await _payments.ReviewAsync(paymentId, await OwnerAsync(ct),
-            input with { Reason = reason }, ct);
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsurePaymentAccessAsync(context, paymentId, _landlords, ct);
+        return await _payments.ReviewAsync(paymentId, context.OwnerLandlordUserId,
+            input with { Reason = reason }, ct, context.ActorUserId);
     }
 
     public async Task<OwnerPaymentResult> RecordReceivedAsync(Guid invoiceId,
@@ -68,12 +66,14 @@ public sealed class LandlordPaymentService
         var paidAt = input.PaidAt?.UtcDateTime;
         if (paidAt is { } value)
             paidAt = new DateTime(value.Ticks - value.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
-        return await _payments.RecordReceivedAsync(invoiceId, await OwnerAsync(ct), input with
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct, "PAYMENT_NOT_FOUND", "Không tìm thấy khoản thanh toán.");
+        return await _payments.RecordReceivedAsync(invoiceId, context.OwnerLandlordUserId, input with
         {
             PaidAt = paidAt is { } timestamp ? new DateTimeOffset(timestamp) : null,
             TransactionCode = string.IsNullOrEmpty(transactionCode) ? null : transactionCode,
             Note = string.IsNullOrEmpty(note) ? null : note
-        }, ct);
+        }, ct, context.ActorUserId);
     }
 
     public async Task<RoomManagement.Domain.Entities.Refund> RecordOverpaymentRefundAsync(Guid invoiceId,
@@ -83,12 +83,18 @@ public sealed class LandlordPaymentService
         if (invoiceId == Guid.Empty || amount <= 0 || amount > 9_999_999_999_999_999.99m ||
             decimal.Round(amount, 2) != amount || idempotencyKey == Guid.Empty || code is { Length: > 150 })
             throw new BusinessException(BusinessErrorType.Validation, "REFUND_INVALID", "Thông tin hoàn tiền không hợp lệ.");
-        return await _payments.RecordOverpaymentRefundAsync(invoiceId, await OwnerAsync(ct), amount,
-            string.IsNullOrWhiteSpace(code) ? null : code, idempotencyKey, ct);
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct, "PAYMENT_NOT_FOUND", "Không tìm thấy khoản thanh toán.");
+        return await _payments.RecordOverpaymentRefundAsync(invoiceId, context.OwnerLandlordUserId, amount,
+            string.IsNullOrWhiteSpace(code) ? null : code, idempotencyKey, ct, context.ActorUserId);
     }
 
-    public async Task<IReadOnlyList<RoomManagement.Domain.Entities.Refund>> ListOverpaymentRefundsAsync(Guid invoiceId, CancellationToken ct) =>
-        await _payments.ListOverpaymentRefundsAsync(invoiceId, await OwnerAsync(ct), ct);
+    public async Task<IReadOnlyList<RoomManagement.Domain.Entities.Refund>> ListOverpaymentRefundsAsync(Guid invoiceId, CancellationToken ct)
+    {
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct, "PAYMENT_NOT_FOUND", "Không tìm thấy khoản thanh toán.");
+        return await _payments.ListOverpaymentRefundsAsync(invoiceId, context.OwnerLandlordUserId, ct);
+    }
 
     private static BusinessException NotFound() => new(BusinessErrorType.NotFound,
         "PAYMENT_NOT_FOUND", "Không tìm thấy khoản thanh toán.");

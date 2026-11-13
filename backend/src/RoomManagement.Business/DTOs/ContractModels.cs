@@ -23,7 +23,16 @@ public sealed record ContractCreation(Contract Contract, Invoice? DepositInvoice
 
 public sealed record AddContractTenantInput(Guid TenantId, DateOnly JoinDate, bool IsContactPerson,
     ContractTenantRole Role = ContractTenantRole.ContractParty);
+public sealed record AddContractTenantByUserInput(string UserId, DateOnly JoinDate, bool IsContactPerson,
+    ContractTenantRole Role = ContractTenantRole.ContractParty);
 public sealed record AddContractUserInput(string Email, DateOnly JoinDate);
+
+public sealed record UpdateContractOfferInput(
+    DateOnly StartDate, DateOnly? EndDate, decimal MonthlyRent, decimal DepositAmount,
+    byte? PaymentDueDay, string? Note, ContractTenancyMode TenancyMode);
+
+public sealed record ConfirmContractOfferInput(
+    int OfferVersion, string TermsHash, Guid RulesVersionId, bool AcceptRules = true);
 public sealed record ContractTenantInfo(Guid Id, Guid TenantId, string? UserId, string FullName,
     string? PhoneNumber, string? Email, DateOnly JoinDate, DateOnly? LeaveDate, bool IsContactPerson)
 {
@@ -39,9 +48,14 @@ public sealed record ContractTenantInfo(Guid Id, Guid TenantId, string? UserId, 
     public string? ResidenceApprovedByUserId { get; init; }
     public IReadOnlyList<ContractTenureSpan> TenureSpans { get; init; } = [];
 }
+public sealed record ContractMemberInfo(Guid Id, string FullName, DateOnly JoinDate,
+    DateOnly? LeaveDate, bool IsContactPerson, ContractTenantRole Role);
 public sealed record ContractDetail(Contract Contract, string RoomNumber, IReadOnlyList<ContractTenantInfo> Tenants,
     decimal OutstandingAmount, decimal DepositHeld, bool HasSettlement, bool HasDraftInvoices,
-    IReadOnlyList<TenantRequest>? MoveOutNotices = null);
+    IReadOnlyList<TenantRequest>? MoveOutNotices = null)
+{
+    public IReadOnlyList<ContractMemberInfo> Members { get; init; } = [];
+}
 
 public sealed record ContractFilter(
     int Page, int PageSize, Guid? RoomId, ContractStatus? Status);

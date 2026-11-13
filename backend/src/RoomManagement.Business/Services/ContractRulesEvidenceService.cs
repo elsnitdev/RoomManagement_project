@@ -16,9 +16,10 @@ public sealed class ContractRulesEvidenceService(IContractRulesEvidenceStore sto
     }
     private async Task OwnerAccess(Guid propertyId, Guid contractId, Guid linkId, CancellationToken ct)
     {
-        var userId = current.GetUserId();
-        if (string.IsNullOrWhiteSpace(userId) || !await landlords.IsActiveLandlordAsync(userId, ct) ||
-            !await store.OwnerCanAccessAsync(propertyId, contractId, linkId, userId, ct)) throw NotFound();
+        var context = await OperatorAccessGuard.RequireOperatorAsync(current, landlords, ct);
+        if (!await landlords.HasPropertyAccessAsync(context.ActorUserId, propertyId, ct) ||
+            !await store.OwnerCanAccessAsync(propertyId, contractId, linkId, context.OwnerLandlordUserId, ct))
+            throw NotFound();
     }
     public async Task<IReadOnlyList<RulesEvidenceItem>> TenantListAsync(Guid contractId, Guid linkId, string userId, CancellationToken ct)
     {

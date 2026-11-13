@@ -13,4 +13,6 @@ public interface ITenantRegistrationStore
     Task SaveAsync(CancellationToken ct = default);
     Task RegisterAsync(string landlordId, string login, string phone, Guid challengeId,
         Func<TenantProfile, AppUser> createUser, CancellationToken ct = default);
+    Task SelfRegisterAsync(AppUser user, TenantProfile profile, CancellationToken ct = default)
+        => throw new NotSupportedException();
 }

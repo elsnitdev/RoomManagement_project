@@ -17,6 +17,7 @@ public static class TenantProfileMappings
     {
         Id = profile.Id,
         UserId = profile.UserId,
+        OwnerLandlordUserId = profile.OwnerLandlordUserId,
         CreatedByUserId = profile.CreatedByUserId,
         FullName = profile.FullName,
         PhoneNumber = profile.PhoneNumber,

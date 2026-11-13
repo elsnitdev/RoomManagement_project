@@ -17,11 +17,11 @@ public sealed class RoomImageService
 
     private async Task<string> AuthorizeAsync(Guid propertyId, Guid roomId, CancellationToken ct)
     {
-        var owner = _current.GetUserId();
-        if (string.IsNullOrEmpty(owner) || !await _landlords.IsActiveLandlordAsync(owner, ct) ||
-            !await _images.RoomOwnedAsync(propertyId, roomId, owner, ct))
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_current, _landlords, ct);
+        if (!await _landlords.HasPropertyAccessAsync(context.ActorUserId, propertyId, ct) ||
+            !await _images.RoomOwnedAsync(propertyId, roomId, context.OwnerLandlordUserId, ct))
             throw new BusinessException(BusinessErrorType.NotFound, "ROOM_NOT_FOUND", "Không tìm thấy phòng.");
-        return owner;
+        return context.OwnerLandlordUserId;
     }
 
     public async Task<IReadOnlyList<RoomImage>> ListAsync(Guid propertyId, Guid roomId, CancellationToken ct)

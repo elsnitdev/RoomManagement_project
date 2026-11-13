@@ -73,3 +73,36 @@ public sealed record CreateMoveOutNoticeRequest(
 
 public sealed record ResolveMoveOutNoticeRequest(
     [Required, StringLength(1000)] string ResolutionNote);
+
+public sealed record AddContractTenantByUserRequest(
+    [Required] string UserId,
+    [property: JsonRequired] DateOnly JoinDate,
+    bool IsContactPerson,
+    ContractTenantRole Role = ContractTenantRole.ContractParty)
+{
+    public AddContractTenantByUserInput ToInput() => new(UserId, JoinDate, IsContactPerson, Role);
+}
+
+public sealed record UpdateContractOfferRequest(
+    [property: JsonRequired] DateOnly StartDate,
+    DateOnly? EndDate,
+    [property: JsonRequired] decimal MonthlyRent,
+    [property: JsonRequired] decimal DepositAmount,
+    byte? PaymentDueDay,
+    [StringLength(1000)] string? Note,
+    ContractTenancyMode TenancyMode = ContractTenancyMode.CoTenancy)
+{
+    public UpdateContractOfferInput ToInput() => new(StartDate, EndDate, MonthlyRent, DepositAmount, PaymentDueDay, Note, TenancyMode);
+}
+
+public sealed record ConfirmContractOfferRequest(
+    [property: JsonRequired] int OfferVersion,
+    [Required] string TermsHash,
+    [property: JsonRequired] Guid RulesVersionId,
+    bool AcceptRules = true)
+{
+    public ConfirmContractOfferInput ToInput() => new(OfferVersion, TermsHash, RulesVersionId, AcceptRules);
+}
+
+public sealed record RejectContractOfferRequest(
+    [StringLength(1000)] string? Reason);

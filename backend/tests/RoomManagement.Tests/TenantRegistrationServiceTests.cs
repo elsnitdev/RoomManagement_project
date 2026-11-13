@@ -81,5 +81,50 @@ public sealed class TenantRegistrationServiceTests
             challenge.ConsumedAt = DateTime.UtcNow;
             return Task.CompletedTask;
         }
+
+        public Task SelfRegisterAsync(AppUser user, TenantProfile profile, CancellationToken ct = default)
+        {
+            if (Created is not null && (Created.PhoneNumber == user.PhoneNumber || Created.CitizenId == user.CitizenId))
+                throw new AppConflictException("Không thể đăng ký.", "TENANT_REGISTRATION_CONFLICT");
+            Created = user;
+            Profiles.Add(profile);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task SelfRegister_CreatesUnverifiedIndependentTenant_AndBlocksDuplicateTakeover()
+    {
+        var store = new FakeStore();
+        var service = new TenantRegistrationService(store, new PasswordHasher<AppUser>(), new FakeSms());
+
+        var dto = await service.SelfRegisterAsync(new RoomManagement.Business.DTOs.Users.SelfRegisterTenantDto
+        {
+            FullName = "Nguyễn Văn An",
+            PhoneNumber = "+84901234567",
+            CitizenId = "079200012345",
+            DateOfBirth = new DateOnly(2000, 1, 15),
+            Address = "123 Lê Lợi, Q1",
+            Password = "Password123!",
+            ConfirmPassword = "Password123!"
+        });
+
+        Assert.Equal(UserRoles.Tenant, dto.Role);
+        Assert.Equal("0901234567", dto.PhoneNumber);
+        Assert.Equal(RoomManagement.Domain.Constants.IdentityVerificationStatuses.Unverified, dto.IdentityVerificationStatus);
+        Assert.Single(store.Profiles);
+        Assert.Null(store.Profiles[0].OwnerLandlordUserId);
+        Assert.Equal(dto.Id, store.Profiles[0].UserId);
+
+        await Assert.ThrowsAsync<AppConflictException>(() => service.SelfRegisterAsync(new RoomManagement.Business.DTOs.Users.SelfRegisterTenantDto
+        {
+            FullName = "Attacker",
+            PhoneNumber = "0901234567",
+            CitizenId = "079200099999",
+            DateOfBirth = new DateOnly(2000, 1, 15),
+            Address = "Anywhere",
+            Password = "Password123!",
+            ConfirmPassword = "Password123!"
+        }));
     }
 }

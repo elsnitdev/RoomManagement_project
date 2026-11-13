@@ -14,6 +14,15 @@ public sealed class AppUser
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>ID của Chủ trọ sở hữu tài khoản Manager (null nếu không phải Manager).</summary>
+    public string? LandlordUserId { get; set; }
+
+    /// <summary>Bắt buộc đổi mật khẩu tạm ở lần đăng nhập đầu trước khi dùng API nghiệp vụ.</summary>
+    public bool MustChangePassword { get; set; }
+
+    /// <summary>Thời điểm tài khoản bị xóa mềm (null nếu chưa xóa).</summary>
+    public DateTime? DeletedAt { get; set; }
+
     // ---------------------------------------------------------------------
     // THÔNG TIN CÁ NHÂN (PROFILE)
     // Tất cả đều cho phép null vì tài khoản do Admin tạo hộ ban đầu chưa có các
@@ -52,4 +61,10 @@ public sealed class AppUser
 
     /// <summary>Thời điểm Admin duyệt hoặc từ chối (giờ UTC).</summary>
     public DateTime? ReviewedAt { get; set; }
+
+    /// <summary>Trạng thái xác minh danh tính SĐT/CCCD (mặc định Unverified với người thuê tự khai).</summary>
+    public string IdentityVerificationStatus { get; set; } = IdentityVerificationStatuses.Unverified;
+
+    /// <summary>Thời điểm hoàn tất xác minh danh tính (null nếu chưa xác minh).</summary>
+    public DateTime? IdentityVerifiedAt { get; set; }
 }

@@ -22,9 +22,9 @@ import { initialUsers } from "./mockData";
 import {
   tenantMockInvoiceItems,
   tenantMockNotices,
-  tenantMockProfiles,
 } from "./tenantMockData";
 import { contractApi } from "./services/api/contractApi";
+import { getMyProfile, updateMyProfile } from "./services/api/userApi";
 import { TenantRules } from "./components/contracts/ContractRules";
 import "./components/contracts/contracts.css";
 import "./Tenant.css";
@@ -527,16 +527,21 @@ function BillingPage({ invoices, notify }) {
   );
 }
 
-function ContractsPage({ notify }) {
+function ContractsPage({ user, notify }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [confirmBusyId, setConfirmBusyId] = useState(null);
+  const [agreedMap, setAgreedMap] = useState({});
+  const [offerError, setOfferError] = useState("");
   const formatDate = (value) =>
     value
       ? new Intl.DateTimeFormat("vi-VN").format(new Date(`${value}T12:00:00`))
       : "Không xác định thời hạn";
   const statusText = {
+    PendingTenantConfirmation: "Chờ bạn xác nhận",
+    PendingOperatorConfirmation: "Chờ chủ trọ đối ký",
     Active: "Đang hiệu lực",
     PendingMoveOut: "Chờ bàn giao",
     PendingSettlement: "Chờ thanh toán và tất toán",
@@ -646,12 +651,12 @@ function ContractsPage({ notify }) {
                 </dl>
                 <div className="tn-contract-people">
                   <h4>
-                    <UserRound size={17} aria-hidden="true" /> Người trong hợp
-                    đồng <span>{contract.tenants?.length || 0}</span>
+                    <UserRound size={17} aria-hidden="true" /> Thành viên hợp
+                    đồng <span>{(contract.members ?? contract.tenants ?? []).length}</span>
                   </h4>
-                  {contract.tenants?.length ? (
+                  {(contract.members ?? contract.tenants ?? []).length ? (
                     <ul>
-                      {contract.tenants.map((tenant) => (
+                      {(contract.members ?? contract.tenants).map((tenant) => (
                         <li key={tenant.id}>
                           <span
                             className="tn-contract-avatar"
@@ -665,9 +670,15 @@ function ContractsPage({ notify }) {
                           <div>
                             <strong>{tenant.fullName}</strong>
                             <small>
+                              {tenant.role === "AuthorizedOccupant"
+                                ? "Người cùng ở"
+                                : "Người đứng tên"}
+                              {tenant.isContactPerson ? " · Người liên hệ" : ""}
+                            </small>
+                            <small>
                               Vào ở {formatDate(tenant.joinDate)}
                               {tenant.leaveDate
-                                ? ` · Rời ${formatDate(tenant.leaveDate)}`
+                                ? ` · Đã rời ${formatDate(tenant.leaveDate)}`
                                 : ""}
                             </small>
                           </div>
@@ -690,6 +701,100 @@ function ContractsPage({ notify }) {
                     <p>{contract.closureReason}</p>
                   </div>
                 )}
+                {contract.status === "PendingTenantConfirmation" && (() => {
+                  const isRepresentative = contract.tenants?.some(
+                    (t) => t.isContactPerson && (!t.userId || t.userId === user?.id),
+                  );
+                  const agreed = Boolean(agreedMap[contract.id]);
+                  const isBusy = confirmBusyId === contract.id;
+                  return (
+                    <div className="tn-offer-box">
+                      <strong>
+                        Đề nghị hợp đồng mới (Phiên bản {contract.offerVersion || 1})
+                      </strong>
+                      {isRepresentative ? (
+                        <>
+                          <p>
+                            Vui lòng kiểm tra kỹ thông tin tiền thuê, tiền cọc, thời hạn và nội quy khu trọ ở trên trước khi xác nhận.
+                          </p>
+                          <label className="tn-offer-agree">
+                            <input
+                              type="checkbox"
+                              checked={agreed}
+                              disabled={isBusy}
+                              onChange={(e) =>
+                                setAgreedMap((cur) => ({
+                                  ...cur,
+                                  [contract.id]: e.target.checked,
+                                }))
+                              }
+                            />
+                            <span>
+                              Tôi đồng ý với toàn bộ nội dung hợp đồng thuê phòng và nội quy khu trọ áp dụng.
+                            </span>
+                          </label>
+                          {offerError && (
+                            <p className="form-error" role="alert">
+                              {offerError}
+                            </p>
+                          )}
+                          <div className="tn-offer-actions">
+                            <button
+                              type="button"
+                              className="tn-submit"
+                              disabled={!agreed || isBusy}
+                              onClick={async () => {
+                                setConfirmBusyId(contract.id);
+                                setOfferError("");
+                                try {
+                                  await contractApi.confirmOffer(contract.id, {
+                                    offerVersion: contract.offerVersion || 1,
+                                    termsHash: contract.offerTermsHash || "",
+                                    rulesVersionId: contract.offerRulesVersionId,
+                                    acceptRules: true,
+                                  });
+                                  notify?.("Đã xác nhận đồng ý hợp đồng và nội quy. Chờ chủ trọ đối ký.");
+                                  setRevision((v) => v + 1);
+                                } catch (err) {
+                                  setOfferError(err.message || "Không thể xác nhận đề nghị hợp đồng.");
+                                } finally {
+                                  setConfirmBusyId(null);
+                                }
+                              }}
+                            >
+                              {isBusy ? "Đang xác nhận..." : "Xác nhận đồng ý hợp đồng & nội quy"}
+                            </button>
+                            <button
+                              type="button"
+                              className="tn-action tn-action--secondary"
+                              disabled={isBusy}
+                              onClick={async () => {
+                                const reason = window.prompt("Lý do từ chối đề nghị hợp đồng (không bắt buộc):") ?? "";
+                                setConfirmBusyId(contract.id);
+                                setOfferError("");
+                                try {
+                                  await contractApi.rejectOffer(contract.id, reason);
+                                  notify?.("Đã từ chối đề nghị hợp đồng.");
+                                  setRevision((v) => v + 1);
+                                } catch (err) {
+                                  setOfferError(err.message || "Không thể từ chối đề nghị.");
+                                } finally {
+                                  setConfirmBusyId(null);
+                                }
+                              }}
+                            >
+                              Từ chối đề nghị
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <p>
+                          Đề nghị này đang chờ người thuê đại diện xác nhận đồng ý hợp đồng và nội quy.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="tn-contract-card-footer">
                   <button
                     type="button"
@@ -1022,20 +1127,134 @@ function NoticesPage({ notices, readIds, onRead, onReadAll, navigate }) {
   );
 }
 
-function ProfilePage({ user, profile, onSave, notify }) {
+function ProfilePage({ user, profile, onSave, updateUser, notify }) {
   const [draft, setDraft] = useState(profile);
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [profileLoading, setProfileLoading] = useState(Boolean(user?.id));
+  const [profileLoadError, setProfileLoadError] = useState("");
+  const [profileReload, setProfileReload] = useState(0);
+
   useEffect(() => {
     setDraft(profile);
     setEditing(false);
+    setErrorMessage("");
   }, [profile, user?.id]);
-  function save(event) {
+
+  useEffect(() => {
+    let active = true;
+    if (user?.id) {
+      setProfileLoading(true);
+      setProfileLoadError("");
+      getMyProfile()
+        .then((res) => {
+          if (!active) return;
+          const data = res?.data || res;
+          if (!data?.id) throw new Error("Máy chủ chưa trả về hồ sơ hợp lệ.");
+          const next = {
+            fullName: data.fullName ?? "",
+            email: data.email ?? "",
+            phoneNumber: data.phoneNumber ?? "",
+            citizenId: data.citizenId ?? "",
+            dateOfBirth: data.dateOfBirth
+              ? String(data.dateOfBirth).split("T")[0]
+              : "",
+            address: data.address ?? "",
+          };
+          setDraft(next);
+          onSave?.(next);
+          updateUser?.(data);
+        })
+        .catch((err) => {
+          if (active) setProfileLoadError(err.message || "Không tải được hồ sơ cá nhân.");
+        })
+        .finally(() => {
+          if (active) setProfileLoading(false);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [user?.id, profileReload, onSave, updateUser]);
+
+  async function save(event) {
     event.preventDefault();
-    if (!draft.fullName.trim()) return;
-    onSave({ ...draft, fullName: draft.fullName.trim() });
-    setEditing(false);
-    notify?.("Đã cập nhật thông tin trong bản xem trước.");
+    if (!editing || profileLoading || profileLoadError) return;
+    setErrorMessage("");
+
+    const trimmedName = (draft.fullName || "").trim();
+    if (!trimmedName) {
+      setErrorMessage("Vui lòng nhập họ và tên.");
+      return;
+    }
+    const trimmedPhone = (draft.phoneNumber || "").trim();
+    if (trimmedPhone && !/^0\d{9}$/.test(trimmedPhone)) {
+      setErrorMessage(
+        "Số điện thoại không hợp lệ (phải gồm 10 chữ số và bắt đầu bằng số 0).",
+      );
+      return;
+    }
+    const trimmedCitizen = (draft.citizenId || "").trim();
+    if (trimmedCitizen && !/^\d{12}$/.test(trimmedCitizen)) {
+      setErrorMessage(
+        "Số Căn cước công dân (CCCD) không hợp lệ (phải gồm đúng 12 chữ số).",
+      );
+      return;
+    }
+    if (draft.dateOfBirth) {
+      const dob = new Date(draft.dateOfBirth);
+      const today = new Date();
+      if (dob > today) {
+        setErrorMessage("Ngày sinh không được nằm ở tương lai.");
+        return;
+      }
+      let age = today.getFullYear() - dob.getFullYear();
+      const m = today.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+        age--;
+      }
+      if (age < 18) {
+        setErrorMessage("Người dùng phải từ đủ 18 tuổi trở lên.");
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        fullName: trimmedName,
+        phoneNumber: trimmedPhone || null,
+        citizenId: trimmedCitizen || null,
+        dateOfBirth: draft.dateOfBirth || null,
+        address: (draft.address || "").trim() || null,
+      };
+
+      const res = await updateMyProfile(payload);
+      if (!res?.data) throw new Error("Máy chủ chưa xác nhận cập nhật hồ sơ.");
+      const updatedData = {
+        fullName: res.data.fullName ?? "",
+        phoneNumber: res.data.phoneNumber ?? "",
+        citizenId: res.data.citizenId ?? "",
+        dateOfBirth: res.data.dateOfBirth
+          ? String(res.data.dateOfBirth).split("T")[0]
+          : "",
+        address: res.data.address ?? "",
+        email: res.data.email ?? "",
+      };
+
+      updateUser?.(res.data);
+      onSave?.(updatedData);
+      setDraft(updatedData);
+      setEditing(false);
+      notify?.("Cập nhật thông tin hồ sơ thành công.");
+    } catch (err) {
+      setErrorMessage(err.message || "Không thể cập nhật hồ sơ cá nhân.");
+    } finally {
+      setSaving(false);
+    }
   }
+
   return (
     <>
       <Header page="profile" />
@@ -1045,18 +1264,39 @@ function ProfilePage({ user, profile, onSave, notify }) {
             <span>TÀI KHOẢN CỦA BẠN</span>
             <h2>{profile.fullName || user?.userName || "Người thuê"}</h2>
           </div>
-          <StateTag label="Người thuê" tone="neutral" />
+          <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+            <StateTag label="Người thuê" tone="neutral" />
+            <StateTag
+              label={
+                user?.identityVerificationStatus === "Verified"
+                  ? "Đã xác minh danh tính"
+                  : "Chưa xác minh (Unverified)"
+              }
+              tone={
+                user?.identityVerificationStatus === "Verified"
+                  ? "success"
+                  : "warning"
+              }
+            />
+          </div>
         </div>
         <p className="tn-small-note">
-          Thông tin chỉnh sửa chỉ lưu trong phiên xem trước, chưa đồng bộ lên
-          máy chủ.
+          Thông tin SĐT/CCCD tự khai ở trạng thái chưa xác minh vẫn dùng để nhận và xác nhận hợp đồng; không được tự đổi danh tính trên hợp đồng đã xác nhận.
         </p>
+        {profileLoading && <p role="status" className="tn-small-note">Đang tải hồ sơ cá nhân…</p>}
+        {profileLoadError && (
+          <p role="alert" className="tn-form-error">
+            <AlertCircle size={15} aria-hidden="true" />
+            {profileLoadError}
+            <button type="button" className="tn-action tn-action--secondary" onClick={() => setProfileReload((value) => value + 1)}>Tải lại</button>
+          </p>
+        )}
         <form onSubmit={save}>
           <label>
             Họ và tên
             <input
               value={draft.fullName}
-              disabled={!editing}
+              disabled={!editing || saving}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -1067,14 +1307,17 @@ function ProfilePage({ user, profile, onSave, notify }) {
             />
           </label>
           <label>
-            Email
+            Email (Tài khoản)
             <input value={draft.email} disabled readOnly />
           </label>
           <label>
             Số điện thoại
             <input
+              type="tel"
               value={draft.phoneNumber}
-              disabled={!editing}
+              disabled={!editing || saving}
+              maxLength={10}
+              placeholder="0912345678"
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -1084,10 +1327,42 @@ function ProfilePage({ user, profile, onSave, notify }) {
             />
           </label>
           <label>
-            Địa chỉ liên hệ
+            Số CCCD / CMND
+            <input
+              type="text"
+              value={draft.citizenId}
+              disabled={!editing || saving}
+              maxLength={12}
+              placeholder="12 chữ số CCCD"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  citizenId: event.target.value,
+                }))
+              }
+            />
+            <small>CCCD hiện tại: {profile.citizenId || "Chưa cập nhật"}</small>
+          </label>
+          <label>
+            Ngày tháng năm sinh
+            <input
+              type="date"
+              value={draft.dateOfBirth}
+              disabled={!editing || saving}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  dateOfBirth: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label style={{ gridColumn: "1 / -1" }}>
+            Địa chỉ thường trú / liên hệ
             <input
               value={draft.address}
-              disabled={!editing}
+              disabled={!editing || saving}
+              placeholder="Số nhà, đường, phường/xã, tỉnh/thành phố"
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -1096,28 +1371,57 @@ function ProfilePage({ user, profile, onSave, notify }) {
               }
             />
           </label>
+
+          {errorMessage && (
+            <div
+              className="tn-form-error"
+              role="alert"
+              style={{
+                gridColumn: "1 / -1",
+                padding: "9px 13px",
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "7px",
+                color: "#991b1b",
+                fontSize: "12px",
+                display: "flex",
+                alignItems: "center",
+                gap: "7px",
+              }}
+            >
+              <AlertCircle size={15} style={{ flexShrink: 0 }} />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
           <div className="tn-profile-actions">
             {editing ? (
               <>
                 <button
                   type="button"
                   className="tn-action tn-action--secondary"
+                  disabled={saving}
                   onClick={() => {
                     setDraft(profile);
+                    setErrorMessage("");
                     setEditing(false);
                   }}
                 >
                   Hủy
                 </button>
-                <button type="submit" className="tn-submit">
-                  Lưu thay đổi
+                <button type="submit" className="tn-submit" disabled={saving}>
+                  {saving ? "Đang lưu..." : "Lưu thay đổi"}
                 </button>
               </>
             ) : (
               <button
                 type="button"
                 className="tn-action tn-action--secondary"
-                onClick={() => setEditing(true)}
+                disabled={profileLoading || !!profileLoadError}
+                onClick={() => {
+                  setErrorMessage("");
+                  setEditing(true);
+                }}
               >
                 Chỉnh sửa thông tin <ArrowRight size={15} aria-hidden="true" />
               </button>
@@ -1132,6 +1436,7 @@ function ProfilePage({ user, profile, onSave, notify }) {
 export default function Tenant({
   page = "overview",
   user,
+  updateUser,
   navigate,
   notify,
   rooms = [],
@@ -1150,9 +1455,6 @@ export default function Tenant({
       item.email?.toLocaleLowerCase("vi-VN") ===
         user?.email?.toLocaleLowerCase("vi-VN"),
   );
-  const mockProfile = mockTenant
-    ? tenantMockProfiles[mockTenant.email.toLowerCase()]
-    : null;
   const tenantName = mockTenant?.name || "";
   const displayName = (
     user?.fullName ||
@@ -1164,24 +1466,29 @@ export default function Tenant({
   const [profile, setProfile] = useState(() => ({
     fullName: displayName,
     email: user?.email || "",
-    phoneNumber: user?.phoneNumber || mockProfile?.phoneNumber || "",
-    address: mockProfile?.address || "",
+    phoneNumber: user?.phoneNumber || "",
+    citizenId: user?.citizenId || "",
+    dateOfBirth: user?.dateOfBirth ? String(user.dateOfBirth).split("T")[0] : "",
+    address: user?.address || "",
   }));
   useEffect(
     () =>
       setProfile({
         fullName: displayName,
         email: user?.email || "",
-        phoneNumber: user?.phoneNumber || mockProfile?.phoneNumber || "",
-        address: mockProfile?.address || "",
+        phoneNumber: user?.phoneNumber || "",
+        citizenId: user?.citizenId || "",
+        dateOfBirth: user?.dateOfBirth ? String(user.dateOfBirth).split("T")[0] : "",
+        address: user?.address || "",
       }),
     [
       user?.id,
       user?.email,
       user?.phoneNumber,
+      user?.citizenId,
+      user?.dateOfBirth,
+      user?.address,
       displayName,
-      mockProfile?.phoneNumber,
-      mockProfile?.address,
     ],
   );
   const mine = (item) =>
@@ -1277,6 +1584,7 @@ export default function Tenant({
     return (
       <div className="tn-page">
         <ContractsPage
+          user={user}
           contracts={myContracts}
           navigate={navigate}
           notify={notify}
@@ -1314,6 +1622,7 @@ export default function Tenant({
           user={user}
           profile={profile}
           onSave={setProfile}
+          updateUser={updateUser}
           notify={notify}
         />
       </div>

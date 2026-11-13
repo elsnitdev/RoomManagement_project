@@ -44,6 +44,25 @@ public sealed class UserResponse
     /// </summary>
     public DateTime CreatedAt { get; init; }
 
+    /// <summary>Bắt buộc đổi mật khẩu tạm ở lần đăng nhập đầu.</summary>
+    public bool MustChangePassword { get; init; }
+
+    /// <summary>ID Chủ trọ sở hữu (nếu là Manager).</summary>
+    public string? LandlordUserId { get; init; }
+
+    /// <summary>Trạng thái xác minh danh tính (Unverified / Pending / Verified).</summary>
+    public string IdentityVerificationStatus { get; init; } = string.Empty;
+
+    /// <summary>Thời điểm xác minh danh tính.</summary>
+    public DateTime? IdentityVerifiedAt { get; init; }
+
+    public string? FullName { get; init; }
+    public string? PhoneNumber { get; init; }
+    public string? CitizenId { get; init; }
+    public DateOnly? DateOfBirth { get; init; }
+    public string? Address { get; init; }
+    public DateTime? DeletedAt { get; init; }
+
     /// <summary>
     /// Chuyển từ DTO tầng Business sang dữ liệu trả về cho Client.
     /// </summary>
@@ -56,6 +75,16 @@ public sealed class UserResponse
         Role = dto.Role,
         IsActive = dto.IsActive,
         ApprovalStatus = dto.ApprovalStatus,
-        CreatedAt = dto.CreatedAt
+        CreatedAt = dto.CreatedAt,
+        MustChangePassword = dto.MustChangePassword,
+        LandlordUserId = dto.LandlordUserId,
+        IdentityVerificationStatus = dto.IdentityVerificationStatus,
+        IdentityVerifiedAt = dto.IdentityVerifiedAt,
+        FullName = dto.FullName,
+        PhoneNumber = dto.PhoneNumber,
+        CitizenId = dto.CitizenId,
+        DateOfBirth = dto.DateOfBirth,
+        Address = dto.Address,
+        DeletedAt = dto.DeletedAt
     };
 }

@@ -187,67 +187,20 @@ public sealed class AuthController : ControllerBase
     }
 
     [HttpPost("tenant-registration/check")]
-    public async Task<IActionResult> CheckTenantRegistration(
-        [FromBody] CheckTenantRegistrationRequest request,
-        [FromServices] ITenantRegistrationService registration,
-        CancellationToken cancellationToken)
+    public IActionResult CheckTenantRegistration()
     {
-        try
-        {
-            return Ok(new { status = await registration.CheckAsync(request.LandlordCode, request.PhoneNumber, cancellationToken) });
-        }
-        catch (AppValidationException ex)
-        {
-            return BadRequest(ProblemDetailsHelper.Create(400, "Dữ liệu không hợp lệ", ex.Message, code: "VALIDATION_FAILED"));
-        }
+        return StatusCode(StatusCodes.Status410Gone, ProblemDetailsHelper.Create(
+            StatusCodes.Status410Gone,
+            "Luồng đăng ký cũ đã ngừng sử dụng",
+            "Người thuê tự đăng ký trực tiếp qua /api/auth/register-tenant mà không cần mã chủ trọ hoặc OTP.",
+            code: "TENANT_OTP_DEPRECATED"));
     }
 
     [HttpPost("tenant-registration/request-otp")]
-    public async Task<IActionResult> RequestTenantOtp([FromBody] CheckTenantRegistrationRequest request,
-        [FromServices] ITenantRegistrationService registration,
-        [FromServices] ISmsOtpSender smsSender,
-        [FromServices] IWebHostEnvironment environment,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (environment.IsDevelopment() &&
-                (HttpContext.Connection.RemoteIpAddress is null ||
-                 !IPAddress.IsLoopback(HttpContext.Connection.RemoteIpAddress)))
-                return StatusCode(403, ProblemDetailsHelper.Create(403, "Chỉ dùng trên máy phát triển", "OTP thử nghiệm chỉ khả dụng qua kết nối cục bộ.", code: "DEV_OTP_LOCAL_ONLY"));
-            var challengeId = await registration.RequestOtpAsync(request.LandlordCode, request.PhoneNumber, cancellationToken);
-            if (environment.IsDevelopment() && smsSender is DevelopmentSmsOtpSender devSender)
-                return Ok(new { challengeId, expiresInSeconds = 300, testOtp = devSender.LastCode });
-            return Ok(new { challengeId, expiresInSeconds = 300 });
-        }
-        catch (NotSupportedException)
-        {
-            return StatusCode(503, ProblemDetailsHelper.Create(503, "Dịch vụ SMS chưa sẵn sàng", "Dịch vụ xác minh SMS chưa được cấu hình.", code: "SMS_NOT_CONFIGURED"));
-        }
-        catch (AppValidationException ex)
-        {
-            return BadRequest(ProblemDetailsHelper.Create(400, "Dữ liệu không hợp lệ", ex.Message, code: "VALIDATION_FAILED"));
-        }
-        catch (AppConflictException ex)
-        {
-            return Conflict(ProblemDetailsHelper.Create(409, "Không thể gửi mã", ex.Message, code: ex.Code ?? "REGISTRATION_CONFLICT"));
-        }
-    }
+    public IActionResult RequestTenantOtp() => CheckTenantRegistration();
 
     [HttpPost("tenant-registration/verify-otp")]
-    public async Task<IActionResult> VerifyTenantOtp([FromBody] VerifyTenantOtpRequest request,
-        [FromServices] ITenantRegistrationService registration, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await registration.VerifyOtpAsync(request.LandlordCode, request.PhoneNumber, request.ChallengeId, request.Code, cancellationToken);
-            return Ok(new { verified = true });
-        }
-        catch (AppValidationException ex)
-        {
-            return BadRequest(ProblemDetailsHelper.Create(400, "Xác minh thất bại", ex.Message, code: "INVALID_OTP"));
-        }
-    }
+    public IActionResult VerifyTenantOtp() => CheckTenantRegistration();
 
     [HttpPost("register-tenant")]
     public async Task<IActionResult> RegisterTenant(
@@ -257,12 +210,24 @@ public sealed class AuthController : ControllerBase
     {
         try
         {
-            var user = await registration.RegisterAsync(request.LandlordCode, request.PhoneNumber, request.ChallengeId, request.Password, request.ConfirmPassword, cancellationToken);
+            var user = await registration.SelfRegisterAsync(new SelfRegisterTenantDto
+            {
+                UserName = request.UserName,
+                FullName = request.FullName,
+                PhoneNumber = request.PhoneNumber,
+                CitizenId = request.CitizenId,
+                DateOfBirth = request.DateOfBirth,
+                Address = request.Address,
+                Email = request.Email,
+                Gender = request.Gender,
+                Password = request.Password,
+                ConfirmPassword = request.ConfirmPassword
+            }, cancellationToken);
             return StatusCode(StatusCodes.Status201Created, new { data = UserResponse.FromDto(user) });
         }
         catch (AppValidationException ex)
         {
-            return BadRequest(ProblemDetailsHelper.Create(400, "Dữ liệu không hợp lệ", ex.Message, code: "VALIDATION_FAILED"));
+            return BadRequest(ProblemDetailsHelper.Create(400, "Dữ liệu không hợp lệ", ex.Message, code: ex.Code ?? "VALIDATION_FAILED"));
         }
         catch (AppConflictException ex)
         {

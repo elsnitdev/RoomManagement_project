@@ -8,11 +8,16 @@ public sealed record ContractResponse(
     Guid Id, string ContractCode, Guid RoomId, DateOnly StartDate, DateOnly? EndDate,
     decimal MonthlyRent, decimal DepositAmount, byte? PaymentDueDay,
     ContractStatus Status, string? Note, Guid? DepositInvoiceId = null, DateOnly? HandoverOn = null,
-    ContractTenancyMode TenancyMode = ContractTenancyMode.CoTenancy)
+    ContractTenancyMode TenancyMode = ContractTenancyMode.CoTenancy,
+    int OfferVersion = 0, string? OfferTermsHash = null, Guid? OfferRulesVersionId = null,
+    DateTime? OfferSentAt = null, DateTime? TenantConfirmedAt = null, string? TenantConfirmedByUserId = null,
+    DateTime? OperatorConfirmedAt = null, string? OperatorConfirmedByUserId = null)
 {
   public static ContractResponse From(Contract c, Guid? depositInvoiceId = null) => new(c.Id, c.ContractCode, c.RoomId,
       c.StartDate, c.EndDate, c.MonthlyRent, c.DepositAmount,
-      c.PaymentDueDay, c.Status, c.Note, depositInvoiceId, c.HandoverOn, c.TenancyMode);
+      c.PaymentDueDay, c.Status, c.Note, depositInvoiceId, c.HandoverOn, c.TenancyMode,
+      c.OfferVersion, c.OfferTermsHash, c.OfferRulesVersionId, c.OfferSentAt,
+      c.TenantConfirmedAt, c.TenantConfirmedByUserId, c.OperatorConfirmedAt, c.OperatorConfirmedByUserId);
 }
 
 public sealed record ContractTenantResponse(Guid Id, Guid ContractId, Guid TenantId, DateOnly JoinDate,
@@ -31,8 +36,14 @@ public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid R
     IReadOnlyList<ContractTenantInfo> Tenants, decimal OutstandingAmount, decimal DepositHeld, bool HasSettlement,
     bool HasDraftInvoices, int MemberCount, int CurrentOccupantCount,
     IReadOnlyList<MoveOutNoticeResponse> MoveOutNotices, DateOnly? HandoverOn,
-    ContractTenancyMode TenancyMode)
+    ContractTenancyMode TenancyMode,
+    int OfferVersion = 0, string? OfferTermsHash = null, string? OfferSnapshotJson = null,
+    Guid? OfferRulesVersionId = null, DateTime? OfferSentAt = null,
+    DateTime? TenantConfirmedAt = null, string? TenantConfirmedByUserId = null,
+    DateTime? OperatorConfirmedAt = null, string? OperatorConfirmedByUserId = null)
 {
+    public IReadOnlyList<ContractMemberInfo> Members { get; init; } = [];
+
     public static ContractDetailResponse From(ContractDetail detail)
     {
         var c = detail.Contract;
@@ -40,7 +51,7 @@ public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid R
             c.ClosedOn, c.ClosureReason, c.MonthlyRent, c.DepositAmount, c.PaymentDueDay,
             c.Status, c.Note, detail.Tenants, detail.OutstandingAmount, detail.DepositHeld, detail.HasSettlement,
             detail.HasDraftInvoices,
-            detail.Tenants.Count(t => t.LeaveDate == null ||
+            detail.Members.Count(t => t.LeaveDate == null ||
                 t.LeaveDate >= RoomManagement.Business.Services.VietnamDate.Today),
             c.Status == ContractStatus.Active && c.StartDate <= RoomManagement.Business.Services.VietnamDate.Today &&
             (c.EndDate == null || c.EndDate >= RoomManagement.Business.Services.VietnamDate.Today)
@@ -50,7 +61,10 @@ public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid R
                      t.HasConfirmedCommitment ||
                      t.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence)) : 0,
             (detail.MoveOutNotices ?? []).Select(MoveOutNoticeResponse.From).ToList(), c.HandoverOn,
-            c.TenancyMode);
+            c.TenancyMode,
+            c.OfferVersion, c.OfferTermsHash, c.OfferSnapshotJson, c.OfferRulesVersionId, c.OfferSentAt,
+            c.TenantConfirmedAt, c.TenantConfirmedByUserId, c.OperatorConfirmedAt, c.OperatorConfirmedByUserId)
+        { Members = detail.Members };
     }
 }
 

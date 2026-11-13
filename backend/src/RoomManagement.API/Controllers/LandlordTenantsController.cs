@@ -20,7 +20,7 @@ namespace RoomManagement.API.Controllers;
 /// - Phản hồi lỗi chuẩn hóa ProblemDetails (400, 404, 409, 422, 500).
 /// </summary>
 [ApiController] // Tự động kiểm tra ModelState và hỗ trợ binding dữ liệu JSON từ body/query
-[Authorize(Roles = UserRoles.Landlord)] // Yêu cầu người gọi phải đăng nhập (có JWT Token hợp lệ) VÀ có vai trò là Landlord
+[Authorize(Roles = UserRoles.LandlordOrManager)] // Yêu cầu người gọi phải đăng nhập (có JWT Token hợp lệ) VÀ có vai trò là Landlord
 [Route("api/landlord/tenants")] // Đường dẫn gốc (Base URL) cho toàn bộ các API trong Controller này
 public sealed class LandlordTenantsController : ControllerBase
 {
@@ -244,87 +244,64 @@ public sealed class LandlordTenantsController : ControllerBase
     }
 
     /// <summary>
-    /// API cập nhật thông tin hồ sơ người thuê.
-    /// Phương thức: PUT /api/landlord/tenants/{id}
+    /// Chỉ Admin mới có quyền chỉnh sửa thông tin tài khoản/hồ sơ người thuê.
+    /// Landlord và Manager không được phép chỉnh sửa hồ sơ người thuê.
     /// </summary>
     [HttpPut("{id:guid}")]
-    [ProducesResponseType(typeof(ApiResponse<TenantProfileResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Update(
-        [FromRoute] Guid id, // Mã hồ sơ cần sửa lấy từ URL
-        [FromBody] UpdateTenantProfileRequest request, // Dữ liệu mới lấy từ JSON body
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public IActionResult Update(
+        [FromRoute] Guid id,
+        [FromBody] UpdateTenantProfileRequest request)
+    {
+        return StatusCode(StatusCodes.Status403Forbidden, ProblemDetailsHelper.Create(
+            StatusCodes.Status403Forbidden,
+            "Không có quyền truy cập",
+            "Chỉ Quản trị viên (Admin) mới có quyền chỉnh sửa thông tin người thuê.",
+            code: "ADMIN_ONLY_TENANT_EDIT"));
+    }
+
+    public sealed record LookupTenantRequest(Guid? PropertyId, string PhoneNumber, string CitizenId);
+
+    /// <summary>
+    /// Tra cứu chính xác 1 tài khoản người thuê bằng CẢ Số điện thoại VÀ Số CCCD để thêm vào hợp đồng.
+    /// Không trả danh sách, không tìm gần đúng, không lộ CCCD đầy đủ.
+    /// </summary>
+    [HttpPost("lookup")]
+    public async Task<IActionResult> LookupExact(
+        [FromBody] LookupTenantRequest request,
         CancellationToken cancellationToken)
     {
-        var landlordId = GetCurrentUserId();
-        if (string.IsNullOrEmpty(landlordId))
-        {
+        var actorId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(actorId))
             return Forbid();
-        }
-
-        _logger.LogInformation("Chủ trọ '{LandlordId}' cập nhật hồ sơ người thuê ID: {ProfileId}.",
-            landlordId, id);
 
         try
         {
-            // Gọi tầng Business kiểm tra quyền, kiểm tra dữ liệu & CCCD trùng, rồi lưu cập nhật
-            var updatedDto = await _tenantProfileService.UpdateProfileAsync(
-                landlordId, id, request.ToDto(), cancellationToken);
-
-            var response = TenantProfileResponse.FromDto(updatedDto);
-
-            // Trả về HTTP 200 OK kèm dữ liệu mới sau khi sửa
-            return Ok(new
-            {
-                data = response,
-                message = "Cập nhật hồ sơ người thuê thành công."
-            });
+            var result = await _tenantProfileService.LookupExactAsync(
+                actorId,
+                new LookupTenantAccountInput(request.PropertyId, request.PhoneNumber, request.CitizenId),
+                cancellationToken);
+            return Ok(new { data = result });
         }
         catch (AppValidationException ex)
         {
-            _logger.LogWarning(ex, "Lỗi kiểm tra tính hợp lệ khi cập nhật hồ sơ: {Message}", ex.Message);
-            return BadRequest(ProblemDetailsHelper.Create(
-                StatusCodes.Status400BadRequest,
-                "Dữ liệu không hợp lệ",
-                ex.Message,
-                code: ex.Code ?? "VALIDATION_FAILED"));
+            return BadRequest(ProblemDetailsHelper.Create(400, "Dữ liệu không hợp lệ", ex.Message, code: ex.Code ?? "VALIDATION_FAILED"));
         }
         catch (AppNotFoundException ex)
         {
-            _logger.LogWarning(ex, "Không tìm thấy hồ sơ cần cập nhật: {Message}", ex.Message);
-            return NotFound(ProblemDetailsHelper.Create(
-                StatusCodes.Status404NotFound,
-                "Không tìm thấy tài nguyên",
-                ex.Message,
-                code: ex.Code ?? "TENANT_PROFILE_NOT_FOUND"));
+            return NotFound(ProblemDetailsHelper.Create(404, "Không tìm thấy tài khoản người thuê", ex.Message, code: ex.Code ?? "TENANT_NOT_FOUND"));
         }
-        catch (AppConflictException ex)
+        catch (RoomManagement.Business.Errors.BusinessException ex) when (ex.Code == "LOOKUP_RATE_LIMITED")
         {
-            _logger.LogWarning(ex, "Xung đột CCCD khi cập nhật hồ sơ: {Message}", ex.Message);
-            return Conflict(ProblemDetailsHelper.Create(
-                StatusCodes.Status409Conflict,
-                "Xung đột dữ liệu",
+            return StatusCode(StatusCodes.Status429TooManyRequests, ProblemDetailsHelper.Create(
+                StatusCodes.Status429TooManyRequests,
+                "Quá giới hạn tra cứu",
                 ex.Message,
-                code: ex.Code ?? "CITIZEN_ID_CONFLICT"));
+                code: ex.Code));
         }
-        catch (BusinessRuleException ex)
+        catch (RoomManagement.Business.Errors.BusinessException ex)
         {
-            _logger.LogWarning(ex, "Vi phạm quy tắc nghiệp vụ khi cập nhật hồ sơ: {Message}", ex.Message);
-            return UnprocessableEntity(ProblemDetailsHelper.Create(
-                StatusCodes.Status422UnprocessableEntity,
-                "Vi phạm quy tắc nghiệp vụ",
-                ex.Message,
-                code: ex.Code ?? "BUSINESS_RULE_VIOLATION"));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Lỗi máy chủ khi cập nhật hồ sơ người thuê ID: {ProfileId}.", id);
-            return StatusCode(StatusCodes.Status500InternalServerError, ProblemDetailsHelper.Create(
-                StatusCodes.Status500InternalServerError,
-                "Lỗi máy chủ nội bộ",
-                "Hệ thống gặp sự cố trong quá trình cập nhật hồ sơ người thuê.",
-                code: "INTERNAL_SERVER_ERROR"));
+            return UnprocessableEntity(ProblemDetailsHelper.Create(422, "Vi phạm quy tắc nghiệp vụ", ex.Message, code: ex.Code));
         }
     }
 

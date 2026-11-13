@@ -23,14 +23,16 @@ public sealed class RoomService
 
     private async Task<string> OwnerAsync(CancellationToken ct)
     {
-        var ownerId = _currentLandlord.GetUserId();
-        if (string.IsNullOrWhiteSpace(ownerId) || !await _landlordStore.IsActiveLandlordAsync(ownerId, ct))
-            throw new BusinessException(BusinessErrorType.InvalidOperation, "LANDLORD_UNAVAILABLE", "Chủ trọ hiện tại không tồn tại hoặc đã ngừng hoạt động.");
-        return ownerId;
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_currentLandlord, _landlordStore, ct);
+        return context.OwnerLandlordUserId;
     }
-    private async Task<Property> PropertyAsync(Guid propertyId, string ownerId, CancellationToken ct) =>
-        await _properties.GetAsync(propertyId, ownerId, ct)
-        ?? throw new BusinessException(BusinessErrorType.NotFound, "PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
+    private async Task<Property> PropertyAsync(Guid propertyId, string ownerId, CancellationToken ct)
+    {
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_currentLandlord, _landlordStore, ct);
+        await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlordStore, ct);
+        return await _properties.GetAsync(propertyId, ownerId, ct)
+            ?? throw new BusinessException(BusinessErrorType.NotFound, "PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
+    }
 
     public async Task<RoomResult> CreateAsync(Guid propertyId, CreateRoomInput input, CancellationToken ct)
     {
@@ -70,14 +72,17 @@ public sealed class RoomService
 
     public async Task<RoomResult> GetAsync(Guid propertyId, Guid roomId, CancellationToken ct)
     {
-        var ownerId = await OwnerAsync(ct);
-        return await _rooms.GetResultAsync(propertyId, roomId, ownerId, ct)
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_currentLandlord, _landlordStore, ct);
+        await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlordStore, ct, "ROOM_NOT_FOUND", "Không tìm thấy phòng.");
+        return await _rooms.GetResultAsync(propertyId, roomId, context.OwnerLandlordUserId, ct)
             ?? throw new BusinessException(BusinessErrorType.NotFound, "ROOM_NOT_FOUND", "Không tìm thấy phòng.");
     }
 
     public async Task<RoomResult> UpdateAsync(Guid propertyId, Guid roomId, UpdateRoomInput input, CancellationToken ct)
     {
-        var ownerId = await OwnerAsync(ct);
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_currentLandlord, _landlordStore, ct);
+        await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlordStore, ct, "ROOM_NOT_FOUND", "Không tìm thấy phòng.");
+        var ownerId = context.OwnerLandlordUserId;
         var room = await _rooms.GetAsync(propertyId, roomId, ownerId, ct)
             ?? throw new BusinessException(BusinessErrorType.NotFound, "ROOM_NOT_FOUND", "Không tìm thấy phòng.");
         RowVersionGuard.Verify(input.RowVersion, room.RowVersion);

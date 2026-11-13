@@ -7,11 +7,18 @@ using RoomManagement.Domain.Entities;
 
 namespace RoomManagement.Tests;
 
-internal sealed class TestUserStore : IUserStore, ILandlordApprovalStore
+internal sealed class TestUserStore : IUserStore, ILandlordApprovalStore, ILandlordStore
 {
     public const string Password = "OnlyForAutomatedTests!42";
     public ConcurrentDictionary<string, AppUser> Users { get; } = new();
     public ConcurrentBag<string> LookedUpIds { get; } = [];
+
+    public Task<bool> IsActiveLandlordAsync(string userId, CancellationToken cancellationToken)
+    {
+        var user = Users.GetValueOrDefault(userId);
+        return Task.FromResult(user != null && user.IsActive && user.DeletedAt == null &&
+            (user.Role == UserRoles.Landlord || user.Role == UserRoles.Manager));
+    }
 
     public AppUser AddUser(string role = UserRoles.Tenant, string status = ApprovalStatuses.Approved, bool active = true)
     {

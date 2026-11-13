@@ -3,6 +3,7 @@ using Microsoft.Data.SqlClient;
 using RoomManagement.Business.Exceptions;
 using RoomManagement.Business.Interfaces;
 using RoomManagement.Domain.Entities;
+using RoomManagement.Domain.Enums;
 
 namespace RoomManagement.Data.Stores;
 
@@ -103,5 +104,65 @@ public sealed class UserStore : IUserStore
             // Database uniqueness remains authoritative when requests race past prechecks.
             throw new AppConflictException("Tên đăng nhập, email hoặc số CCCD đã được sử dụng.");
         }
+    }
+
+    public Task<bool> HasConfirmedOrActiveContractAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        return (from link in _dbContext.ContractTenants.AsNoTracking()
+                join profile in _dbContext.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
+                join contract in _dbContext.Contracts.AsNoTracking() on link.ContractId equals contract.Id
+                where profile.UserId == userId &&
+                      contract.Status != ContractStatus.Draft &&
+                      contract.Status != ContractStatus.Cancelled &&
+                      contract.Status != ContractStatus.PendingTenantConfirmation
+                select contract.Id).AnyAsync(cancellationToken);
+    }
+
+    public async Task SyncTenantProfileFromUserAsync(AppUser user, CancellationToken cancellationToken = default)
+    {
+        var profile = await _dbContext.TenantProfiles
+            .FirstOrDefaultAsync(p => p.UserId == user.Id && p.OwnerLandlordUserId == null, cancellationToken);
+        if (profile is null)
+            return;
+
+        profile.FullName = user.FullName ?? profile.FullName;
+        profile.PhoneNumber = user.PhoneNumber;
+        profile.Email = user.Email ?? profile.Email;
+        profile.CitizenId = user.CitizenId;
+        profile.DateOfBirth = user.DateOfBirth;
+        profile.PermanentAddress = user.Address;
+        profile.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<(IReadOnlyList<AppUser> Items, int TotalCount)> ListUsersAsync(
+        string? role, string? keyword, bool? isActive, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var validPage = page > 0 ? page : 1;
+        var validPageSize = pageSize is > 0 and <= 100 ? pageSize : 20;
+
+        var query = _dbContext.Users.AsNoTracking().Where(u => u.DeletedAt == null);
+        if (!string.IsNullOrWhiteSpace(role))
+            query = query.Where(u => u.Role == role.Trim());
+        if (isActive.HasValue)
+            query = query.Where(u => u.IsActive == isActive.Value);
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var term = keyword.Trim();
+            query = query.Where(u =>
+                u.UserName.Contains(term) ||
+                (u.FullName != null && u.FullName.Contains(term)) ||
+                (u.PhoneNumber != null && u.PhoneNumber.Contains(term)) ||
+                (u.Email != null && u.Email.Contains(term)));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(u => u.CreatedAt)
+            .Skip((validPage - 1) * validPageSize)
+            .Take(validPageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items, total);
     }
 }

@@ -12,7 +12,7 @@ using RoomManagement.Domain.Enums;
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRoles.Landlord)]
+[Authorize(Roles = UserRoles.LandlordOrManager)]
 [Route("api/properties/{propertyId:guid}/contracts")]
 public sealed class ContractsController : ControllerBase
 {
@@ -59,6 +59,23 @@ public sealed class ContractsController : ControllerBase
       [FromBody] AddContractTenantRequest request, CancellationToken ct) =>
       StatusCode(201, new ApiResponse<ContractTenantResponse>(ContractTenantResponse.From(
           await _service.AddTenantAsync(propertyId, contractId, request.ToInput(), ct))));
+
+  [HttpPost("{contractId:guid}/tenants/by-user")]
+  public async Task<IActionResult> AddTenantByUser(Guid propertyId, Guid contractId,
+      [FromBody] AddContractTenantByUserRequest request, CancellationToken ct) =>
+      StatusCode(201, new ApiResponse<ContractTenantResponse>(ContractTenantResponse.From(
+          await _service.AddTenantByUserAsync(propertyId, contractId, request.ToInput(), ct))));
+
+  [HttpPut("{contractId:guid}")]
+  public async Task<IActionResult> UpdateOfferTerms(Guid propertyId, Guid contractId,
+      [FromBody] UpdateContractOfferRequest request, CancellationToken ct) =>
+      Ok(new ApiResponse<ContractResponse>(ContractResponse.From(
+          await _service.UpdateOfferTermsAsync(propertyId, contractId, request.ToInput(), ct))));
+
+  [HttpPost("{contractId:guid}/send-offer")]
+  public async Task<IActionResult> SendOffer(Guid propertyId, Guid contractId, CancellationToken ct) =>
+      Ok(new ApiResponse<ContractResponse>(ContractResponse.From(
+          await _service.SendOfferAsync(propertyId, contractId, ct))));
 
   [HttpPut("{contractId:guid}/contact/{linkId:guid}")]
   public async Task<IActionResult> SetContact(Guid propertyId, Guid contractId, Guid linkId, CancellationToken ct) =>

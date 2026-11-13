@@ -1,5 +1,8 @@
 using Microsoft.Data.SqlClient;
 using System.Data;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using RoomManagement.Business.DTOs;
 using RoomManagement.Domain;
@@ -64,7 +67,10 @@ public sealed class ContractStore : IContractStore
   /// <inheritdoc />
   public Task<bool> TenantProfileOwnedAsync(Guid tenantId, string ownerId, CancellationToken ct)
   {
-    return _db.TenantProfiles.AnyAsync(t => t.Id == tenantId && t.CreatedByUserId == ownerId, ct);
+    return _db.TenantProfiles.AnyAsync(t => t.Id == tenantId &&
+        (t.OwnerLandlordUserId == ownerId ||
+         (t.OwnerLandlordUserId == null && t.UserId != null &&
+          _db.Users.Any(u => u.Id == t.UserId && u.Role == UserRoles.Tenant && u.IsActive && u.DeletedAt == null))), ct);
   }
 
   //HasCurrentTenantAsync – Kiểm tra hợp đồng có người thuê chưa rời đi hay không.
@@ -102,6 +108,13 @@ public sealed class ContractStore : IContractStore
   private async Task<ContractDetail> DetailAsync(Contract contract, CancellationToken ct, string? tenantUserId = null)
   {
     var roomNumber = await _db.Rooms.Where(r => r.Id == contract.RoomId).Select(r => r.RoomNumber).SingleAsync(ct);
+
+    var members = await (from link in _db.ContractTenants.AsNoTracking()
+                         join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
+                         where link.ContractId == contract.Id
+                         orderby link.JoinDate, link.Id
+                         select new ContractMemberInfo(link.Id, profile.FullName, link.JoinDate,
+                             link.LeaveDate, link.IsContactPerson, link.Role)).ToListAsync(ct);
 
     var tenantRows = await (from link in _db.ContractTenants.AsNoTracking()
                             join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
@@ -161,7 +174,7 @@ public sealed class ContractStore : IContractStore
     var drafts = await _db.Invoices.AnyAsync(x => x.ContractId == contract.Id && x.Status == InvoiceStatus.Draft, ct);
 
     return new ContractDetail(contract, roomNumber, tenants, outstanding, deposit, settled, drafts,
-        moveOutNotices);
+        moveOutNotices) { Members = members };
   }
 
   //GetDetailOwnedAsync – Lấy chi tiết hợp đồng thuộc quyền sở hữu của chủ trọ.
@@ -176,9 +189,17 @@ public sealed class ContractStore : IContractStore
   /// <summary>Tạo truy vấn hợp đồng liên quan đến tài khoản người thuê.</summary>
   private IQueryable<Contract> Mine(string userId) => _db.Contracts.Where(c =>
       c.Status != ContractStatus.Draft && c.Status != ContractStatus.Cancelled &&
-      c.StartDate <= RoomManagement.Business.Services.VietnamDate.Today &&
-      _db.ContractTenants.Any(link => link.ContractId == c.Id &&
-          _db.TenantProfiles.Any(p => p.Id == link.TenantId && p.UserId == userId)));
+      (
+          (c.Status == ContractStatus.PendingTenantConfirmation &&
+           _db.ContractTenants.Any(link => link.ContractId == c.Id && link.LeaveDate == null &&
+               link.IsContactPerson && link.Role == ContractTenantRole.ContractParty &&
+               _db.TenantProfiles.Any(p => p.Id == link.TenantId && p.UserId == userId)))
+          ||
+          (c.Status != ContractStatus.PendingTenantConfirmation &&
+           (c.Status == ContractStatus.PendingOperatorConfirmation || c.StartDate <= RoomManagement.Business.Services.VietnamDate.Today) &&
+           _db.ContractTenants.Any(link => link.ContractId == c.Id &&
+               _db.TenantProfiles.Any(p => p.Id == link.TenantId && p.UserId == userId)))
+      ));
 
   //GetDetailMineAsync – Lấy chi tiết hợp đồng của người thuê.
   /// <inheritdoc />
@@ -319,7 +340,7 @@ public sealed class ContractStore : IContractStore
     var currentContract = await _db.Contracts.AsNoTracking().Where(c => c.Id == contract.Id)
         .Select(c => new { c.Status, c.TenancyMode }).SingleAsync(ct);
     var currentStatus = currentContract.Status;
-    if (currentStatus is not (ContractStatus.Draft or ContractStatus.Active))
+    if (currentStatus is not (ContractStatus.Draft or ContractStatus.Active or ContractStatus.PendingTenantConfirmation or ContractStatus.PendingOperatorConfirmation))
       throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ALREADY_CHANGED", "Hợp đồng đã thay đổi trạng thái.");
     if (!Enum.IsDefined(role) ||
         currentContract.TenancyMode == ContractTenancyMode.CoTenancy && role != ContractTenantRole.ContractParty ||
@@ -422,75 +443,117 @@ public sealed class ContractStore : IContractStore
 
   //ActivateSafelyAsync – Kích hoạt hợp đồng an toàn, kiểm tra trạng thái phòng, người thuê và trùng lịch.
   /// <inheritdoc />
-  public async Task ActivateSafelyAsync(Contract contract, CancellationToken ct)
+  public Task ActivateSafelyAsync(Contract contract, CancellationToken ct) =>
+      ActivateSafelyAsync(contract, "system", ct);
+
+  public async Task ActivateSafelyAsync(Contract contract, string actorUserId, CancellationToken ct)
   {
     var propertyId = await _db.Rooms.AsNoTracking().Where(x => x.Id == contract.RoomId).Select(x => x.PropertyId).SingleAsync(ct);
     await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
     await _db.Properties.FromSqlInterpolated($"SELECT * FROM dbo.Properties WITH (UPDLOCK, HOLDLOCK) WHERE Id = {propertyId}").AsNoTracking().SingleAsync(ct);
     var room = await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {contract.RoomId}")
         .SingleAsync(ct);
-    var currentStatus = await _db.Contracts.AsNoTracking().Where(c => c.Id == contract.Id)
-        .Select(c => c.Status).SingleAsync(ct);
-    if (currentStatus != ContractStatus.Draft)
-      throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ALREADY_CHANGED", "Hợp đồng đã thay đổi trạng thái.");
+    var trackedContract = await _db.Contracts.SingleAsync(c => c.Id == contract.Id, ct);
+    if (trackedContract.Status != ContractStatus.PendingOperatorConfirmation)
+      throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ALREADY_CHANGED", "Hợp đồng phải ở trạng thái chờ chủ trọ/quản lý đối ký.");
 
-    if (contract.EndDate is { } end && end < RoomManagement.Business.Services.VietnamDate.Today)
+    if (trackedContract.EndDate is { } end && end < RoomManagement.Business.Services.VietnamDate.Today)
       throw new BusinessException(BusinessErrorType.InvalidOperation,
           "CONTRACT_ALREADY_EXPIRED", "Hợp đồng đã quá ngày kết thúc.");
 
-    if (room.Status != RoomStatus.Available || await HasOverlappingContractAsync(contract, ct))
+    if (room.Status != RoomStatus.Available || await HasOverlappingContractAsync(trackedContract, ct))
       throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ROOM_CONFLICT", "Phòng đã có hợp đồng trùng thời gian hoặc không khả dụng.");
 
-    var tenants = await _db.ContractTenants.Where(x => x.ContractId == contract.Id && x.LeaveDate == null)
+    var tenants = await _db.ContractTenants.Where(x => x.ContractId == trackedContract.Id && x.LeaveDate == null)
         .Select(x => x.TenantId).ToListAsync(ct);
-    var partyCount = await _db.ContractTenants.CountAsync(x => x.ContractId == contract.Id &&
+    var partyCount = await _db.ContractTenants.CountAsync(x => x.ContractId == trackedContract.Id &&
         x.LeaveDate == null && x.Role == ContractTenantRole.ContractParty, ct);
-    if (partyCount == 0 || contract.TenancyMode == ContractTenancyMode.PrimaryTenantWithFamily && partyCount != 1 ||
-        contract.TenancyMode == ContractTenancyMode.CoTenancy && partyCount != tenants.Count)
+    if (partyCount == 0 || trackedContract.TenancyMode == ContractTenancyMode.PrimaryTenantWithFamily && partyCount != 1 ||
+        trackedContract.TenancyMode == ContractTenancyMode.CoTenancy && partyCount != tenants.Count)
       throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_PARTIES_INVALID",
           "Số người đứng tên không phù hợp với chế độ hợp đồng.");
 
     var contactCount = await (from link in _db.ContractTenants
                               join profile in _db.TenantProfiles on link.TenantId equals profile.Id
-                              where link.ContractId == contract.Id && link.IsContactPerson &&
+                              where link.ContractId == trackedContract.Id && link.IsContactPerson &&
                                   link.Role == ContractTenantRole.ContractParty &&
-                                  link.LeaveDate == null && link.JoinDate <= contract.StartDate &&
+                                  link.LeaveDate == null && link.JoinDate <= trackedContract.StartDate &&
                                   (profile.PhoneNumber != null && profile.PhoneNumber != "" ||
                                    profile.Email != null && profile.Email != "")
                               select link.Id).CountAsync(ct);
 
     if (tenants.Count == 0 || tenants.Count > room.MaxOccupants || contactCount != 1 ||
-        !await _db.ContractTenants.AnyAsync(x => x.ContractId == contract.Id &&
-
-            x.JoinDate <= contract.StartDate && x.LeaveDate == null, ct) ||
-
-        await _db.ContractTenants.AnyAsync(link => tenants.Contains(link.TenantId) && link.ContractId != contract.Id &&
-
-            (link.LeaveDate == null || link.LeaveDate >= contract.StartDate) &&
-
+        !await _db.ContractTenants.AnyAsync(x => x.ContractId == trackedContract.Id &&
+            x.JoinDate <= trackedContract.StartDate && x.LeaveDate == null, ct) ||
+        await _db.ContractTenants.AnyAsync(link => tenants.Contains(link.TenantId) && link.ContractId != trackedContract.Id &&
+            (link.LeaveDate == null || link.LeaveDate >= trackedContract.StartDate) &&
         _db.Contracts.Any(c => c.Id == link.ContractId &&
-                c.StartDate <= (contract.EndDate ?? DateOnly.MaxValue) &&
+                c.StartDate <= (trackedContract.EndDate ?? DateOnly.MaxValue) &&
                 (c.Status == ContractStatus.PendingMoveOut ||
-                 c.Status == ContractStatus.Active && (c.EndDate == null || c.EndDate >= contract.StartDate) ||
+                 c.Status == ContractStatus.Active && (c.EndDate == null || c.EndDate >= trackedContract.StartDate) ||
                  c.Status == ContractStatus.PendingSettlement && c.HandoverOn != null &&
-                     c.HandoverOn >= contract.StartDate)), ct))
+                     c.HandoverOn >= trackedContract.StartDate)), ct))
       throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_TENANT_CONFLICT", "Người thuê có hợp đồng trùng thời gian hoặc phòng vượt sức chứa.");
+
     var currentRulesId = await _db.ContractRulesVersions.AsNoTracking().Where(x => x.PropertyId == propertyId && x.IsActive)
         .OrderByDescending(x => x.VersionNumber).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
     if (currentRulesId is null)
       throw new BusinessException(BusinessErrorType.InvalidOperation, "RULES_REQUIRED", "Chủ trọ cần lưu nội quy trước khi kích hoạt.");
-    var missingCommitment = await _db.ContractTenants.AnyAsync(link => link.ContractId == contract.Id &&
-        link.LeaveDate == null && link.Role == ContractTenantRole.ContractParty &&
-        !_db.ContractRulesAcceptances.Any(acceptance =>
-            acceptance.ContractTenantId == link.Id && acceptance.RulesVersionId == currentRulesId &&
-            _db.TenantProfiles.Any(profile => profile.Id == link.TenantId && profile.UserId != null && profile.UserId == acceptance.AcceptedByUserId)), ct);
-    if (missingCommitment)
-      throw new BusinessException(BusinessErrorType.InvalidOperation, "COMMITMENT_REQUIRED",
-          "Mỗi người đứng tên cần dùng tài khoản liên kết để chấp thuận nội quy mới nhất trước khi kích hoạt.");
-    contract.Status = ContractStatus.Active;
-    contract.UpdatedAt = DateTime.UtcNow;
+
+    if (trackedContract.OfferRulesVersionId != currentRulesId)
+      throw new BusinessException(BusinessErrorType.InvalidOperation, "RULES_VERSION_CHANGED",
+          "Nội quy khu trọ đã thay đổi sau khi gửi đề nghị. Vui lòng gửi lại đề nghị để người thuê xác nhận.");
+
+    var representativeUserId = await (from link in _db.ContractTenants
+                                      join profile in _db.TenantProfiles on link.TenantId equals profile.Id
+                                      where link.ContractId == trackedContract.Id &&
+                                            link.LeaveDate == null &&
+                                            link.IsContactPerson &&
+                                            link.Role == ContractTenantRole.ContractParty
+                                      select profile.UserId).SingleOrDefaultAsync(ct);
+
+    if (string.IsNullOrWhiteSpace(representativeUserId) ||
+        trackedContract.TenantConfirmedAt is null ||
+        trackedContract.TenantConfirmedByUserId != representativeUserId ||
+        trackedContract.TenantConfirmedOfferVersion != trackedContract.OfferVersion ||
+        trackedContract.TenantConfirmedTermsHash != trackedContract.OfferTermsHash ||
+        trackedContract.TenantConfirmedRulesVersionId != trackedContract.OfferRulesVersionId)
+    {
+      throw new BusinessException(BusinessErrorType.InvalidOperation, "REPRESENTATIVE_CONFIRMATION_REQUIRED",
+          "Người thuê đại diện chưa xác nhận phiên bản đề nghị hợp đồng và nội quy hiện tại.");
+    }
+
+    var now = DateTime.UtcNow;
+    trackedContract.Status = ContractStatus.Active;
+    trackedContract.OperatorConfirmedAt = now;
+    trackedContract.OperatorConfirmedByUserId = actorUserId;
+    trackedContract.UpdatedAt = now;
+
+    _db.ContractOfferEvents.Add(new ContractOfferEvent
+    {
+      Id = Guid.NewGuid(),
+      ContractId = trackedContract.Id,
+      OfferVersion = trackedContract.OfferVersion,
+      Action = "OperatorCountersigned",
+      TermsHash = trackedContract.OfferTermsHash ?? string.Empty,
+      RulesVersionId = currentRulesId.Value,
+      SnapshotJson = trackedContract.OfferSnapshotJson ?? "{}",
+      ActorUserId = actorUserId,
+      CreatedAt = now
+    });
+
     await SaveAsync(ct);
     await transaction.CommitAsync(ct);
+
+    contract.Status = trackedContract.Status;
+    contract.OperatorConfirmedAt = trackedContract.OperatorConfirmedAt;
+    contract.OperatorConfirmedByUserId = trackedContract.OperatorConfirmedByUserId;
+    contract.UpdatedAt = trackedContract.UpdatedAt;
+
+    await NotifyContractTenantsAsync(trackedContract.Id, "ContractActivated",
+        "Hợp đồng đã được kích hoạt",
+        $"Hợp đồng {trackedContract.ContractCode} đã được phía chủ trọ đối ký và có hiệu lực.",
+        actorUserId, ct);
   }
 
   //CloseSafelyAsync – Đóng hợp đồng an toàn, cập nhật trạng thái, ngày đóng và lý do.
@@ -845,7 +908,7 @@ public sealed class ContractStore : IContractStore
           "Hồ sơ người thuê cần ngày sinh hợp lệ trước khi xác nhận cam kết.");
     var signer = input.SignerTenantProfileId is { } signerId
         ? await _db.TenantProfiles.AsNoTracking().SingleOrDefaultAsync(x => x.Id == signerId &&
-            x.CreatedByUserId == ownerId, ct) : null;
+            x.OwnerLandlordUserId == ownerId, ct) : null;
     if (input.SignerTenantProfileId.HasValue && signer is null)
       throw new BusinessException(BusinessErrorType.NotFound, "SIGNER_PROFILE_NOT_FOUND", "Không tìm thấy hồ sơ người ký thay.");
     if (birthday.AddYears(18) > input.SignedOn &&
@@ -901,7 +964,7 @@ public sealed class ContractStore : IContractStore
     if (!await _db.Contracts.AnyAsync(x => x.Id == contract.Id && x.Status == ContractStatus.Active, ct) ||
         !await _db.ContractTenants.AnyAsync(x => x.ContractId == contract.Id && x.TenantId == input.TenantId &&
             x.JoinDate <= RoomManagement.Business.Services.VietnamDate.Today && x.LeaveDate == null, ct) ||
-        !await _db.TenantProfiles.AnyAsync(x => x.Id == input.TenantId && x.CreatedByUserId == ownerId, ct))
+        !await _db.TenantProfiles.AnyAsync(x => x.Id == input.TenantId && x.OwnerLandlordUserId == ownerId, ct))
       throw new BusinessException(BusinessErrorType.InvalidOperation, "MOVE_OUT_NOTICE_INVALID", "Người gửi phải đang thuộc hợp đồng của chủ trọ.");
     if (await _db.TenantRequests.AnyAsync(x => x.ContractId == contract.Id &&
         x.RequestedByTenantId == input.TenantId && x.Category == TenantRequestCategory.MoveOutNotice &&
@@ -991,5 +1054,407 @@ public sealed class ContractStore : IContractStore
       if (from <= to) periods.Add(new ContractTenurePeriod(from, to));
     }
     return periods;
+  }
+
+  public async Task<ContractTenant> AddTenantByUserAsync(Contract contract, string userId, DateOnly joinDate,
+      bool isContactPerson, ContractTenantRole role, CancellationToken ct)
+  {
+    var user = await _db.Users.AsNoTracking()
+        .SingleOrDefaultAsync(u => u.Id == userId && u.Role == UserRoles.Tenant && u.IsActive && u.DeletedAt == null, ct)
+        ?? throw new BusinessException(BusinessErrorType.NotFound, "TENANT_NOT_FOUND", "Không tìm thấy tài khoản người thuê.");
+
+    var profile = await _db.TenantProfiles
+        .OrderBy(p => p.OwnerLandlordUserId == null ? 0 : 1)
+        .FirstOrDefaultAsync(p => p.UserId == user.Id, ct);
+
+    if (profile is null)
+    {
+      profile = new TenantProfile
+      {
+        Id = Guid.NewGuid(),
+        UserId = user.Id,
+        OwnerLandlordUserId = null,
+        CreatedByUserId = user.Id,
+        FullName = user.FullName ?? user.UserName,
+        PhoneNumber = user.PhoneNumber,
+        Email = user.Email,
+        CitizenId = user.CitizenId,
+        DateOfBirth = user.DateOfBirth,
+        PermanentAddress = user.Address,
+        CreatedAt = DateTime.UtcNow
+      };
+      _db.TenantProfiles.Add(profile);
+      await _db.SaveChangesAsync(ct);
+    }
+
+    return await AddProfileCoreAsync(contract, profile.Id, joinDate, isContactPerson, role, null, ct);
+  }
+
+  public async Task<Contract> SendOfferSafelyAsync(Contract contract, string actorUserId, CancellationToken ct)
+  {
+    var roomInfo = await (from r in _db.Rooms.AsNoTracking()
+                          join p in _db.Properties.AsNoTracking() on r.PropertyId equals p.Id
+                          where r.Id == contract.RoomId
+                          select new { r.Id, r.RoomNumber, r.MaxOccupants, r.Status, PropertyId = p.Id, PropertyName = p.Name })
+                          .SingleAsync(ct);
+
+    await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+    var tracked = await _db.Contracts.SingleAsync(c => c.Id == contract.Id, ct);
+    if (tracked.Status is not (ContractStatus.Draft or ContractStatus.PendingTenantConfirmation))
+      throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ALREADY_CHANGED",
+          "Chỉ có thể gửi đề nghị từ hợp đồng nháp.");
+
+    if (roomInfo.Status != RoomStatus.Available || await HasOverlappingContractAsync(tracked, ct))
+      throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ROOM_CONFLICT",
+          "Phòng đã có hợp đồng trùng thời gian hoặc không khả dụng.");
+
+    var rules = await _db.ContractRulesVersions.AsNoTracking()
+        .Where(x => x.PropertyId == roomInfo.PropertyId && x.IsActive)
+        .OrderByDescending(x => x.VersionNumber)
+        .FirstOrDefaultAsync(ct)
+        ?? throw new BusinessException(BusinessErrorType.InvalidOperation, "RULES_REQUIRED",
+            "Chủ trọ cần lưu nội quy trước khi gửi đề nghị hợp đồng.");
+
+    var parties = await (from link in _db.ContractTenants.AsNoTracking()
+                         join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
+                         where link.ContractId == tracked.Id && link.LeaveDate == null
+                         orderby link.TenantId
+                         select new
+                         {
+                           link.Id,
+                           link.TenantId,
+                           profile.UserId,
+                           profile.FullName,
+                           link.JoinDate,
+                           link.IsContactPerson,
+                           link.Role
+                         }).ToListAsync(ct);
+
+    if (parties.Count == 0 || parties.Count > roomInfo.MaxOccupants)
+      throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_PARTIES_INVALID",
+          "Số lượng người thuê không hợp lệ so với sức chứa phòng.");
+
+    var reps = parties.Where(p => p.IsContactPerson && p.Role == ContractTenantRole.ContractParty).ToList();
+    if (reps.Count != 1 || string.IsNullOrWhiteSpace(reps[0].UserId))
+      throw new BusinessException(BusinessErrorType.InvalidOperation, "REPRESENTATIVE_ACCOUNT_REQUIRED",
+          "Hợp đồng phải có đúng 1 người thuê đại diện đã có tài khoản để xác nhận đề nghị.");
+
+    var snapshot = JsonSerializer.Serialize(new
+    {
+      roomInfo.PropertyId,
+      roomInfo.PropertyName,
+      roomInfo.Id,
+      roomInfo.RoomNumber,
+      tracked.ContractCode,
+      tracked.StartDate,
+      tracked.EndDate,
+      tracked.MonthlyRent,
+      tracked.DepositAmount,
+      tracked.PaymentDueDay,
+      TenancyMode = tracked.TenancyMode.ToString(),
+      tracked.Note,
+      RulesVersionId = rules.Id,
+      rules.VersionNumber,
+      rules.Content,
+      Parties = parties.Select(p => new
+      {
+        p.TenantId,
+        p.UserId,
+        p.FullName,
+        p.JoinDate,
+        p.IsContactPerson,
+        Role = p.Role.ToString()
+      })
+    });
+
+    var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(snapshot)));
+    var now = DateTime.UtcNow;
+
+    tracked.OfferVersion += 1;
+    tracked.OfferTermsHash = hash;
+    tracked.OfferSnapshotJson = snapshot;
+    tracked.OfferRulesVersionId = rules.Id;
+    tracked.OfferSentAt = now;
+    tracked.OfferSentByUserId = actorUserId;
+    tracked.TenantConfirmedAt = null;
+    tracked.TenantConfirmedByUserId = null;
+    tracked.TenantConfirmedOfferVersion = null;
+    tracked.TenantConfirmedTermsHash = null;
+    tracked.TenantConfirmedRulesVersionId = null;
+    tracked.TenantRejectedAt = null;
+    tracked.TenantRejectedByUserId = null;
+    tracked.TenantRejectionReason = null;
+    tracked.Status = ContractStatus.PendingTenantConfirmation;
+    tracked.UpdatedAt = now;
+
+    _db.ContractOfferEvents.Add(new ContractOfferEvent
+    {
+      Id = Guid.NewGuid(),
+      ContractId = tracked.Id,
+      OfferVersion = tracked.OfferVersion,
+      Action = "Sent",
+      TermsHash = hash,
+      RulesVersionId = rules.Id,
+      SnapshotJson = snapshot,
+      ActorUserId = actorUserId,
+      CreatedAt = now
+    });
+
+    await SaveAsync(ct);
+    await transaction.CommitAsync(ct);
+
+    _db.UserNotifications.Add(new UserNotification
+    {
+      Id = Guid.NewGuid(),
+      UserId = reps[0].UserId!,
+      Type = "ContractOfferSent",
+      Title = "Đề nghị hợp đồng mới",
+      Message = $"Bạn nhận được đề nghị hợp đồng {tracked.ContractCode} (phiên bản {tracked.OfferVersion}) cho phòng {roomInfo.RoomNumber}.",
+      ContractId = tracked.Id,
+      PropertyId = roomInfo.PropertyId,
+      ActorUserId = actorUserId,
+      IsRead = false,
+      CreatedAt = now
+    });
+    await _db.SaveChangesAsync(ct);
+
+    return tracked;
+  }
+
+  public async Task<Contract> UpdateOfferTermsSafelyAsync(Contract contract, UpdateContractOfferInput input,
+      string actorUserId, CancellationToken ct)
+  {
+    await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+    var tracked = await _db.Contracts.SingleAsync(c => c.Id == contract.Id, ct);
+    if (tracked.Status is not (ContractStatus.Draft or ContractStatus.PendingTenantConfirmation or ContractStatus.PendingOperatorConfirmation))
+      throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_CANNOT_EDIT",
+          "Chỉ có thể chỉnh sửa hợp đồng trước khi kích hoạt.");
+
+    var wasSent = tracked.Status != ContractStatus.Draft;
+    var now = DateTime.UtcNow;
+
+    tracked.StartDate = input.StartDate;
+    tracked.EndDate = input.EndDate;
+    tracked.MonthlyRent = input.MonthlyRent;
+    tracked.DepositAmount = input.DepositAmount;
+    tracked.PaymentDueDay = input.PaymentDueDay;
+    tracked.Note = string.IsNullOrWhiteSpace(input.Note) ? null : input.Note.Trim();
+    tracked.TenancyMode = input.TenancyMode;
+    tracked.UpdatedAt = now;
+
+    if (wasSent)
+    {
+      tracked.Status = ContractStatus.Draft;
+      tracked.TenantConfirmedAt = null;
+      tracked.TenantConfirmedByUserId = null;
+      tracked.TenantConfirmedOfferVersion = null;
+      tracked.TenantConfirmedTermsHash = null;
+      tracked.TenantConfirmedRulesVersionId = null;
+
+      _db.ContractOfferEvents.Add(new ContractOfferEvent
+      {
+        Id = Guid.NewGuid(),
+        ContractId = tracked.Id,
+        OfferVersion = tracked.OfferVersion,
+        Action = "Reset",
+        TermsHash = tracked.OfferTermsHash ?? string.Empty,
+        RulesVersionId = tracked.OfferRulesVersionId ?? Guid.Empty,
+        SnapshotJson = tracked.OfferSnapshotJson ?? "{}",
+        ActorUserId = actorUserId,
+        Note = "Nội dung đề nghị đã thay đổi, cần gửi lại để người thuê xác nhận.",
+        CreatedAt = now
+      });
+    }
+
+    await SaveAsync(ct);
+    await transaction.CommitAsync(ct);
+    return tracked;
+  }
+
+  public async Task<Contract> ConfirmOfferByTenantAsync(Guid contractId, string tenantUserId,
+      ConfirmContractOfferInput input, CancellationToken ct)
+  {
+    if (!input.AcceptRules)
+      throw new BusinessException(BusinessErrorType.Validation, "RULES_ACCEPTANCE_REQUIRED",
+          "Bạn cần đồng ý cả điều khoản hợp đồng và nội quy khu trọ.");
+
+    await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+    var tracked = await _db.Contracts.SingleOrDefaultAsync(c => c.Id == contractId, ct)
+        ?? throw new BusinessException(BusinessErrorType.NotFound, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+
+    if (tracked.Status != ContractStatus.PendingTenantConfirmation)
+      throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_NOT_PENDING_CONFIRMATION",
+          "Hợp đồng không ở trạng thái chờ người thuê xác nhận.");
+
+    var repLink = await (from link in _db.ContractTenants
+                         join profile in _db.TenantProfiles on link.TenantId equals profile.Id
+                         where link.ContractId == tracked.Id &&
+                               link.LeaveDate == null &&
+                               profile.UserId == tenantUserId
+                         select new { link.Id, link.IsContactPerson, link.Role })
+                         .FirstOrDefaultAsync(ct);
+
+    if (repLink is null)
+      throw new BusinessException(BusinessErrorType.NotFound, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+
+    if (!repLink.IsContactPerson || repLink.Role != ContractTenantRole.ContractParty)
+      throw new BusinessException(BusinessErrorType.Forbidden, "ONLY_REPRESENTATIVE_CAN_CONFIRM",
+          "Chỉ người thuê đại diện của đề nghị mới được xác nhận hợp đồng và nội quy.");
+
+    if (tracked.OfferVersion != input.OfferVersion ||
+        !string.Equals(tracked.OfferTermsHash, input.TermsHash, StringComparison.OrdinalIgnoreCase) ||
+        tracked.OfferRulesVersionId != input.RulesVersionId)
+    {
+      throw new BusinessException(BusinessErrorType.Conflict, "OFFER_VERSION_MISMATCH",
+          "Đề nghị hợp đồng hoặc nội quy đã thay đổi. Vui lòng tải lại phiên bản mới nhất.");
+    }
+
+    var tenantUser = await _db.Users.AsNoTracking().SingleAsync(u => u.Id == tenantUserId, ct);
+    var now = DateTime.UtcNow;
+
+    tracked.TenantConfirmedAt = now;
+    tracked.TenantConfirmedByUserId = tenantUserId;
+    tracked.TenantConfirmedOfferVersion = tracked.OfferVersion;
+    tracked.TenantConfirmedTermsHash = tracked.OfferTermsHash;
+    tracked.TenantConfirmedRulesVersionId = tracked.OfferRulesVersionId;
+    tracked.Status = ContractStatus.PendingOperatorConfirmation;
+    tracked.UpdatedAt = now;
+
+    if (tracked.OfferRulesVersionId is { } rulesVersionId)
+    {
+      var alreadyAccepted = await _db.ContractRulesAcceptances.AnyAsync(
+          a => a.ContractTenantId == repLink.Id && a.RulesVersionId == rulesVersionId, ct);
+      if (!alreadyAccepted)
+      {
+        _db.ContractRulesAcceptances.Add(new ContractRulesAcceptance
+        {
+          Id = Guid.NewGuid(),
+          ContractTenantId = repLink.Id,
+          RulesVersionId = rulesVersionId,
+          AcceptedByUserId = tenantUserId,
+          AcceptedAt = now
+        });
+      }
+    }
+
+    _db.ContractOfferEvents.Add(new ContractOfferEvent
+    {
+      Id = Guid.NewGuid(),
+      ContractId = tracked.Id,
+      OfferVersion = tracked.OfferVersion,
+      Action = "TenantConfirmed",
+      TermsHash = tracked.OfferTermsHash ?? string.Empty,
+      RulesVersionId = tracked.OfferRulesVersionId ?? Guid.Empty,
+      SnapshotJson = tracked.OfferSnapshotJson ?? "{}",
+      ActorUserId = tenantUserId,
+      ActorIdentityVerificationStatus = tenantUser.IdentityVerificationStatus,
+      CreatedAt = now
+    });
+
+    await SaveAsync(ct);
+    await transaction.CommitAsync(ct);
+    return tracked;
+  }
+
+  public async Task<Contract> RejectOfferByTenantAsync(Guid contractId, string tenantUserId,
+      string reason, CancellationToken ct)
+  {
+    await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+    var tracked = await _db.Contracts.SingleOrDefaultAsync(c => c.Id == contractId, ct)
+        ?? throw new BusinessException(BusinessErrorType.NotFound, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+
+    if (tracked.Status != ContractStatus.PendingTenantConfirmation)
+      throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_NOT_PENDING_CONFIRMATION",
+          "Hợp đồng không ở trạng thái chờ người thuê xác nhận.");
+
+    var repLink = await (from link in _db.ContractTenants
+                         join profile in _db.TenantProfiles on link.TenantId equals profile.Id
+                         where link.ContractId == tracked.Id &&
+                               link.LeaveDate == null &&
+                               profile.UserId == tenantUserId
+                         select new { link.Id, link.IsContactPerson, link.Role })
+                         .FirstOrDefaultAsync(ct);
+
+    if (repLink is null)
+      throw new BusinessException(BusinessErrorType.NotFound, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+
+    if (!repLink.IsContactPerson || repLink.Role != ContractTenantRole.ContractParty)
+      throw new BusinessException(BusinessErrorType.Forbidden, "ONLY_REPRESENTATIVE_CAN_CONFIRM",
+          "Chỉ người thuê đại diện của đề nghị mới được từ chối đề nghị.");
+
+    var tenantUser = await _db.Users.AsNoTracking().SingleAsync(u => u.Id == tenantUserId, ct);
+    var now = DateTime.UtcNow;
+
+    tracked.TenantRejectedAt = now;
+    tracked.TenantRejectedByUserId = tenantUserId;
+    tracked.TenantRejectionReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+    tracked.Status = ContractStatus.Draft;
+    tracked.UpdatedAt = now;
+
+    _db.ContractOfferEvents.Add(new ContractOfferEvent
+    {
+      Id = Guid.NewGuid(),
+      ContractId = tracked.Id,
+      OfferVersion = tracked.OfferVersion,
+      Action = "TenantRejected",
+      TermsHash = tracked.OfferTermsHash ?? string.Empty,
+      RulesVersionId = tracked.OfferRulesVersionId ?? Guid.Empty,
+      SnapshotJson = tracked.OfferSnapshotJson ?? "{}",
+      ActorUserId = tenantUserId,
+      ActorIdentityVerificationStatus = tenantUser.IdentityVerificationStatus,
+      Note = tracked.TenantRejectionReason,
+      CreatedAt = now
+    });
+
+    await SaveAsync(ct);
+    await transaction.CommitAsync(ct);
+    return tracked;
+  }
+
+  public async Task NotifyContractTenantsAsync(Guid contractId, string type, string title, string message,
+      string? actorUserId, CancellationToken ct)
+  {
+    var info = await (from c in _db.Contracts.AsNoTracking()
+                      join r in _db.Rooms.AsNoTracking() on c.RoomId equals r.Id
+                      where c.Id == contractId
+                      select new { r.PropertyId }).FirstOrDefaultAsync(ct);
+
+    var userIds = await (from link in _db.ContractTenants.AsNoTracking()
+                         join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
+                         where link.ContractId == contractId && profile.UserId != null
+                         select profile.UserId!)
+                         .Distinct()
+                         .ToListAsync(ct);
+
+    if (userIds.Count == 0)
+      return;
+
+    var now = DateTime.UtcNow;
+    foreach (var uid in userIds)
+    {
+      _db.UserNotifications.Add(new UserNotification
+      {
+        Id = Guid.NewGuid(),
+        UserId = uid,
+        Type = type,
+        Title = title,
+        Message = message,
+        ContractId = contractId,
+        PropertyId = info?.PropertyId,
+        ActorUserId = actorUserId,
+        IsRead = false,
+        CreatedAt = now
+      });
+    }
+
+    await _db.SaveChangesAsync(ct);
+  }
+
+  public async Task RecordClosedActorAsync(Guid contractId, string actorUserId, CancellationToken ct)
+  {
+    await _db.Contracts.Where(c => c.Id == contractId)
+        .ExecuteUpdateAsync(s => s
+            .SetProperty(c => c.ClosedByUserId, actorUserId)
+            .SetProperty(c => c.ClosedAt, DateTime.UtcNow), ct);
   }
 }

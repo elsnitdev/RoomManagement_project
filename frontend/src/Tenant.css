@@ -153,3 +153,45 @@
 .tn-page button:focus-visible,.tn-page input:focus-visible,.tn-page select:focus-visible,.tn-page textarea:focus-visible{outline:2px solid #2c68ad;outline-offset:2px}
 @media(max-width:700px){.tn-billing-list>.tn-filter-bar{padding:0 15px 11px}.tn-notice-toolbar{align-items:flex-start;flex-direction:column}.tn-notices li.is-unread,.tn-notices li.is-read{background:transparent}}
 @media(prefers-reduced-motion:reduce){.tn-page{animation:none}.tn-page button{transition:none}.tn-action:hover:not(:disabled),.tn-submit:hover:not(:disabled),.tn-quick-grid button:hover,.tn-bills button:hover{transform:none}}
+
+.tn-offer-box {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.tn-offer-box > strong {
+  color: #92400e;
+  font-size: 0.95rem;
+}
+
+.tn-offer-box > p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #78350f;
+}
+
+.tn-offer-agree {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 0.88rem;
+  color: #1e293b;
+  cursor: pointer;
+}
+
+.tn-offer-agree input {
+  margin-top: 0.2rem;
+}
+
+.tn-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}

@@ -18,6 +18,29 @@ public sealed class Contract
     public DateOnly? ClosedOn { get; set; }
     public DateOnly? HandoverOn { get; set; }
     public string? ClosureReason { get; set; }
+    public DateTime? ClosedAt { get; set; }
+    public string? ClosedByUserId { get; set; }
+
+    public int OfferVersion { get; set; }
+    public string? OfferTermsHash { get; set; }
+    public string? OfferSnapshotJson { get; set; }
+    public Guid? OfferRulesVersionId { get; set; }
+    public DateTime? OfferSentAt { get; set; }
+    public string? OfferSentByUserId { get; set; }
+
+    public DateTime? TenantConfirmedAt { get; set; }
+    public string? TenantConfirmedByUserId { get; set; }
+    public int? TenantConfirmedOfferVersion { get; set; }
+    public string? TenantConfirmedTermsHash { get; set; }
+    public Guid? TenantConfirmedRulesVersionId { get; set; }
+
+    public DateTime? TenantRejectedAt { get; set; }
+    public string? TenantRejectedByUserId { get; set; }
+    public string? TenantRejectionReason { get; set; }
+
+    public DateTime? OperatorConfirmedAt { get; set; }
+    public string? OperatorConfirmedByUserId { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

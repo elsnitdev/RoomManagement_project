@@ -22,21 +22,23 @@ public sealed class BillingInputService
 
     private async Task<string> OwnerAsync(CancellationToken ct)
     {
-        var owner = _current.GetUserId();
-        if (!await _landlords.IsActiveLandlordAsync(owner, ct))
-            throw Invalid("LANDLORD_UNAVAILABLE", "Chủ trọ không khả dụng.");
-        return owner;
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_current, _landlords, ct);
+        return context.OwnerLandlordUserId;
     }
 
     private async Task EnsurePropertyAsync(Guid propertyId, string owner, CancellationToken ct)
     {
-        if (!await _store.PropertyOwnedAsync(propertyId, owner, ct))
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_current, _landlords, ct);
+        if (!await _landlords.HasPropertyAccessAsync(context.ActorUserId, propertyId, ct) ||
+            !await _store.PropertyOwnedAsync(propertyId, owner, ct))
             throw NotFound("PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ đang hoạt động.");
     }
 
     private async Task EnsureRoomAsync(Guid propertyId, Guid roomId, string owner, CancellationToken ct)
     {
-        if (!await _store.RoomOwnedAsync(propertyId, roomId, owner, ct))
+        var context = await OperatorAccessGuard.RequireOperatorAsync(_current, _landlords, ct);
+        if (!await _landlords.HasPropertyAccessAsync(context.ActorUserId, propertyId, ct) ||
+            !await _store.RoomOwnedAsync(propertyId, roomId, owner, ct))
             throw NotFound("ROOM_NOT_FOUND", "Không tìm thấy phòng trong khu trọ đang hoạt động.");
     }
 

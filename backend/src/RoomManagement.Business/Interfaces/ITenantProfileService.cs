@@ -45,4 +45,6 @@ public interface ITenantProfileService
     /// <param name="ct">Token hủy thao tác không đồng bộ.</param>
     /// <returns>Thông tin hồ sơ sau khi cập nhật thành công.</returns>
     Task<TenantProfileDto> UpdateProfileAsync(string landlordId, Guid id, UpdateTenantProfileDto dto, CancellationToken ct = default);
+
+    Task<TenantLookupResultDto> LookupExactAsync(string actorId, LookupTenantAccountInput input, CancellationToken ct = default);
 }

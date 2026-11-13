@@ -28,12 +28,19 @@ public class CheckTenantRegistrationRequestBase
 
 public sealed class RegisterTenantRequest
 {
+    public string? UserName { get; init; }
+    [Required]
+    public string FullName { get; init; } = string.Empty;
     [Required]
     public string PhoneNumber { get; init; } = string.Empty;
     [Required]
-    public string LandlordCode { get; init; } = string.Empty;
+    public string CitizenId { get; init; } = string.Empty;
     [Required]
-    public Guid ChallengeId { get; init; }
+    public DateOnly? DateOfBirth { get; init; }
+    [Required]
+    public string Address { get; init; } = string.Empty;
+    public string? Email { get; init; }
+    public string? Gender { get; init; }
     [Required]
     public string Password { get; init; } = string.Empty;
     [Required]

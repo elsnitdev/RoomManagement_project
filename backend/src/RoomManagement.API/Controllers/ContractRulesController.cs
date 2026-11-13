@@ -7,7 +7,7 @@ using RoomManagement.Domain;
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRoles.Landlord)]
+[Authorize(Roles = UserRoles.LandlordOrManager)]
 [Route("api/properties/{propertyId:guid}/rules")]
 public sealed class ContractRulesController(ContractRulesService service) : ControllerBase
 {

@@ -8,4 +8,5 @@ public interface ITenantRegistrationService
     Task<Guid> RequestOtpAsync(string landlordCode, string phone, CancellationToken ct = default);
     Task<Guid> VerifyOtpAsync(string landlordCode, string phone, Guid challengeId, string code, CancellationToken ct = default);
     Task<UserDto> RegisterAsync(string landlordCode, string phone, Guid challengeId, string password, string confirmPassword, CancellationToken ct = default);
+    Task<UserDto> SelfRegisterAsync(SelfRegisterTenantDto dto, CancellationToken ct = default);
 }

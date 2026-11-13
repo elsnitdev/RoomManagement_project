@@ -31,6 +31,8 @@ public sealed class ApiExceptionHandler : IExceptionHandler
           (StatusCodes.Status422UnprocessableEntity, "Không thể thực hiện thao tác", business.Code),
       BusinessException { Type: BusinessErrorType.Validation } business =>
           (StatusCodes.Status400BadRequest, "Dữ liệu yêu cầu không hợp lệ", business.Code),
+      BusinessException { Type: BusinessErrorType.Forbidden } business =>
+          (StatusCodes.Status403Forbidden, "Không có quyền truy cập", business.Code),
       SqlException { Number: 1205 } =>
           (StatusCodes.Status409Conflict, "Dữ liệu bị xung đột", "CONCURRENT_UPDATE_CONFLICT"),
       RequestFailedException =>

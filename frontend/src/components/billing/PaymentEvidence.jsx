@@ -110,8 +110,8 @@ function EvidenceImage({ paymentId, image }) {
   );
 }
 
-export function EvidenceManager({ paymentId }) {
-  const [open, setOpen] = useState(false);
+export function EvidenceManager({ paymentId, initialOpen = false }) {
+  const [open, setOpen] = useState(initialOpen);
   const [images, setImages] = useState([]);
   const [selection, setSelection] = useState(null);
   const [busy, setBusy] = useState(false);

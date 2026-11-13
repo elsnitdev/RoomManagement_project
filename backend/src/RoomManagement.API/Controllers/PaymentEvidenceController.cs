@@ -8,7 +8,7 @@ using RoomManagement.Domain.Entities;
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRoles.Landlord)]
+[Authorize(Roles = UserRoles.LandlordOrManager)]
 [Route("api/payments/{paymentId:guid}/evidence")]
 public sealed class PaymentEvidenceController(PaymentEvidenceService service) : ControllerBase
 {

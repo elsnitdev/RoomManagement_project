@@ -1,3 +1,5 @@
+using RoomManagement.Business.DTOs;
+using RoomManagement.Business.DTOs.Tenants;
 using RoomManagement.Domain.Entities;
 
 namespace RoomManagement.Business.Interfaces;
@@ -71,4 +73,16 @@ public interface ITenantProfileStore
     /// </summary>
     /// <param name="ct">Token hủy thao tác không đồng bộ.</param>
     Task SaveChangesAsync(CancellationToken ct = default);
+
+    Task<bool> HasContractAccessPermissionAsync(OperatorContext context, Guid tenantProfileId, CancellationToken ct = default)
+        => HasAccessPermissionAsync(context.OwnerLandlordUserId, tenantProfileId, ct);
+
+    Task<(IReadOnlyList<TenantProfile> Items, int TotalCount)> GetByContractAccessAsync(
+        OperatorContext context, string? keyword, int pageIndex, int pageSize, CancellationToken ct = default)
+        => GetByLandlordAsync(context.OwnerLandlordUserId, keyword, pageIndex, pageSize, ct);
+
+    Task<TenantLookupResultDto?> LookupExactTenantAsync(
+        OperatorContext context, Guid? propertyId, string normalizedPhone, string normalizedCitizenId,
+        string maskedPhone, string maskedCitizenId, CancellationToken ct = default)
+        => Task.FromResult<TenantLookupResultDto?>(null);
 }

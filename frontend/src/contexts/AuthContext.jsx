@@ -59,11 +59,23 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener("auth:unauthorized", signOut);
   }, [signOut]);
 
+  const updateUser = useCallback((nextUser) => {
+    setSession((current) => {
+      if (!current) return current;
+      const merged = {
+        ...current,
+        user: typeof nextUser === "function" ? nextUser(current.user) : { ...current.user, ...nextUser },
+      };
+      writeAuthSession(merged);
+      return merged;
+    });
+  }, []);
+
   const user = session?.user ?? null;
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated: Boolean(user && session?.accessToken), signIn, signOut }}
+      value={{ user, isAuthenticated: Boolean(user && session?.accessToken), signIn, signOut, updateUser }}
     >
       {children}
     </AuthContext.Provider>

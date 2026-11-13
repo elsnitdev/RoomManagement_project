@@ -18,12 +18,12 @@ public interface IPaymentStore
 
     /// <summary>Xác nhận hoặc từ chối một khoản đang chờ trong giao dịch khóa hóa đơn.</summary>
     Task<OwnerPaymentResult> ReviewAsync(Guid paymentId, string ownerId,
-        ReviewPaymentInput input, CancellationToken ct);
+        ReviewPaymentInput input, CancellationToken ct, string? actorUserId = null);
 
     /// <summary>Ghi ngay khoản tiền chủ trọ đã nhận, kèm lịch sử xác nhận.</summary>
     Task<OwnerPaymentResult> RecordReceivedAsync(Guid invoiceId, string ownerId,
-        RecordReceivedPaymentInput input, CancellationToken ct);
+        RecordReceivedPaymentInput input, CancellationToken ct, string? actorUserId = null);
     Task<Refund> RecordOverpaymentRefundAsync(Guid invoiceId, string ownerId,
-        decimal amount, string? transactionCode, Guid idempotencyKey, CancellationToken ct);
+        decimal amount, string? transactionCode, Guid idempotencyKey, CancellationToken ct, string? actorUserId = null);
     Task<IReadOnlyList<Refund>> ListOverpaymentRefundsAsync(Guid invoiceId, string ownerId, CancellationToken ct);
 }

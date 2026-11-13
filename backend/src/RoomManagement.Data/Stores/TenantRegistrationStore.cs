@@ -17,7 +17,7 @@ public sealed class TenantRegistrationStore : ITenantRegistrationStore
         db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Role == UserRoles.Landlord && u.IsActive && u.LandlordCode == code, ct);
 
     public async Task<IReadOnlyList<TenantProfile>> FindByPhoneAsync(string landlordId, string phone, CancellationToken ct = default) =>
-        await db.TenantProfiles.AsNoTracking().Where(p => p.CreatedByUserId == landlordId && p.PhoneNumber == phone).Take(2).ToListAsync(ct);
+        await db.TenantProfiles.AsNoTracking().Where(p => p.OwnerLandlordUserId == landlordId && p.PhoneNumber == phone).Take(2).ToListAsync(ct);
 
     public Task<bool> UserNameExistsAsync(string login, CancellationToken ct = default) =>
         db.Users.AnyAsync(u => u.NormalizedUserName == login || u.NormalizedEmail == login, ct);
@@ -51,7 +51,7 @@ public sealed class TenantRegistrationStore : ITenantRegistrationStore
             if (challenge is null || challenge.LandlordId != landlordId || challenge.PhoneNumber != phone ||
                 challenge.VerifiedAt is null || challenge.ExpiresAt <= DateTime.UtcNow || challenge.ConsumedAt is not null)
                 throw new AppValidationException("Số điện thoại chưa được xác minh hoặc mã đã hết hạn.");
-            var profiles = await db.TenantProfiles.Where(p => p.CreatedByUserId == landlordId && p.PhoneNumber == phone).Take(2).ToListAsync(ct);
+            var profiles = await db.TenantProfiles.Where(p => p.OwnerLandlordUserId == landlordId && p.PhoneNumber == phone).Take(2).ToListAsync(ct);
             if (profiles.Count != 1 || profiles[0].UserId is not null || await UserNameExistsAsync(login, ct))
                 throw new AppConflictException("Hồ sơ không còn đủ điều kiện đăng ký.", "PROFILE_NOT_ELIGIBLE");
             var user = createUser(profiles[0]);
@@ -72,6 +72,44 @@ public sealed class TenantRegistrationStore : ITenantRegistrationStore
         catch (DbUpdateConcurrencyException)
         {
             throw new AppConflictException("Mã xác minh vừa được sử dụng. Vui lòng thử lại.", "OTP_ALREADY_USED");
+        }
+    }
+
+    public async Task SelfRegisterAsync(AppUser user, TenantProfile profile, CancellationToken ct = default)
+    {
+        try
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+
+            var conflict = await db.Users.AsNoTracking().AnyAsync(u =>
+                u.NormalizedUserName == user.NormalizedUserName ||
+                (user.NormalizedEmail != null && u.NormalizedEmail == user.NormalizedEmail) ||
+                (u.DeletedAt == null && u.PhoneNumber == user.PhoneNumber) ||
+                u.CitizenId == user.CitizenId, ct);
+
+            if (conflict)
+            {
+                throw new AppConflictException(
+                    "Không thể đăng ký với thông tin đã nhập. Nếu bạn đã có tài khoản, vui lòng đăng nhập.",
+                    "TENANT_REGISTRATION_CONFLICT");
+            }
+
+            db.Users.Add(user);
+            db.TenantProfiles.Add(profile);
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 or 1205 })
+        {
+            throw new AppConflictException(
+                "Không thể đăng ký với thông tin đã nhập. Nếu bạn đã có tài khoản, vui lòng đăng nhập.",
+                "TENANT_REGISTRATION_CONFLICT");
+        }
+        catch (SqlException ex) when (ex.Number == 1205)
+        {
+            throw new AppConflictException(
+                "Không thể đăng ký với thông tin đã nhập. Nếu bạn đã có tài khoản, vui lòng đăng nhập.",
+                "TENANT_REGISTRATION_CONFLICT");
         }
     }
 }

@@ -51,7 +51,10 @@ builder.Services.AddScoped<SettlementRefundEvidenceService>();
 builder.Services.AddHostedService<ContractExpiryWorker>();
 
 builder.Services.AddControllers(options =>
-    options.Filters.Add<GlobalExceptionFilter>())
+{
+    options.Filters.Add<GlobalExceptionFilter>();
+    options.Filters.Add<MustChangePasswordFilter>();
+})
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter(allowIntegerValues: false)));

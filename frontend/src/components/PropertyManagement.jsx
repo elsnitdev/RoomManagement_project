@@ -317,6 +317,7 @@ function PaymentAccountForm({ property, onSaved }) {
 
 function PropertyList({ navigate, notify }) {
   const { user } = useAuth();
+  const isManager = user?.role === "Manager";
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -371,17 +372,23 @@ function PropertyList({ navigate, notify }) {
       <header className="pm-hero">
         <div>
           <span className="pm-eyebrow">QUẢN LÝ BẤT ĐỘNG SẢN</span>
-          <h1>Khu trọ của bạn</h1>
-          <p>Quản lý thông tin từng khu trọ và các phòng bên trong.</p>
+          <h1>{isManager ? "Khu trọ được giao" : "Khu trọ của bạn"}</h1>
+          <p>
+            {isManager
+              ? "Quản lý phòng, hợp đồng và hóa đơn trong các khu trọ được phân công."
+              : "Quản lý thông tin từng khu trọ và các phòng bên trong."}
+          </p>
         </div>
-        <IconButton
-          label="Thêm khu trọ"
-          icon={Plus}
-          tone="primary"
-          onClick={() => setCreating(true)}
-        />
+        {!isManager && (
+          <IconButton
+            label="Thêm khu trọ"
+            icon={Plus}
+            tone="primary"
+            onClick={() => setCreating(true)}
+          />
+        )}
       </header>
-      {creating && (
+      {!isManager && creating && (
         <PropertyForm
           onClose={() => setCreating(false)}
           onSaved={(created) => {
@@ -449,14 +456,18 @@ function PropertyList({ navigate, notify }) {
             <strong>
               {search || status !== "all"
                 ? "Không tìm thấy khu trọ phù hợp"
-                : "Bạn chưa có khu trọ nào"}
+                : isManager
+                  ? "Bạn chưa được giao khu trọ nào"
+                  : "Bạn chưa có khu trọ nào"}
             </strong>
             <p>
               {search || status !== "all"
                 ? "Thử thay đổi từ khóa hoặc bộ lọc."
-                : "Bắt đầu bằng cách tạo khu trọ đầu tiên."}
+                : isManager
+                  ? "Liên hệ chủ trọ để được phân công quản lý khu trọ."
+                  : "Bắt đầu bằng cách tạo khu trọ đầu tiên."}
             </p>
-            {!search && status === "all" && (
+            {!isManager && !search && status === "all" && (
               <IconButton
                 label="Tạo khu trọ"
                 icon={Plus}
@@ -919,6 +930,7 @@ function PropertyRoomList({ propertyId, property, navigate }) {
 
 function PropertyDetail({ propertyId, navigate, notify }) {
   const { user } = useAuth();
+  const isManager = user?.role === "Manager";
   const [showDetails, setShowDetails] = useState(false);
   const [editingProperty, setEditingProperty] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -1012,13 +1024,15 @@ function PropertyDetail({ propertyId, navigate, notify }) {
                     }}
                     disabled={busy}
                   />
-                  <IconButton
-                    label="Xóa khu trọ"
-                    icon={Trash2}
-                    tone="danger"
-                    onClick={askDeleteProperty}
-                    disabled={busy}
-                  />
+                  {!isManager && (
+                    <IconButton
+                      label="Xóa khu trọ"
+                      icon={Trash2}
+                      tone="danger"
+                      onClick={askDeleteProperty}
+                      disabled={busy}
+                    />
+                  )}
                 </div>
               </div>
             </header>
@@ -1118,14 +1132,16 @@ function PropertyDetail({ propertyId, navigate, notify }) {
               propertyId={propertyId}
               navigate={navigate}
             />
-            <PaymentAccountForm
-              key={property.rowVersion}
-              property={property}
-              onSaved={() => {
-                propertyQuery.reload();
-                notify("Đã cập nhật tài khoản nhận chuyển khoản.");
-              }}
-            />
+            {!isManager && (
+              <PaymentAccountForm
+                key={property.rowVersion}
+                property={property}
+                onSaved={() => {
+                  propertyQuery.reload();
+                  notify("Đã cập nhật tài khoản nhận chuyển khoản.");
+                }}
+              />
+            )}
             <section
               className="pm-management-panel content-card"
               aria-labelledby="pm-management-title"

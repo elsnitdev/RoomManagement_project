@@ -34,4 +34,11 @@ public interface IUserService
     /// Cập nhật / bổ sung thông tin cá nhân. Sau khi cập nhật, hồ sơ bắt buộc phải đầy đủ.
     /// </summary>
     Task<ProfileStatusDto> CompleteProfileAsync(string userId, CompleteProfileDto dto, CancellationToken cancellationToken = default);
+
+    Task<UserDto> GetMyProfileAsync(string userId, CancellationToken cancellationToken = default);
+    Task<(IReadOnlyList<UserDto> Items, int TotalCount)> ListUsersByAdminAsync(
+        string? role, string? keyword, bool? isActive, int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<UserDto> SetUserLockByAdminAsync(string adminUserId, string targetUserId, bool isLocked, CancellationToken cancellationToken = default);
+    Task<UserDto> UpdateUserByAdminAsync(string adminUserId, string targetUserId, AdminUpdateUserDto dto, CancellationToken cancellationToken = default);
+    Task<UserDto> DeactivateUserByAdminAsync(string adminUserId, string targetUserId, CancellationToken cancellationToken = default);
 }

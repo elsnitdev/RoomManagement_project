@@ -23,6 +23,11 @@ public sealed class CurrentUserJwtEvents : JwtBearerEvents
 
         var user = await authenticationService.GetActiveUserAsync(userId, context.HttpContext.RequestAborted);
         if (user is null || user.Role != context.Principal?.FindFirst("role")?.Value)
+        {
             context.Fail("Tài khoản không còn quyền truy cập. Vui lòng đăng nhập lại.");
+            return;
+        }
+
+        context.HttpContext.Items["CurrentActiveUser"] = user;
     }
 }

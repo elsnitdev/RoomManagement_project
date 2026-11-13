@@ -1,6 +1,7 @@
 export * from './api/authApi'
 export * from './api/userApi'
 export * from './api/adminUserApi'
+export * from './api/managerApi'
 export * from './api/PropertyApi'
 export * from './api/RoomApi'
 export * from './api/RoomRowApi'

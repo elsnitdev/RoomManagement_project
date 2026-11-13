@@ -4,9 +4,11 @@ using RoomManagement.Business.DTOs.Users;
 using RoomManagement.Business.Exceptions;
 using RoomManagement.Business.Interfaces;
 using RoomManagement.Business.Mappings;
+using RoomManagement.Business.Validators;
 using RoomManagement.Domain;
 using RoomManagement.Domain.Constants;
 using RoomManagement.Domain.Entities;
+using RoomManagement.Domain.Enums;
 
 namespace RoomManagement.Business.Services;
 
@@ -99,6 +101,87 @@ public sealed class TenantRegistrationService : ITenantRegistrationService
             return user;
         }, ct);
         return created!.ToUserDto();
+    }
+
+    public async Task<UserDto> SelfRegisterAsync(SelfRegisterTenantDto dto, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(dto.Password) || dto.Password.Length < 6)
+            throw new AppValidationException("Mật khẩu phải có ít nhất 6 ký tự.");
+        if (dto.Password != dto.ConfirmPassword)
+            throw new AppValidationException("Mật khẩu nhập lại không khớp.");
+
+        var normalizedPhone = NormalizePhone(dto.PhoneNumber);
+        if (!Regex.IsMatch(normalizedPhone, "^0[0-9]{9}$"))
+            throw new AppValidationException("Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0.");
+
+        var normalizedCitizenId = (dto.CitizenId ?? string.Empty).Trim();
+        var userName = string.IsNullOrWhiteSpace(dto.UserName) ? normalizedPhone : dto.UserName.Trim();
+        var normalizedEmail = string.IsNullOrWhiteSpace(dto.Email) ? null : dto.Email.Trim();
+        if (normalizedEmail is not null)
+            UserAccountRules.EnsureValidEmail(normalizedEmail);
+
+        Gender? parsedGender = null;
+        if (!string.IsNullOrWhiteSpace(dto.Gender))
+        {
+            if (!Enum.TryParse<Gender>(dto.Gender.Trim(), ignoreCase: true, out var g))
+                throw new AppValidationException("Giới tính không hợp lệ (Male, Female, Other).");
+            parsedGender = g;
+        }
+
+        var now = DateTime.UtcNow;
+        var user = new AppUser
+        {
+            Id = Guid.NewGuid().ToString(),
+            UserName = userName,
+            NormalizedUserName = userName.ToUpperInvariant(),
+            Email = normalizedEmail,
+            NormalizedEmail = normalizedEmail?.ToUpperInvariant(),
+            Role = UserRoles.Tenant,
+            IsActive = true,
+            ApprovalStatus = ApprovalStatuses.Approved,
+            IdentityVerificationStatus = IdentityVerificationStatuses.Unverified,
+            IdentityVerifiedAt = null,
+            FullName = string.IsNullOrWhiteSpace(dto.FullName) ? null : dto.FullName.Trim(),
+            PhoneNumber = normalizedPhone,
+            CitizenId = string.IsNullOrWhiteSpace(normalizedCitizenId) ? null : normalizedCitizenId,
+            DateOfBirth = dto.DateOfBirth,
+            Address = string.IsNullOrWhiteSpace(dto.Address) ? null : dto.Address.Trim(),
+            CreatedAt = now
+        };
+
+        UserProfileRules.EnsureRequiredFieldsFilled(user);
+        UserProfileRules.EnsureValidFormat(user);
+        user.PasswordHash = hasher.HashPassword(user, dto.Password);
+
+        var profile = new TenantProfile
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            OwnerLandlordUserId = null,
+            CreatedByUserId = user.Id,
+            FullName = user.FullName!,
+            PhoneNumber = user.PhoneNumber,
+            Email = user.Email,
+            CitizenId = user.CitizenId,
+            DateOfBirth = user.DateOfBirth,
+            Gender = parsedGender,
+            PermanentAddress = user.Address,
+            CreatedAt = now,
+            UpdatedAt = null
+        };
+
+        await store.SelfRegisterAsync(user, profile, ct);
+        return user.ToUserDto();
+    }
+
+    public static string NormalizePhone(string? phone)
+    {
+        var trimmed = (phone ?? string.Empty).Trim().Replace(" ", string.Empty).Replace("-", string.Empty);
+        if (trimmed.StartsWith("+84", StringComparison.Ordinal))
+            trimmed = "0" + trimmed[3..];
+        else if (trimmed.StartsWith("84", StringComparison.Ordinal) && trimmed.Length == 11)
+            trimmed = "0" + trimmed[2..];
+        return trimmed;
     }
 
     private async Task<(AppUser? Landlord, string Phone)> ResolveAsync(string code, string phone, CancellationToken ct)

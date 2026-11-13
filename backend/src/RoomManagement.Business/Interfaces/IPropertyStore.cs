@@ -10,6 +10,9 @@ public interface IPropertyStore
     Task<Property?> GetAsync(Guid propertyId, string ownerId, CancellationToken cancellationToken);
     /// <summary>Lấy danh sách khu trọ của chủ trọ theo bộ lọc và phân trang.</summary>
     Task<(IReadOnlyList<Property> Items, long TotalItems)> ListAsync(string ownerId, string? search, bool? isActive, int skip, int take, CancellationToken cancellationToken);
+    /// <summary>Lấy danh sách khu trọ trong phạm vi của actor (Landlord hoặc Manager) trước phân trang.</summary>
+    Task<(IReadOnlyList<Property> Items, long TotalItems)> ListForOperatorAsync(string actorUserId, string ownerId, bool isManager, string? search, bool? isActive, int skip, int take, CancellationToken cancellationToken)
+        => ListAsync(ownerId, search, isActive, skip, take, cancellationToken);
     /// <summary>Lưu thay đổi khu trọ và xử lý xung đột cập nhật.</summary>
     Task SaveAsync(CancellationToken cancellationToken);
     /// <summary>Tìm dữ liệu liên quan đang cản trở việc xóa khu trọ.</summary>

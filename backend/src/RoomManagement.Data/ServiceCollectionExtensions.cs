@@ -35,6 +35,7 @@ public static class ServiceCollectionExtensions
     services.AddScoped<Seeders.AdminUserSeeder>();
 
     services.AddScoped<ILandlordStore, LandlordStore>();
+    services.AddScoped<IManagerStore, ManagerStore>();
     services.AddScoped<IPropertyStore, PropertyStore>();
     services.AddScoped<IRoomStore, RoomStore>();
     services.AddScoped<IRoomImageStore, RoomImageStore>();

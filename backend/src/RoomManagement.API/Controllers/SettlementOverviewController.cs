@@ -10,7 +10,7 @@ using RoomManagement.Domain.Enums;
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRoles.Landlord)]
+[Authorize(Roles = UserRoles.LandlordOrManager)]
 [Route("api/properties/{propertyId:guid}/contracts/{contractId:guid}/settlement-overview")]
 public sealed class SettlementOverviewController(SettlementOverviewService service) : ControllerBase
 {

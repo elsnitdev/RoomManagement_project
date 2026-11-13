@@ -20,7 +20,17 @@ public static class UserMappings
         Role = user.Role,
         IsActive = user.IsActive,
         ApprovalStatus = user.ApprovalStatus,
-        CreatedAt = user.CreatedAt
+        CreatedAt = user.CreatedAt,
+        MustChangePassword = user.MustChangePassword,
+        LandlordUserId = user.LandlordUserId,
+        IdentityVerificationStatus = user.IdentityVerificationStatus,
+        IdentityVerifiedAt = user.IdentityVerifiedAt,
+        FullName = user.FullName,
+        PhoneNumber = user.PhoneNumber,
+        CitizenId = user.CitizenId,
+        DateOfBirth = user.DateOfBirth,
+        Address = user.Address,
+        DeletedAt = user.DeletedAt
     };
 
     /// <summary>Chuyển AppUser sang LandlordRegistrationDto (dùng cho màn hình duyệt của Admin).</summary>

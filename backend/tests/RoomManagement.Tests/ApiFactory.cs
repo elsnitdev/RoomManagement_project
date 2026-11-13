@@ -34,9 +34,11 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IUserStore>();
             services.RemoveAll<ILandlordApprovalStore>();
             services.RemoveAll<ITenantProfileStore>();
+            services.RemoveAll<ILandlordStore>();
             services.AddSingleton<IUserStore>(Store);
             services.AddSingleton<ILandlordApprovalStore>(Store);
             services.AddSingleton<ITenantProfileStore>(TenantProfileStore);
+            services.AddSingleton<ILandlordStore>(Store);
         });
     }
 }

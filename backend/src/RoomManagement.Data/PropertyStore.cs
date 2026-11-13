@@ -26,9 +26,18 @@ public sealed class PropertyStore : IPropertyStore
     _db.Properties.SingleOrDefaultAsync(p => p.Id == propertyId && p.OwnerUserId == ownerId, ct);
 
   /// <inheritdoc />
-  public async Task<(IReadOnlyList<Property> Items, long TotalItems)> ListAsync(string ownerId, string? search, bool? isActive, int skip, int take, CancellationToken ct)
+  public async Task<(IReadOnlyList<Property> Items, long TotalItems)> ListAsync(string ownerId, string? search, bool? isActive, int skip, int take, CancellationToken ct) =>
+    await ListForOperatorAsync(ownerId, ownerId, isManager: false, search, isActive, skip, take, ct);
+
+  /// <inheritdoc />
+  public async Task<(IReadOnlyList<Property> Items, long TotalItems)> ListForOperatorAsync(string actorUserId, string ownerId, bool isManager, string? search, bool? isActive, int skip, int take, CancellationToken ct)
   {
     var query = _db.Properties.AsNoTracking().Where(p => p.OwnerUserId == ownerId);
+    if (isManager)
+    {
+      query = query.Where(p => _db.PropertyManagerAssignments.Any(a =>
+        a.PropertyId == p.Id && a.ManagerUserId == actorUserId && a.RevokedAt == null));
+    }
     if (!string.IsNullOrWhiteSpace(search))
       query = query.Where(p => p.Name.Contains(search) || p.Address.Contains(search));
     if (isActive.HasValue)

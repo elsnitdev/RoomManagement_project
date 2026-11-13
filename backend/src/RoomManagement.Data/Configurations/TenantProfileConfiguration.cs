@@ -26,8 +26,9 @@ public sealed class TenantProfileConfiguration : IEntityTypeConfiguration<Tenant
         // ValueGeneratedNever(): báo cho EF Core biết Id sẽ do code C# tự sinh (Guid.NewGuid()), SQL không tự sinh
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
 
-        // UserId và CreatedByUserId có kiểu nvarchar(450) để khớp với kiểu khóa chính Id của bảng Users
+        // UserId, OwnerLandlordUserId và CreatedByUserId có kiểu nvarchar(450) để khớp với kiểu khóa chính Id của bảng Users
         builder.Property(e => e.UserId).HasColumnType("nvarchar(450)");
+        builder.Property(e => e.OwnerLandlordUserId).HasColumnType("nvarchar(450)");
         builder.Property(e => e.CreatedByUserId).HasColumnType("nvarchar(450)");
 
         // IsRequired(): tương đương với NOT NULL trong SQL Server
@@ -49,17 +50,21 @@ public sealed class TenantProfileConfiguration : IEntityTypeConfiguration<Tenant
         // Liên kết tùy chọn từ TenantProfiles.UserId -> Users.Id (tài khoản đăng nhập của người thuê nếu có)
         builder.HasOne<AppUser>().WithMany().HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_TenantProfiles_Users");
 
-        // Liên kết từ TenantProfiles.CreatedByUserId -> Users.Id (tài khoản chủ trọ đã tạo hồ sơ này)
+        // Liên kết từ TenantProfiles.OwnerLandlordUserId -> Users.Id (chủ trọ sở hữu hồ sơ này)
+        builder.HasOne<AppUser>().WithMany().HasForeignKey(e => e.OwnerLandlordUserId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_TenantProfiles_OwnerLandlordUser");
+
+        // Liên kết từ TenantProfiles.CreatedByUserId -> Users.Id (tài khoản actor đã tạo hồ sơ này)
         builder.HasOne<AppUser>().WithMany().HasForeignKey(e => e.CreatedByUserId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_TenantProfiles_CreatedByUser");
 
         // 5. Thiết lập Chỉ mục (Indexes) để tăng tốc truy vấn và chống trùng lặp dữ liệu:
         // Filtered Unique Index: Chỉ kiểm tra trùng UserId khi UserId KHÁC NULL (cho phép nhiều hồ sơ cùng có UserId = NULL)
         builder.HasIndex(e => e.UserId).HasDatabaseName("UX_TenantProfiles_UserId").IsUnique().HasFilter(@"UserId IS NOT NULL");
 
-        // Filtered Unique Index: Chống trùng số CCCD khi CitizenId KHÁC NULL (cho phép nhiều hồ sơ chưa nhập CCCD)
-        builder.HasIndex(e => new { e.CreatedByUserId, e.CitizenId }).HasDatabaseName("UX_TenantProfiles_Landlord_CitizenId").IsUnique().HasFilter(@"CreatedByUserId IS NOT NULL AND CitizenId IS NOT NULL");
+        // Filtered Unique Index: Chống trùng số CCCD trong phạm vi Landlord sở hữu khi CitizenId KHÁC NULL
+        builder.HasIndex(e => new { e.OwnerLandlordUserId, e.CitizenId }).HasDatabaseName("UX_TenantProfiles_Landlord_CitizenId").IsUnique().HasFilter(@"OwnerLandlordUserId IS NOT NULL AND CitizenId IS NOT NULL");
 
-        // Index thường trên cột CreatedByUserId để tăng tốc khi lọc danh sách hồ sơ theo từng chủ trọ
+        // Index thường trên cột OwnerLandlordUserId và CreatedByUserId để tăng tốc truy vấn
+        builder.HasIndex(e => e.OwnerLandlordUserId).HasDatabaseName("IX_TenantProfiles_OwnerLandlordUserId");
         builder.HasIndex(e => e.CreatedByUserId).HasDatabaseName("IX_TenantProfiles_CreatedByUserId");
         builder.HasIndex(e => e.PhoneNumber).HasDatabaseName("IX_TenantProfiles_PhoneNumber");
     }
