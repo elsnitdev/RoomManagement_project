@@ -51,9 +51,9 @@ public sealed class InvoiceAdditionalCharge : Migration
 
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropCheckConstraint("CK_InvoiceAdjustments_Type", "dbo", "InvoiceAdjustments");
-        migrationBuilder.AddCheckConstraint("CK_InvoiceAdjustments_Type", "dbo", "InvoiceAdjustments",
-            "AdjustmentType IN (N'Discount', N'Correction', N'WriteOff', N'AdditionalCharge')");
+        migrationBuilder.DropCheckConstraint(name: "CK_InvoiceAdjustments_Type", schema: "dbo", table: "InvoiceAdjustments");
+        migrationBuilder.AddCheckConstraint(name: "CK_InvoiceAdjustments_Type", schema: "dbo", table: "InvoiceAdjustments",
+            sql: "AdjustmentType IN (N'Discount', N'Correction', N'WriteOff', N'AdditionalCharge')");
         migrationBuilder.Sql("EXEC(N'" + ViewSql.Replace("'", "''") + "')");
     }
 
@@ -61,8 +61,8 @@ public sealed class InvoiceAdditionalCharge : Migration
     {
         migrationBuilder.Sql("EXEC(N'" + ViewSql.Replace("a.AdjustmentType = N'AdditionalCharge'", "1 = 0")
             .Replace("'", "''") + "')");
-        migrationBuilder.DropCheckConstraint("CK_InvoiceAdjustments_Type", "dbo", "InvoiceAdjustments");
-        migrationBuilder.AddCheckConstraint("CK_InvoiceAdjustments_Type", "dbo", "InvoiceAdjustments",
-            "AdjustmentType IN (N'Discount', N'Correction', N'WriteOff')");
+        migrationBuilder.DropCheckConstraint(name: "CK_InvoiceAdjustments_Type", schema: "dbo", table: "InvoiceAdjustments");
+        migrationBuilder.AddCheckConstraint(name: "CK_InvoiceAdjustments_Type", schema: "dbo", table: "InvoiceAdjustments",
+            sql: "AdjustmentType IN (N'Discount', N'Correction', N'WriteOff')");
     }
 }

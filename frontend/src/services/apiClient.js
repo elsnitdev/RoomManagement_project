@@ -85,7 +85,11 @@ export async function apiRequest(path, { method = 'GET', body, headers, signal, 
       setAccessToken(null)
       window.dispatchEvent(new Event('auth:unauthorized'))
     }
-    throw new ApiError(errorMessage(data, response.status), response.status, data)
+    const message = errorMessage(data, response.status)
+    const diagnostic = import.meta.env?.DEV && response.status >= 500
+      ? ` [${method} ${path}${data?.traceId ? `; traceId: ${data.traceId}` : ''}]`
+      : ''
+    throw new ApiError(`${message}${diagnostic}`, response.status, data)
   }
 
   return data

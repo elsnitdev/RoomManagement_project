@@ -1,4 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Calendar,
+  FilePlus,
+  Plus,
+  ShieldCheck,
+} from "lucide-react";
 import { billingApi } from "../../services/api/billingApi";
 import BillingInputs from "./BillingInputs";
 import BillingPriorityBoard from "./BillingPriorityBoard";
@@ -69,7 +75,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
   const [propertyId, setPropertyId] = useState(initialPropertyId || "");
   const [rooms, setRooms] = useState([]);
   const [roomId, setRoomId] = useState(initialRoomId || "");
-  const [listStatus, setListStatus] = useState("");
+  const [listStatus, setListStatus] = useState("Unpaid");
   const [listPeriod, setListPeriod] = useState("");
   const [contracts, setContracts] = useState([]);
   const [tab, setTab] = useState("invoices");
@@ -88,8 +94,27 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
   const [discountAmount, setDiscountAmount] = useState("");
   const [discountReason, setDiscountReason] = useState("");
   const [preview, setPreview] = useState(null);
+  const [activeCreateModal, setActiveCreateModal] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [meta, setMeta] = useState(null);
+  const displayedInvoices = useMemo(() => {
+    if (listStatus === "Unpaid") {
+      return invoices.filter(
+        (item) =>
+          ["Unpaid", "Partial", "Overdue"].includes(item.displayStatus) ||
+          Number(item.amountDue) > 0,
+      );
+    }
+    if (listStatus === "Overdue") {
+      return invoices.filter((item) => item.displayStatus === "Overdue");
+    }
+    if (listStatus === "Paid") {
+      return invoices.filter(
+        (item) => item.displayStatus === "Paid" || Number(item.amountDue) <= 0,
+      );
+    }
+    return invoices;
+  }, [invoices, listStatus]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -137,7 +162,12 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
         controller.signal,
         roomId || undefined,
         {
-          status: listStatus || undefined,
+          status:
+            listStatus === "Unpaid" ||
+            listStatus === "Overdue" ||
+            listStatus === "Paid"
+              ? "Issued"
+              : listStatus || undefined,
           year: listPeriod ? Number(listPeriod.slice(0, 4)) : undefined,
           month: listPeriod ? Number(listPeriod.slice(5, 7)) : undefined,
         },
@@ -250,7 +280,10 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
         discountReason:
           Number(discountAmount || 0) > 0 ? discountReason.trim() : null,
       })
-      .then(setPreview)
+      .then((res) => {
+        setPreview(res);
+        setActiveCreateModal("monthly");
+      })
       .catch(() => setPreview(null));
     setPreviewRequested(false);
   }, [
@@ -266,10 +299,11 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
   function changeProperty(value) {
     setPropertyId(value);
     setRoomId("");
-    setListStatus("");
+    setListStatus("Unpaid");
     setListPeriod("");
     setPage(1);
     setPreview(null);
+    setActiveCreateModal(null);
     setContractId("");
   }
   const period = month.split("-").map(Number);
@@ -321,6 +355,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
     else {
       setTab("invoices");
       setPreviewRequested(true);
+      setActiveCreateModal("monthly");
     }
   }
 
@@ -384,6 +419,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
           onReadingSaved={() => {
             setTab("invoices");
             setPreviewRequested(true);
+            setActiveCreateModal("monthly");
           }}
         />
       )}
@@ -405,243 +441,343 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
             onWorkItem={openWorkItem}
             onOpenInvoice={(id) => navigate(`landlord/billing/${id}`)}
           />
-          <div className="bill-grid bill-grid--two">
-            <section className="bill-card">
-              <h2>Tạo hóa đơn tháng</h2>
-              <p>
-                Hợp đồng đang hoạt động hoặc chờ tất toán có thể lập hóa đơn
-                tháng. Hợp đồng chờ tất toán chỉ được lập kỳ bàn giao.
-              </p>
-              <div className="bill-form bill-form--inline">
-                <label>
-                  Hợp đồng
-                  <select
-                    value={contractId}
-                    onChange={(event) => {
-                      setContractId(event.target.value);
-                      const contract = contracts.find(
-                        (item) => item.id === event.target.value,
-                      );
-                      if (
-                        contract?.status === "PendingSettlement" &&
-                        contract.handoverOn
-                      )
-                        setMonth(contract.handoverOn.slice(0, 7));
-                      setPreview(null);
-                    }}
-                  >
-                    <option value="">Chọn hợp đồng</option>
-                    {activeContracts.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.contractCode} · Phòng {roomName(item.roomId)}
-                        {item.status === "PendingSettlement"
-                          ? " · Hóa đơn cuối"
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Kỳ hóa đơn
-                  <input
-                    type="month"
-                    min={
-                      selectedContract?.status === "PendingSettlement" &&
-                      selectedContract.handoverOn
-                        ? selectedContract.handoverOn.slice(0, 7)
-                        : "2000-01"
-                    }
-                    max={
-                      selectedContract?.status === "PendingSettlement" &&
-                      selectedContract.handoverOn
-                        ? selectedContract.handoverOn.slice(0, 7)
-                        : "2100-12"
-                    }
-                    value={month}
-                    onChange={(event) => {
-                      setMonth(event.target.value);
-                      setPreview(null);
-                    }}
-                  />
-                </label>
-                <label>
-                  Giảm trừ thủ công (₫)
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={discountAmount}
-                    onChange={(event) => {
-                      setDiscountAmount(event.target.value);
-                      setPreview(null);
-                    }}
-                    placeholder="0"
-                  />
-                </label>
-                {Number(discountAmount || 0) > 0 && (
+          {/* Quick Action Bar for Manual Invoicing */}
+          <div className="bill-quick-bar">
+            <div className="bill-quick-bar__intro">
+              <div className="bill-quick-bar__icon-wrap">
+                <FilePlus size={18} />
+              </div>
+              <div>
+                <span className="bill-quick-bar__title">Lập hóa đơn thủ công</span>
+                <p className="bill-quick-bar__subtitle">
+                  Tạo hóa đơn tháng riêng lẻ, xem hóa đơn tiền cọc hoặc các khoản chi phí phát sinh
+                </p>
+              </div>
+            </div>
+            <div className="bill-quick-bar__buttons">
+              <button
+                type="button"
+                className="bill-button bill-button--secondary bill-btn-compact"
+                onClick={() => setActiveCreateModal("monthly")}
+              >
+                <Calendar size={14} />
+                <span>Hóa đơn tháng</span>
+              </button>
+              <button
+                type="button"
+                className="bill-button bill-button--secondary bill-btn-compact"
+                onClick={() => setActiveCreateModal("deposit")}
+              >
+                <ShieldCheck size={14} />
+                <span>Hóa đơn cọc</span>
+              </button>
+              <button
+                type="button"
+                className="bill-button bill-button--secondary bill-btn-compact"
+                onClick={() => setActiveCreateModal("oneoff")}
+              >
+                <Plus size={14} />
+                <span>Hóa đơn phát sinh</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Popup 1: Tạo hóa đơn tháng */}
+          {activeCreateModal === "monthly" && (
+            <InvoiceActionDialog
+              title="Tạo hóa đơn tháng"
+              onClose={() => {
+                setActiveCreateModal(null);
+                setPreview(null);
+              }}
+            >
+              <div className="bill-modal-content">
+                <p className="bill-modal-desc">
+                  Hợp đồng đang hoạt động hoặc chờ tất toán có thể lập hóa đơn tháng.
+                  Hợp đồng chờ tất toán chỉ được lập kỳ bàn giao.
+                </p>
+                <div className="bill-form bill-form--inline" style={{ marginTop: "12px" }}>
                   <label>
-                    Lý do giảm trừ *
-                    <input
-                      type="text"
-                      maxLength={255}
-                      value={discountReason}
+                    Hợp đồng
+                    <select
+                      value={contractId}
                       onChange={(event) => {
-                        setDiscountReason(event.target.value);
+                        setContractId(event.target.value);
+                        const contract = contracts.find(
+                          (item) => item.id === event.target.value,
+                        );
+                        if (
+                          contract?.status === "PendingSettlement" &&
+                          contract.handoverOn
+                        )
+                          setMonth(contract.handoverOn.slice(0, 7));
                         setPreview(null);
                       }}
-                      placeholder="Ví dụ: hỗ trợ phí dịch vụ tháng đầu"
+                    >
+                      <option value="">Chọn hợp đồng</option>
+                      {activeContracts.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.contractCode} · Phòng {roomName(item.roomId)}
+                          {item.status === "PendingSettlement"
+                            ? " · Hóa đơn cuối"
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Kỳ hóa đơn
+                    <input
+                      type="month"
+                      min={
+                        selectedContract?.status === "PendingSettlement" &&
+                        selectedContract.handoverOn
+                          ? selectedContract.handoverOn.slice(0, 7)
+                          : "2000-01"
+                      }
+                      max={
+                        selectedContract?.status === "PendingSettlement" &&
+                        selectedContract.handoverOn
+                          ? selectedContract.handoverOn.slice(0, 7)
+                          : "2100-12"
+                      }
+                      value={month}
+                      onChange={(event) => {
+                        setMonth(event.target.value);
+                        setPreview(null);
+                      }}
                     />
                   </label>
-                )}
-                <button
-                  className="bill-button"
-                  type="button"
-                  disabled={!contractId || !month || busy || discountInvalid}
-                  onClick={() =>
-                    action(
-                      () => billingApi.preview(propertyId, monthlyPayload),
-                      "Đã tính bản xem trước.",
-                      setPreview,
-                    )
-                  }
-                >
-                  Xem trước
-                </button>
-              </div>
-              {preview && (
-                <div className="bill-preview">
-                  <h3>
-                    Bản xem trước · {preview.month}/{preview.year}
-                  </h3>
-                  <p>Hạn thanh toán: {preview.dueDate}</p>
-                  <MeterReadingSummary preview={preview} />
-                  <InvoiceItems items={preview.items} />
+                  <label>
+                    Giảm trừ thủ công (₫)
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={discountAmount}
+                      onChange={(event) => {
+                        setDiscountAmount(event.target.value);
+                        setPreview(null);
+                      }}
+                      placeholder="0"
+                    />
+                  </label>
                   {Number(discountAmount || 0) > 0 && (
-                    <p className="bill-hint">
-                      Giảm trừ {money(discountAmount)}: {discountReason}
-                    </p>
+                    <label>
+                      Lý do giảm trừ *
+                      <input
+                        type="text"
+                        maxLength={255}
+                        value={discountReason}
+                        onChange={(event) => {
+                          setDiscountReason(event.target.value);
+                          setPreview(null);
+                        }}
+                        placeholder="Ví dụ: hỗ trợ phí dịch vụ tháng đầu"
+                      />
+                    </label>
                   )}
-                  <div className="bill-total">
-                    <span>Tổng cộng</span>
-                    <strong>{money(preview.totalAmount)}</strong>
-                  </div>
                   <button
-                    className="bill-button"
+                    className="bill-button bill-btn-compact"
                     type="button"
-                    disabled={busy}
+                    disabled={!contractId || !month || busy || discountInvalid}
                     onClick={() =>
                       action(
-                        () =>
-                          billingApi.createMonthly(propertyId, monthlyPayload),
-                        "Đã tạo hóa đơn nháp.",
-                        (result) => {
-                          setPreview(null);
-                          navigate(`landlord/billing/${result.id}`);
-                        },
+                        () => billingApi.preview(propertyId, monthlyPayload),
+                        "Đã tính bản xem trước.",
+                        setPreview,
                       )
                     }
                   >
-                    Tạo bản nháp
+                    Xem trước
                   </button>
                 </div>
-              )}
-              {!preview && (
-                <p className="bill-hint">
-                  Cần có giá điện nước và chỉ số của cả điện, nước cho kỳ này.
-                  Chọn tab “Giá, chỉ số và dịch vụ” để nhập.
-                </p>
-              )}
-            </section>
-            <section className="bill-card">
-              <h2>Hóa đơn tiền cọc</h2>
-              <p>
-                Hợp đồng mới có tiền cọc sẽ tự phát hành hóa đơn. Với hợp đồng
-                cũ chưa có hóa đơn cọc, mở chi tiết hợp đồng để tạo bản nháp và
-                kiểm tra trước khi phát hành.
-              </p>
-              <div className="bill-actions">
-                <button
-                  className="bill-button bill-button--secondary"
-                  type="button"
-                  onClick={() => navigate("landlord/contracts/new")}
-                >
-                  Tạo hợp đồng mới
-                </button>
-                <button
-                  className="bill-button bill-button--secondary"
-                  type="button"
-                  onClick={() => navigate("landlord/contracts")}
-                >
-                  Xem hợp đồng cũ
-                </button>
+                {preview && (
+                  <div className="bill-preview" style={{ marginTop: "16px" }}>
+                    <h3>
+                      Bản xem trước · {preview.month}/{preview.year}
+                    </h3>
+                    <p>Hạn thanh toán: {preview.dueDate}</p>
+                    <MeterReadingSummary preview={preview} />
+                    <InvoiceItems items={preview.items} />
+                    {Number(discountAmount || 0) > 0 && (
+                      <p className="bill-hint">
+                        Giảm trừ {money(discountAmount)}: {discountReason}
+                      </p>
+                    )}
+                    <div className="bill-total">
+                      <span>Tổng cộng</span>
+                      <strong>{money(preview.totalAmount)}</strong>
+                    </div>
+                    <button
+                      className="bill-button"
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        action(
+                          () =>
+                            billingApi.createMonthly(propertyId, monthlyPayload),
+                          "Đã tạo hóa đơn nháp.",
+                          (result) => {
+                            setPreview(null);
+                            setActiveCreateModal(null);
+                            setRevision((value) => value + 1);
+                            navigate(`landlord/billing/${result.id}`);
+                          },
+                        )
+                      }
+                    >
+                      Tạo bản nháp
+                    </button>
+                  </div>
+                )}
+                {!preview && (
+                  <p className="bill-hint" style={{ marginTop: "12px" }}>
+                    Cần có giá điện nước và chỉ số của cả điện, nước cho kỳ này.
+                    Chọn tab “Giá, chỉ số và dịch vụ” để nhập.
+                  </p>
+                )}
               </div>
-            </section>
-          </div>
-          <OneOffInvoiceForm
-            propertyId={propertyId}
-            contracts={contracts}
-            roomName={roomName}
-            onCreated={(result) => {
-              setRevision((value) => value + 1);
-              navigate(`landlord/billing/${result.id}`);
-            }}
-          />
+            </InvoiceActionDialog>
+          )}
+
+          {/* Popup 2: Hóa đơn tiền cọc */}
+          {activeCreateModal === "deposit" && (
+            <InvoiceActionDialog
+              title="Hóa đơn tiền cọc"
+              onClose={() => setActiveCreateModal(null)}
+            >
+              <div className="bill-modal-content">
+                <p className="bill-modal-desc">
+                  Hợp đồng mới có tiền cọc sẽ tự động phát hành hóa đơn. Với hợp đồng
+                  cũ chưa có hóa đơn cọc, mở chi tiết hợp đồng để tạo bản nháp và
+                  kiểm tra trước khi phát hành.
+                </p>
+                <div className="bill-actions" style={{ marginTop: "18px" }}>
+                  <button
+                    className="bill-button bill-button--primary bill-btn-compact"
+                    type="button"
+                    onClick={() => {
+                      setActiveCreateModal(null);
+                      navigate("landlord/contracts/new");
+                    }}
+                  >
+                    Tạo hợp đồng mới
+                  </button>
+                  <button
+                    className="bill-button bill-button--secondary bill-btn-compact"
+                    type="button"
+                    onClick={() => {
+                      setActiveCreateModal(null);
+                      navigate("landlord/contracts");
+                    }}
+                  >
+                    Xem danh sách hợp đồng
+                  </button>
+                </div>
+              </div>
+            </InvoiceActionDialog>
+          )}
+
+          {/* Popup 3: Hóa đơn phát sinh */}
+          {activeCreateModal === "oneoff" && (
+            <InvoiceActionDialog
+              title="Hóa đơn riêng lẻ / Phát sinh"
+              onClose={() => setActiveCreateModal(null)}
+            >
+              <div className="bill-modal-content">
+                <p className="bill-modal-desc" style={{ marginBottom: "14px" }}>
+                  Thu phí sửa chữa hoặc khoản phát sinh ngoài hóa đơn tháng.
+                </p>
+                <OneOffInvoiceForm
+                  propertyId={propertyId}
+                  contracts={contracts}
+                  roomName={roomName}
+                  onCreated={(result) => {
+                    setActiveCreateModal(null);
+                    setRevision((value) => value + 1);
+                    navigate(`landlord/billing/${result.id}`);
+                  }}
+                />
+              </div>
+            </InvoiceActionDialog>
+          )}
+
           <section className="bill-card">
-            <div className="bill-list-heading">
+            <div className="bill-toolbar">
               <div>
                 <h2>Danh sách hóa đơn</h2>
                 {roomId && <p>Đang xem hóa đơn phòng {roomName(roomId)}.</p>}
               </div>
-              <div className="bill-list-filters">
-                <label>
-                  Phòng
-                  <select
-                    value={roomId}
-                    onChange={(event) => {
-                      setRoomId(event.target.value);
+
+              {/* Status Pill Filter Tabs */}
+              <div
+                className="bill-filter-pills"
+                role="tablist"
+                aria-label="Lọc theo trạng thái"
+              >
+                {[
+                  { id: "Unpaid", label: "Chưa thanh toán" },
+                  { id: "", label: "Tất cả" },
+                  { id: "Draft", label: "Bản nháp" },
+                  { id: "Issued", label: "Đã phát hành" },
+                  { id: "Overdue", label: "Quá hạn" },
+                  { id: "Paid", label: "Đã thanh toán" },
+                  { id: "Cancelled", label: "Đã hủy" },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={listStatus === item.id}
+                    className={`bill-filter-pill ${
+                      listStatus === item.id ? "is-active" : ""
+                    }`}
+                    onClick={() => {
+                      setListStatus(item.id);
                       setPage(1);
                     }}
                   >
-                    <option value="">Tất cả phòng</option>
-                    {rooms.map((room) => (
-                      <option key={room.id} value={room.id}>
-                        {room.roomNumber}
-                        {room.roomName ? ` · ${room.roomName}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Trạng thái
-                  <select
-                    value={listStatus}
-                    onChange={(event) => {
-                      setListStatus(event.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="">Tất cả</option>
-                    <option value="Draft">Bản nháp</option>
-                    <option value="Issued">Đã phát hành</option>
-                    <option value="Cancelled">Đã hủy</option>
-                  </select>
-                </label>
-                <label>
-                  Kỳ tháng
-                  <input
-                    type="month"
-                    value={listPeriod}
-                    onChange={(event) => {
-                      setListPeriod(event.target.value);
-                      setPage(1);
-                    }}
-                  />
-                </label>
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Dropdowns */}
+              <div className="bill-filter-controls">
+                <select
+                  className="bill-filter-select"
+                  aria-label="Lọc theo phòng"
+                  value={roomId}
+                  onChange={(event) => {
+                    setRoomId(event.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">Tất cả phòng</option>
+                  {rooms.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.roomNumber}
+                      {room.roomName ? ` · ${room.roomName}` : ""}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  type="month"
+                  className="bill-filter-month"
+                  aria-label="Lọc theo kỳ tháng"
+                  value={listPeriod}
+                  onChange={(event) => {
+                    setListPeriod(event.target.value);
+                    setPage(1);
+                  }}
+                />
               </div>
             </div>
             {loading ? (
               <p role="status">Đang tải...</p>
-            ) : invoices.length ? (
+            ) : displayedInvoices.length ? (
               <div className="bill-table-wrap">
                 <table className="bill-table">
                   <thead>
@@ -652,11 +788,11 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                       <th>Hạn thanh toán</th>
                       <th>Trạng thái</th>
                       <th>Còn phải thu</th>
-                      <th></th>
+                      <th style={{ textAlign: "right" }}>Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {invoices.map((item) => (
+                    {displayedInvoices.map((item) => (
                       <tr key={item.id}>
                         <td>
                           <strong>{item.code}</strong>
@@ -679,16 +815,20 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                               item.displayStatus}
                           </span>
                         </td>
-                        <td>{money(item.amountDue)}</td>
                         <td>
+                          <strong className="bill-amount-tabular">
+                            {money(item.amountDue)}
+                          </strong>
+                        </td>
+                        <td style={{ textAlign: "right" }}>
                           <button
-                            className="bill-link"
+                            className="bill-button bill-button--ghost bill-btn-compact"
                             type="button"
                             onClick={() =>
                               navigate(`landlord/billing/${item.id}`)
                             }
                           >
-                            Xem chi tiết
+                            Chi tiết
                           </button>
                         </td>
                       </tr>
@@ -698,7 +838,15 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
               </div>
             ) : (
               <p className="bill-empty">
-                {roomId ? "Phòng này chưa có hóa đơn." : "Chưa có hóa đơn."}
+                {listStatus === "Unpaid"
+                  ? "Không có hóa đơn nào chưa thanh toán."
+                  : listStatus === "Overdue"
+                  ? "Không có hóa đơn quá hạn nào."
+                  : listStatus === "Paid"
+                  ? "Không có hóa đơn đã thanh toán nào."
+                  : roomId
+                  ? "Phòng này chưa có hóa đơn."
+                  : "Chưa có hóa đơn nào khớp với bộ lọc."}
               </p>
             )}
             <div className="bill-pagination">

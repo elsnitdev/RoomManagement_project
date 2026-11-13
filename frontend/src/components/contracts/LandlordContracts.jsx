@@ -2,11 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
+  Clock,
   FileText,
+  Info,
   Plus,
   Search,
+  Star,
 } from "lucide-react";
 import { billingApi } from "../../services/api/billingApi";
 import { contractApi } from "../../services/api/contractApi";
@@ -33,6 +37,12 @@ const money = (value) =>
   }).format(Number(value) || 0);
 const displayDate = (value) =>
   value ? value.split("-").reverse().join("/") : "—";
+const initials = (name) => {
+  if (!name) return "?";
+  const words = name.trim().split(/\s+/);
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+};
 const statusText = {
   Draft: "Bản nháp",
   Active: "Đang hiệu lực",
@@ -1683,89 +1693,217 @@ export default function LandlordContracts({
                 <section className="ct-card">
                   <h2>Người tham gia hợp đồng</h2>
                   <p className="ct-member-note">{detailFamilyMode ? "Một người đứng tên; người thân chỉ được duyệt cư trú." : "Mỗi người đồng thuê đứng tên và tự chấp thuận nội quy."}</p>
-                  <div className="ct-service-review"><span>Khi thêm hoặc ghi ngày rời của một người, hãy rà lại số lượng dịch vụ tính theo người hoặc phương tiện. Mở tab “Giá, chỉ số và dịch vụ” để chỉnh cho kỳ sau.</span><button type="button" className="contract-button contract-button--secondary" onClick={() => navigate(`landlord/billing/rooms/${propertyId}/${detail.roomId}`)}>Rà dịch vụ phòng</button></div>
+                  <div className="ct-service-review" role="note">
+                    <div className="ct-service-review__body">
+                      <Info size={16} className="ct-service-review__icon" aria-hidden="true" />
+                      <span className="ct-service-review__text">
+                        Khi thêm hoặc ghi ngày rời của một người, hãy rà lại số lượng dịch vụ tính theo người hoặc phương tiện. Mở tab “Giá, chỉ số và dịch vụ” để chỉnh cho kỳ sau.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="contract-button contract-button--secondary ct-btn-compact"
+                      onClick={() =>
+                        navigate(
+                          `landlord/billing/rooms/${propertyId}/${detail.roomId}`
+                        )
+                      }
+                    >
+                      Rà dịch vụ phòng
+                    </button>
+                  </div>
                   {detail.tenants?.length ? (
                     <ul className="ct-people">
                       {detail.tenants.map((item) => (
-                        <li key={item.id}>
-                          <strong>
-                            {item.fullName}
-                            {item.isContactPerson ? " · Người liên hệ" : ""}
-                          </strong>
-                          <span className={`ct-role-badge ct-role-badge--${item.role === "AuthorizedOccupant" ? "occupant" : "party"}`}>
-                            {item.role === "AuthorizedOccupant" ? "Người cùng ở" : "Người đứng tên"}
-                          </span>
-                          <span className={`ct-approval-badge ct-approval-badge--${item.role === "AuthorizedOccupant" ? item.residenceApprovedAt ? "approved" : "pending" : item.hasAcceptedCurrentRules ? "accepted" : "pending"}`}>
-                            {item.role === "AuthorizedOccupant" ? item.residenceApprovedAt ? "Được duyệt cư trú" : "Chờ duyệt cư trú" : item.hasAcceptedCurrentRules ? "Đã chấp thuận nội quy" : "Chưa chấp thuận nội quy"}
-                          </span>
-                          <span>
-                            {item.email || "Chưa có email"} · Vào ở{" "}
-                            {displayDate(item.joinDate)}
-                            {item.leaveDate &&
-                              " · Rời " + displayDate(item.leaveDate)}
-                          </span>
-                          {detail.status === "Active" &&
-                            !item.leaveDate &&
-                            !item.isContactPerson && item.role !== "AuthorizedOccupant" && (
-                              <button
-                                type="button"
-                                className="contract-button contract-button--secondary"
-                                disabled={busy}
-                                onClick={() =>
-                                  run(
-                                    () =>
-                                      contractApi.setContact(
-                                        propertyId,
-                                        contractId,
-                                        item.id,
-                                      ),
-                                    "Đã chuyển người liên hệ.",
-                                  )
-                                }
+                        <li
+                          key={item.id}
+                          className={`ct-tenant-card ${
+                            item.leaveDate ? "is-left" : ""
+                          }`}
+                        >
+                          <div className="ct-tenant-main">
+                            <span className="ct-tenant-avatar" aria-hidden="true">
+                              {initials(item.fullName)}
+                            </span>
+                            <div className="ct-tenant-info">
+                              <div className="ct-tenant-title">
+                                <strong className="ct-tenant-name">
+                                  {item.fullName}
+                                </strong>
+                                {item.isContactPerson && (
+                                  <span
+                                    className="ct-contact-badge"
+                                    title="Người liên hệ chính của hợp đồng"
+                                  >
+                                    <Star size={11} strokeWidth={2.5} aria-hidden="true" />
+                                    Người liên hệ
+                                  </span>
+                                )}
+                              </div>
+                              <div className="ct-tenant-meta">
+                                <span className="ct-tenant-meta__item">
+                                  {item.email || "Chưa có email"}
+                                </span>
+                                <span className="ct-meta-dot" aria-hidden="true">
+                                  ·
+                                </span>
+                                <span className="ct-tenant-meta__item">
+                                  Vào ở {displayDate(item.joinDate)}
+                                </span>
+                                {item.leaveDate && (
+                                  <>
+                                    <span
+                                      className="ct-meta-dot"
+                                      aria-hidden="true"
+                                    >
+                                      ·
+                                    </span>
+                                    <span className="ct-tenant-meta__item ct-tenant-meta__leave">
+                                      Đã rời {displayDate(item.leaveDate)}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="ct-tenant-badges">
+                            <span
+                              className={`ct-role-badge ct-role-badge--${
+                                item.role === "AuthorizedOccupant"
+                                  ? "occupant"
+                                  : "party"
+                              }`}
+                            >
+                              {item.role === "AuthorizedOccupant"
+                                ? "Người cùng ở"
+                                : "Người đứng tên"}
+                            </span>
+
+                            {item.role === "AuthorizedOccupant" ? (
+                              <span
+                                className={`ct-approval-badge ct-approval-badge--${
+                                  item.residenceApprovedAt
+                                    ? "approved"
+                                    : "pending"
+                                }`}
                               >
-                                Đặt làm người liên hệ
-                              </button>
+                                {item.residenceApprovedAt ? (
+                                  <Check
+                                    size={12}
+                                    strokeWidth={2.5}
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <Clock
+                                    size={12}
+                                    strokeWidth={2.5}
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                {item.residenceApprovedAt
+                                  ? "Được duyệt cư trú"
+                                  : "Chờ duyệt cư trú"}
+                              </span>
+                            ) : (
+                              <span
+                                className={`ct-approval-badge ct-approval-badge--${
+                                  item.hasAcceptedCurrentRules
+                                    ? "accepted"
+                                    : "pending"
+                                }`}
+                              >
+                                {item.hasAcceptedCurrentRules ? (
+                                  <Check
+                                    size={12}
+                                    strokeWidth={2.5}
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <Clock
+                                    size={12}
+                                    strokeWidth={2.5}
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                {item.hasAcceptedCurrentRules
+                                  ? "Đã chấp thuận nội quy"
+                                  : "Chờ chấp thuận nội quy"}
+                              </span>
                             )}
+                          </div>
+
                           {detail.status === "Active" &&
                             !item.leaveDate &&
-                            detail.tenants.filter((tenant) => !tenant.leaveDate)
-                              .length > 1 && (
-                              <button
-                                type="button"
-                                className="contract-button contract-button--ghost"
-                                disabled={busy}
-                                onClick={() => {
-                                  const leaveDate = window.prompt(
-                                    "Ngày rời (yyyy-mm-dd)",
-                                    today(),
-                                  );
-                                  if (
-                                    leaveDate &&
-                                    /^\d{4}-\d{2}-\d{2}$/.test(leaveDate)
-                                  )
-                                    run(
-                                      () =>
-                                        contractApi.leave(
-                                          propertyId,
-                                          contractId,
-                                          item.id,
-                                          leaveDate,
-                                        ),
-                                      "Đã ghi ngày rời. Hãy rà lại dịch vụ của phòng nếu số lượng cần đổi.",
-                                    );
-                                }}
-                              >
-                                Ghi ngày rời
-                              </button>
+                            ((!item.isContactPerson &&
+                              item.role !== "AuthorizedOccupant") ||
+                              detail.tenants.filter(
+                                (tenant) => !tenant.leaveDate
+                              ).length > 1) && (
+                              <div className="ct-tenant-actions">
+                                {!item.isContactPerson &&
+                                  item.role !== "AuthorizedOccupant" && (
+                                    <button
+                                      type="button"
+                                      className="contract-button contract-button--secondary ct-btn-compact"
+                                      disabled={busy}
+                                      onClick={() =>
+                                        run(
+                                          () =>
+                                            contractApi.setContact(
+                                              propertyId,
+                                              contractId,
+                                              item.id
+                                            ),
+                                          "Đã chuyển người liên hệ."
+                                        )
+                                      }
+                                    >
+                                      Đặt làm người liên hệ
+                                    </button>
+                                  )}
+                                {detail.tenants.filter(
+                                  (tenant) => !tenant.leaveDate
+                                ).length > 1 && (
+                                  <button
+                                    type="button"
+                                    className="contract-button contract-button--ghost ct-btn-compact"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      const leaveDate = window.prompt(
+                                        "Ngày rời (yyyy-mm-dd)",
+                                        today()
+                                      );
+                                      if (
+                                        leaveDate &&
+                                        /^\d{4}-\d{2}-\d{2}$/.test(leaveDate)
+                                      )
+                                        run(
+                                          () =>
+                                            contractApi.leave(
+                                              propertyId,
+                                              contractId,
+                                              item.id,
+                                              leaveDate
+                                            ),
+                                          "Đã ghi ngày rời. Hãy rà lại dịch vụ của phòng nếu số lượng cần đổi."
+                                        );
+                                    }}
+                                  >
+                                    Ghi ngày rời
+                                  </button>
+                                )}
+                              </div>
                             )}
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <p>
-                      Chưa có người thuê. Cần thêm người thuê trước khi kích
-                      hoạt.
-                    </p>
+                    <div className="ct-people-empty">
+                      <p>
+                        Chưa có người thuê. Cần thêm người thuê trước khi kích hoạt.
+                      </p>
+                    </div>
                   )}
                   {detail.status === "Active" &&
                     detail.tenants?.filter((tenant) => !tenant.leaveDate)
