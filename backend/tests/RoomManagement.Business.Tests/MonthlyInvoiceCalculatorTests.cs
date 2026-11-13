@@ -20,7 +20,7 @@ public sealed class MonthlyInvoiceCalculatorTests
             Rate(UtilityType.Electricity, 3_500),
             Reading(roomId, UtilityType.Water, 2026, 10, 20, 30),
             Rate(UtilityType.Water, 15_000),
-            [new(Guid.NewGuid(), "Internet", 100_000)]);
+            [new(Guid.NewGuid(), "Internet", 100_000, 1)]);
 
         Assert.Equal(new DateOnly(2026, 11, 5), result.DueDate);
         Assert.Equal(3_425_000m, result.TotalAmount);
@@ -58,17 +58,17 @@ public sealed class MonthlyInvoiceCalculatorTests
     }
 
     [Fact]
-    public void Passed_due_date_is_rejected()
+    public void Passed_due_date_moves_to_issue_date_for_late_billing()
     {
         var roomId = Guid.NewGuid();
         var contract = Contract(roomId, new DateOnly(2026, 1, 1), 3_000_000m, 5);
-        var error = Assert.Throws<BusinessException>(() => _calculator.Calculate(
+        var result = _calculator.Calculate(
             contract, 2026, 1, new DateOnly(2026, 3, 1),
             Reading(roomId, UtilityType.Electricity, 2026, 1, 0, 0),
             Rate(UtilityType.Electricity, 3_500),
             Reading(roomId, UtilityType.Water, 2026, 1, 0, 0),
-            Rate(UtilityType.Water, 15_000), []));
-        Assert.Equal("INVOICE_DUE_DATE_PASSED", error.Code);
+            Rate(UtilityType.Water, 15_000), []);
+        Assert.Equal(new DateOnly(2026, 3, 1), result.DueDate);
     }
 
     private static Contract Contract(Guid roomId, DateOnly start, decimal rent, byte dueDay) =>

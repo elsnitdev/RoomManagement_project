@@ -14,6 +14,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
+  // Local runs use console/debug output. The default Windows Event Log provider can be
+  // disposed while a background worker is still reporting a shutdown error.
+  builder.Logging.ClearProviders();
+  builder.Logging.AddConsole();
+  builder.Logging.AddDebug();
   builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
   builder.Configuration.AddEnvironmentVariables();
 }
@@ -38,9 +43,11 @@ builder.Services.AddScoped<ContractRulesEvidenceService>();
 builder.Services.AddScoped<BillingInputService>();
 builder.Services.AddScoped<MonthlyInvoiceCalculator>();
 builder.Services.AddScoped<InvoiceService>();
+builder.Services.AddScoped<SettlementOverviewService>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<LandlordPaymentService>();
 builder.Services.AddScoped<PaymentEvidenceService>();
+builder.Services.AddScoped<SettlementRefundEvidenceService>();
 builder.Services.AddHostedService<ContractExpiryWorker>();
 
 builder.Services.AddControllers(options =>

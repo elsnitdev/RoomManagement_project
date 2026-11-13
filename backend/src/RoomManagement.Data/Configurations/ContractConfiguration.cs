@@ -10,10 +10,11 @@ public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
     {
         builder.ToTable("Contracts", "dbo", table =>
         {
-            table.HasCheckConstraint("CK_Contracts_Status", @"(Status IN (N'Draft', N'Active', N'Expired', N'Terminated', N'Cancelled'))");
+            table.HasCheckConstraint("CK_Contracts_Status", @"(Status IN (N'Draft', N'Active', N'Expired', N'Terminated', N'Cancelled', N'PendingMoveOut', N'PendingSettlement'))");
             table.HasCheckConstraint("CK_Contracts_Dates", @"(EndDate IS NULL OR EndDate >= StartDate)");
             table.HasCheckConstraint("CK_Contracts_Amounts", @"(MonthlyRent >= 0 AND DepositAmount >= 0)");
             table.HasCheckConstraint("CK_Contracts_DueDay", @"(PaymentDueDay IS NULL OR PaymentDueDay BETWEEN 1 AND 31)");
+            table.HasCheckConstraint("CK_Contracts_TenancyMode", @"(TenancyMode IN (N'CoTenancy', N'PrimaryTenantWithFamily'))");
         });
         builder.HasKey(e => e.Id).HasName("PK_Contracts");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
@@ -25,8 +26,10 @@ public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
         builder.Property(e => e.DepositAmount).HasColumnType("decimal(18,2)").IsRequired().HasDefaultValueSql(@"0", "DF_Contracts_Deposit");
         builder.Property(e => e.PaymentDueDay).HasColumnType("tinyint");
         builder.Property(e => e.Status).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Draft'", "DF_Contracts_Status");
+        builder.Property(e => e.TenancyMode).HasConversion<string>().HasColumnType("nvarchar(32)").IsRequired().HasDefaultValueSql(@"N'CoTenancy'");
         builder.Property(e => e.Note).HasColumnType("nvarchar(1000)");
         builder.Property(e => e.ClosedOn).HasColumnType("date");
+        builder.Property(e => e.HandoverOn).HasColumnType("date");
         builder.Property(e => e.ClosureReason).HasColumnType("nvarchar(1000)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_Contracts_CreatedAt");
         builder.Property(e => e.UpdatedAt).HasColumnType("datetime2(0)");

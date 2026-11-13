@@ -49,7 +49,8 @@ public sealed class ContractRulesStore(RoomManagementDbContext db) : IContractRu
             join profile in db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
             join contract in db.Contracts.AsNoTracking() on link.ContractId equals contract.Id
             join room in db.Rooms.AsNoTracking() on contract.RoomId equals room.Id
-            where profile.UserId == userId && link.LeaveDate == null &&
+            where profile.UserId == userId && link.Role == RoomManagement.Domain.Enums.ContractTenantRole.ContractParty &&
+                link.LeaveDate == null &&
                 (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active)
             select new { contract.Id, contract.ContractCode, room.PropertyId, LinkId = link.Id, profile.FullName }).ToListAsync(ct);
         var results = new List<ContractRulesTenantView>();
@@ -70,7 +71,8 @@ public sealed class ContractRulesStore(RoomManagementDbContext db) : IContractRu
             join profile in db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
             join contract in db.Contracts.AsNoTracking() on link.ContractId equals contract.Id
             join room in db.Rooms.AsNoTracking() on contract.RoomId equals room.Id
-            where link.Id == linkId && contract.Id == contractId && profile.UserId == userId && link.LeaveDate == null
+            where link.Id == linkId && contract.Id == contractId && profile.UserId == userId &&
+                link.Role == RoomManagement.Domain.Enums.ContractTenantRole.ContractParty && link.LeaveDate == null
             select new { contract.RoomId, room.PropertyId, contract.Status };
         var found = await ownedLink.SingleOrDefaultAsync(ct) ?? throw NotFound();
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);

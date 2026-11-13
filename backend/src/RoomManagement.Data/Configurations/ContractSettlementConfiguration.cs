@@ -11,6 +11,7 @@ public sealed class ContractSettlementConfiguration : IEntityTypeConfiguration<C
         builder.ToTable("ContractSettlements", "dbo", table =>
         {
             table.HasCheckConstraint("CK_ContractSettlements_Amounts", @"(DepositAmount >= 0 AND OutstandingAmount >= 0 AND DamageFee >= 0 AND OtherFee >= 0 AND RefundAmount >= 0)");
+            table.HasCheckConstraint("CK_ContractSettlements_Disposition", @"(DepositDisposition IN (N'Refunded', N'Offset', N'NoDeposit'))");
         });
         builder.HasKey(e => e.Id).HasName("PK_ContractSettlements");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
@@ -21,7 +22,15 @@ public sealed class ContractSettlementConfiguration : IEntityTypeConfiguration<C
         builder.Property(e => e.DamageFee).HasColumnType("decimal(18,2)").IsRequired().HasDefaultValueSql(@"0", "DF_ContractSettlements_Damage");
         builder.Property(e => e.OtherFee).HasColumnType("decimal(18,2)").IsRequired().HasDefaultValueSql(@"0", "DF_ContractSettlements_Other");
         builder.Property(e => e.RefundAmount).HasColumnType("decimal(18,2)").IsRequired().HasDefaultValueSql(@"0", "DF_ContractSettlements_Refund");
+        builder.Property(e => e.DepositDisposition).HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.Note).HasColumnType("nvarchar(1000)");
+        builder.Property(e => e.RefundEvidenceId).HasColumnType("uniqueidentifier");
+        builder.Property(e => e.RefundEvidenceBlobName).HasColumnType("nvarchar(500)");
+        builder.Property(e => e.RefundEvidenceFileName).HasColumnType("nvarchar(255)");
+        builder.Property(e => e.RefundEvidenceContentType).HasColumnType("nvarchar(30)");
+        builder.Property(e => e.RefundEvidenceSizeBytes).HasColumnType("bigint");
+        builder.Property(e => e.RefundEvidenceSha256).HasColumnType("char(64)");
+        builder.Property(e => e.RefundEvidenceUploadedAt).HasColumnType("datetime2(0)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_ContractSettlements_CreatedAt");
         builder.HasOne<Contract>().WithMany().HasForeignKey(e => e.ContractId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_ContractSettlements_Contracts");
         builder.HasIndex(e => e.ContractId).HasDatabaseName("UX_ContractSettlements_ContractId").IsUnique();

@@ -10,7 +10,7 @@ public sealed class InvoiceAdjustmentConfiguration : IEntityTypeConfiguration<In
     {
         builder.ToTable("InvoiceAdjustments", "dbo", table =>
         {
-            table.HasCheckConstraint("CK_InvoiceAdjustments_Type", @"(AdjustmentType IN (N'Discount', N'Correction', N'WriteOff'))");
+            table.HasCheckConstraint("CK_InvoiceAdjustments_Type", @"(AdjustmentType IN (N'Discount', N'Correction', N'WriteOff', N'AdditionalCharge'))");
             table.HasCheckConstraint("CK_InvoiceAdjustments_Amount", @"(Amount > 0)");
             table.HasCheckConstraint("CK_InvoiceAdjustments_Void", @"((VoidedAt IS NULL AND VoidReason IS NULL AND VoidedByUserId IS NULL) OR (VoidedAt IS NOT NULL AND VoidReason IS NOT NULL AND VoidedByUserId IS NOT NULL))");
         });

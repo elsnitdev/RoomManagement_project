@@ -6,5 +6,7 @@ public enum ContractStatus
     Active,
     Expired,
     Terminated,
-    Cancelled
+    Cancelled,
+    PendingMoveOut,
+    PendingSettlement
 }

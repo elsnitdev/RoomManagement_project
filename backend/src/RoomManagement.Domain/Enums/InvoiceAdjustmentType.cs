@@ -4,5 +4,6 @@ public enum InvoiceAdjustmentType
 {
     Discount = 1,
     Correction,
-    WriteOff
+    WriteOff,
+    AdditionalCharge
 }

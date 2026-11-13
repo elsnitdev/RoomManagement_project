@@ -39,12 +39,26 @@ export const billingApi = {
   roomServices: (propertyId, roomId, signal) => apiRequest(`${room(propertyId, roomId)}/services`, { signal }).then(data),
   assignService: (propertyId, roomId, body) => apiRequest(`${room(propertyId, roomId)}/services`, { method: 'POST', body }).then(data),
   reviseRoomService: (propertyId, roomId, assignmentId, body) => apiRequest(`${room(propertyId, roomId)}/services/${id(assignmentId)}`, { method: 'PUT', body }).then(data),
-  invoices: (propertyId, page = 1, signal, roomId) => apiRequest(`${property(propertyId)}/invoices?${params({ page, pageSize: 20, roomId })}`, { signal }),
+  invoices: (propertyId, page = 1, signal, roomId, filters = {}) => apiRequest(`${property(propertyId)}/invoices?${params({ page, pageSize: 20, roomId, ...filters })}`, { signal }),
+  invoiceAttention: (propertyId, signal) => apiRequest(`${property(propertyId)}/invoices/attention`, { signal }).then(data),
+  periodInvoices: async (propertyId, roomId, year, month, signal) => {
+    const items = []
+    for (let page = 1; ; page += 1) {
+      const response = await apiRequest(`${property(propertyId)}/invoices?${params({ page, pageSize: 100, roomId, year, month })}`, { signal })
+      items.push(...(response.data || []))
+      if (page >= (response.meta?.totalPages || 1)) return { data: items }
+    }
+  },
   preview: (propertyId, body) => apiRequest(`${property(propertyId)}/invoices/monthly/preview`, { method: 'POST', body }).then(data),
+  monthlyWorklist: (propertyId, year, month, signal) => apiRequest(`${property(propertyId)}/invoices/monthly/worklist?${params({ year, month })}`, { signal }).then(data),
   createMonthly: (propertyId, body) => apiRequest(`${property(propertyId)}/invoices/monthly`, { method: 'POST', body }).then(data),
+  createOneOff: (propertyId, body) => apiRequest(`${property(propertyId)}/invoices/one-off`, { method: 'POST', body }).then(data),
   createDeposit: (contractId) => apiRequest(`/api/contracts/${id(contractId)}/invoices/deposit`, { method: 'POST' }).then(data),
   depositInvoice: (contractId, signal) => apiRequest(`/api/contracts/${id(contractId)}/invoices/deposit`, { signal }).then(data),
   invoice: (invoiceId, signal) => apiRequest(`/api/invoices/${id(invoiceId)}`, { signal }).then(data),
+  saveDraftItems: (invoiceId, body) => apiRequest(`/api/invoices/${id(invoiceId)}/draft-items`, { method: 'PUT', body }).then(data),
+  adjustments: (invoiceId, signal) => apiRequest(`/api/invoices/${id(invoiceId)}/adjustments`, { signal }).then(data),
+  addAdjustment: (invoiceId, body) => apiRequest(`/api/invoices/${id(invoiceId)}/adjustments`, { method: 'POST', body }).then(data),
   issue: (invoiceId) => apiRequest(`/api/invoices/${id(invoiceId)}/issue`, { method: 'POST' }).then(data),
   cancel: (invoiceId) => apiRequest(`/api/invoices/${id(invoiceId)}/cancel`, { method: 'POST' }).then(data),
   myInvoices: (page = 1, signal) => apiRequest(`/api/me/invoices?${params({ page, pageSize: 20 })}`, { signal }),

@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RoomManagement.API.Contracts.Common;
 using RoomManagement.API.Contracts.Contracts;
+using RoomManagement.API.Contracts.Billing;
 using RoomManagement.Business.DTOs;
 using RoomManagement.Business.Services;
 using RoomManagement.Domain;
+using RoomManagement.Domain.Entities;
 using RoomManagement.Domain.Enums;
 
 namespace RoomManagement.API.Controllers;
@@ -72,6 +74,39 @@ public sealed class ContractsController : ControllerBase
       [FromBody] TerminateContractRequest request, CancellationToken ct) =>
       Ok(new ApiResponse<ContractResponse>(ContractResponse.From(
           await _service.TerminateAsync(propertyId, contractId, request.Reason, ct))));
+
+  [HttpPost("{contractId:guid}/handover")]
+  public async Task<IActionResult> Handover(Guid propertyId, Guid contractId,
+      [FromBody] HandoverContractRequest request, CancellationToken ct) =>
+      Ok(new ApiResponse<ContractResponse>(ContractResponse.From(
+          await _service.HandoverAsync(propertyId, contractId, request.HandoverOn, ct))));
+
+  [HttpPost("{contractId:guid}/meter-readings")]
+  public async Task<IActionResult> RecordContractReading(Guid propertyId, Guid contractId,
+      [FromBody] ContractMeterReadingRequest request, CancellationToken ct) =>
+      StatusCode(201, new ApiResponse<MeterReadingResponse>(MeterReadingResponse.From(
+          await _service.RecordContractReadingAsync(propertyId, contractId, request.Type,
+              request.Year, request.Month, request.PreviousValue, request.CurrentValue, ct))));
+
+  [HttpGet("{contractId:guid}/meter-readings")]
+  public async Task<IActionResult> ListContractReadings(Guid propertyId, Guid contractId, CancellationToken ct) =>
+      Ok(new ApiResponse<IReadOnlyList<MeterReadingResponse>>(
+          (await _service.ListContractReadingsAsync(propertyId, contractId, ct))
+              .Select(MeterReadingResponse.From).ToList()));
+
+  [HttpPost("{contractId:guid}/complete-settlement")]
+  public async Task<IActionResult> CompleteSettlement(Guid propertyId, Guid contractId,
+      [FromBody] CompleteContractSettlementRequest request, CancellationToken ct) =>
+      Ok(new ApiResponse<ContractResponse>(ContractResponse.From(
+          await _service.CompleteSettlementAsync(propertyId, contractId,
+              request.DepositDisposition, request.RefundAmount, request.Note, ct))));
+
+  [HttpPost("{contractId:guid}/apply-deposit")]
+  public async Task<IActionResult> ApplyDeposit(Guid propertyId, Guid contractId,
+      [FromBody] ApplyDepositRequest request, CancellationToken ct) =>
+      StatusCode(201, new ApiResponse<DepositApplication>(
+          await _service.ApplyDepositAsync(propertyId, contractId, request.InvoiceId, request.Amount,
+              request.Reason, request.IdempotencyKey, ct)));
 
   [HttpPut("{contractId:guid}/end-date")]
   public async Task<IActionResult> SetLegacyEndDate(Guid propertyId, Guid contractId,

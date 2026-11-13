@@ -31,7 +31,17 @@ public sealed class ContractExpiryWorker : BackgroundService
                         .SetProperty(c => c.UpdatedAt, DateTime.UtcNow), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { _logger.LogError(ex, "Không thể cập nhật hợp đồng hết hạn."); }
+            catch (Exception ex)
+            {
+                if (stoppingToken.IsCancellationRequested) break;
+                try { _logger.LogError(ex, "Không thể cập nhật hợp đồng hết hạn."); }
+                catch (ObjectDisposedException) { break; }
+                catch (AggregateException logError) when (
+                    logError.Flatten().InnerExceptions.All(error => error is ObjectDisposedException))
+                {
+                    break;
+                }
+            }
             try { await Task.Delay(TimeSpan.FromHours(1), stoppingToken); }
             catch (OperationCanceledException) { break; }
         }

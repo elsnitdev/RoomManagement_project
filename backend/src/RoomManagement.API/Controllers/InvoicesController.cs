@@ -20,6 +20,23 @@ public sealed class InvoicesController : ControllerBase
         Ok(new ApiResponse<InvoiceDetailResponse>(InvoiceDetailResponse.From(
             await _service.GetDetailAsync(invoiceId, ct))));
 
+    [HttpPut("{invoiceId:guid}/draft-items")]
+    public async Task<IActionResult> ReplaceDraftItems(Guid invoiceId,
+        [FromBody] DraftInvoiceItemsRequest request, CancellationToken ct) =>
+        Ok(new ApiResponse<InvoiceCreatedResponse>(InvoiceCreatedResponse.From(
+            await _service.ReplaceDraftItemsAsync(invoiceId, request.ToInput(), ct))));
+
+    [HttpGet("{invoiceId:guid}/adjustments")]
+    public async Task<IActionResult> Adjustments(Guid invoiceId, CancellationToken ct) =>
+        Ok(new ApiResponse<IReadOnlyList<InvoiceAdjustmentResponse>>(
+            (await _service.ListAdjustmentsAsync(invoiceId, ct)).Select(InvoiceAdjustmentResponse.From).ToList()));
+
+    [HttpPost("{invoiceId:guid}/adjustments")]
+    public async Task<IActionResult> AddAdjustment(Guid invoiceId,
+        [FromBody] InvoiceAdjustmentRequest request, CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, new ApiResponse<InvoiceAdjustmentResponse>(
+            InvoiceAdjustmentResponse.From(await _service.AddAdjustmentAsync(invoiceId, request.ToInput(), ct))));
+
     [HttpPost("{invoiceId:guid}/issue")]
     public async Task<IActionResult> Issue(Guid invoiceId, CancellationToken ct) =>
         Ok(new ApiResponse<InvoiceCreatedResponse>(InvoiceCreatedResponse.From(

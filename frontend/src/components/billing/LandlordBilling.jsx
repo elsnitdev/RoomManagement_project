@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { billingApi } from "../../services/api/billingApi";
 import BillingInputs from "./BillingInputs";
+import BillingPriorityBoard from "./BillingPriorityBoard";
+import OneOffInvoiceForm from "./OneOffInvoiceForm";
+import {
+  DraftItemsEditor,
+  InvoiceAdjustmentEditor,
+  InvoiceAdjustmentHistory,
+} from "./InvoiceEditing";
 import LandlordPaymentPanel from "./LandlordPaymentPanel";
+import InvoicePaymentHistory from "./InvoicePaymentHistory";
+import InvoiceActionDialog from "./InvoiceActionDialog";
 import OverpaymentRefund from "./OverpaymentRefund";
 import { paymentAppliedToInvoice } from "./invoiceDisplay";
 import "../../styles/billing-live.css";
@@ -9,6 +18,13 @@ import "../../styles/billing-live.css";
 const money = (value) =>
   new Intl.NumberFormat("vi-VN").format(Number(value || 0)) + " ₫";
 const errorOf = (error) => error?.message || "Không thể hoàn tất thao tác.";
+const previousBillingMonth = () => {
+  const vietnamToday = new Date(Date.now() + 7 * 3600_000)
+    .toISOString()
+    .slice(0, 7);
+  const [year, month] = vietnamToday.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
+};
 const monthLabel = (invoice) =>
   invoice.billingMonth
     ? `${invoice.billingMonth}/${invoice.billingYear}`
@@ -53,12 +69,24 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
   const [propertyId, setPropertyId] = useState(initialPropertyId || "");
   const [rooms, setRooms] = useState([]);
   const [roomId, setRoomId] = useState(initialRoomId || "");
+  const [listStatus, setListStatus] = useState("");
+  const [listPeriod, setListPeriod] = useState("");
   const [contracts, setContracts] = useState([]);
   const [tab, setTab] = useState("invoices");
-  const [month, setMonth] = useState(() =>
-    new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 7),
-  );
+  const [month, setMonth] = useState(previousBillingMonth);
+  const [worklist, setWorklist] = useState([]);
+  const [worklistError, setWorklistError] = useState("");
+  const [worklistLoading, setWorklistLoading] = useState(false);
+  const [attention, setAttention] = useState({
+    unpaid: [],
+    pendingPayments: [],
+  });
+  const [attentionError, setAttentionError] = useState("");
+  const [attentionLoading, setAttentionLoading] = useState(false);
+  const [previewRequested, setPreviewRequested] = useState(false);
   const [contractId, setContractId] = useState("");
+  const [discountAmount, setDiscountAmount] = useState("");
+  const [discountReason, setDiscountReason] = useState("");
   const [preview, setPreview] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [meta, setMeta] = useState(null);
@@ -108,6 +136,11 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
         page,
         controller.signal,
         roomId || undefined,
+        {
+          status: listStatus || undefined,
+          year: listPeriod ? Number(listPeriod.slice(0, 4)) : undefined,
+          month: listPeriod ? Number(listPeriod.slice(5, 7)) : undefined,
+        },
       ),
     ])
       .then(([roomResponse, contractResponse, invoiceResponse]) => {
@@ -123,17 +156,135 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [propertyId, roomId, page, revision]);
+  }, [propertyId, roomId, listStatus, listPeriod, page, revision]);
+  useEffect(() => {
+    if (!propertyId || !month) {
+      setWorklist([]);
+      setWorklistError("");
+      setWorklistLoading(false);
+      return;
+    }
+    const selectedProperty = properties.find((item) => item.id === propertyId);
+    if (selectedProperty && !selectedProperty.isActive) {
+      setWorklist([]);
+      setWorklistError("");
+      setWorklistLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setWorklistLoading(true);
+    setWorklist([]);
+    setWorklistError("");
+    const [year, billingMonth] = month.split("-").map(Number);
+    billingApi
+      .monthlyWorklist(propertyId, year, billingMonth, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setWorklist(result.items || []);
+          setWorklistError("");
+        }
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted && cause.name !== "AbortError") {
+          setWorklist([]);
+          setWorklistError(
+            cause.status === 404
+              ? cause.details?.code === "PROPERTY_NOT_FOUND"
+                ? "Không tìm thấy khu trọ đang hoạt động. Hãy tải lại danh sách khu trọ."
+                : "API đang chạy chưa có chức năng Việc cần chốt. Hãy cập nhật hoặc khởi động lại API."
+              : errorOf(cause),
+          );
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setWorklistLoading(false);
+      });
+    return () => controller.abort();
+  }, [propertyId, month, revision, properties]);
+  useEffect(() => {
+    if (!propertyId) {
+      setAttention({ unpaid: [], pendingPayments: [] });
+      setAttentionError("");
+      setAttentionLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setAttentionLoading(true);
+    setAttention({ unpaid: [], pendingPayments: [] });
+    setAttentionError("");
+    billingApi
+      .invoiceAttention(propertyId, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setAttention(result || { unpaid: [], pendingPayments: [] });
+          setAttentionError("");
+        }
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted && cause.name !== "AbortError") {
+          setAttention({ unpaid: [], pendingPayments: [] });
+          setAttentionError(errorOf(cause));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAttentionLoading(false);
+      });
+    return () => controller.abort();
+  }, [propertyId, revision]);
+  useEffect(() => {
+    if (
+      !previewRequested ||
+      !propertyId ||
+      !contractId ||
+      !month ||
+      tab !== "invoices"
+    )
+      return;
+    const [year, billingMonth] = month.split("-").map(Number);
+    billingApi
+      .preview(propertyId, {
+        contractId,
+        year,
+        month: billingMonth,
+        discountAmount: Number(discountAmount || 0),
+        discountReason:
+          Number(discountAmount || 0) > 0 ? discountReason.trim() : null,
+      })
+      .then(setPreview)
+      .catch(() => setPreview(null));
+    setPreviewRequested(false);
+  }, [
+    previewRequested,
+    propertyId,
+    contractId,
+    month,
+    tab,
+    discountAmount,
+    discountReason,
+  ]);
 
   function changeProperty(value) {
     setPropertyId(value);
     setRoomId("");
+    setListStatus("");
+    setListPeriod("");
     setPage(1);
     setPreview(null);
     setContractId("");
   }
   const period = month.split("-").map(Number);
-  const monthlyPayload = { contractId, year: period[0], month: period[1] };
+  const monthlyPayload = {
+    contractId,
+    year: period[0],
+    month: period[1],
+    discountAmount: Number(discountAmount || 0),
+    discountReason:
+      Number(discountAmount || 0) > 0 ? discountReason.trim() : null,
+  };
+  const discountInvalid =
+    !Number.isFinite(Number(discountAmount || 0)) ||
+    Number(discountAmount || 0) < 0 ||
+    (Number(discountAmount || 0) > 0 && !discountReason.trim());
   async function action(request, message, after) {
     setBusy(true);
     setError("");
@@ -152,9 +303,26 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
   const roomName = (id) =>
     rooms.find((room) => room.id === id)?.roomNumber || id?.slice(0, 8) || "—";
   const selectedContract = contracts.find((item) => item.id === contractId);
-  const activeContracts = contracts.filter((item) => item.status === "Active");
+  const activeContracts = contracts.filter(
+    (item) => item.status === "Active" || item.status === "PendingSettlement",
+  );
   const tenantsFor = (contractId) =>
     contracts.find((contract) => contract.id === contractId)?.tenants;
+  function openWorkItem(item) {
+    if (item.invoiceId) {
+      navigate(`landlord/billing/${item.invoiceId}`);
+      return;
+    }
+    setRoomId(item.roomId);
+    setContractId(item.contractId);
+    setPreview(null);
+    if (item.status === "MissingInputs" || item.status === "NeedsAttention")
+      setTab("inputs");
+    else {
+      setTab("invoices");
+      setPreviewRequested(true);
+    }
+  }
 
   return (
     <div className="bill-page">
@@ -207,15 +375,43 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
         <BillingInputs
           propertyId={propertyId}
           rooms={rooms}
-          onChanged={() => setPreview(null)}
+          initialRoomId={roomId}
+          initialPeriod={month}
+          onChanged={() => {
+            setPreview(null);
+            setRevision((value) => value + 1);
+          }}
+          onReadingSaved={() => {
+            setTab("invoices");
+            setPreviewRequested(true);
+          }}
         />
       )}
       {propertyId && tab === "invoices" && (
         <>
+          <BillingPriorityBoard
+            month={month}
+            onMonthChange={(value) => {
+              setMonth(value);
+              setPreview(null);
+            }}
+            worklist={worklist}
+            worklistError={worklistError}
+            worklistLoading={worklistLoading}
+            attention={attention}
+            attentionError={attentionError}
+            attentionLoading={attentionLoading}
+            roomName={roomName}
+            onWorkItem={openWorkItem}
+            onOpenInvoice={(id) => navigate(`landlord/billing/${id}`)}
+          />
           <div className="bill-grid bill-grid--two">
             <section className="bill-card">
               <h2>Tạo hóa đơn tháng</h2>
-              <p>Chỉ hợp đồng đang hoạt động mới có thể lập hóa đơn tháng.</p>
+              <p>
+                Hợp đồng đang hoạt động hoặc chờ tất toán có thể lập hóa đơn
+                tháng. Hợp đồng chờ tất toán chỉ được lập kỳ bàn giao.
+              </p>
               <div className="bill-form bill-form--inline">
                 <label>
                   Hợp đồng
@@ -223,6 +419,14 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                     value={contractId}
                     onChange={(event) => {
                       setContractId(event.target.value);
+                      const contract = contracts.find(
+                        (item) => item.id === event.target.value,
+                      );
+                      if (
+                        contract?.status === "PendingSettlement" &&
+                        contract.handoverOn
+                      )
+                        setMonth(contract.handoverOn.slice(0, 7));
                       setPreview(null);
                     }}
                   >
@@ -230,6 +434,9 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                     {activeContracts.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.contractCode} · Phòng {roomName(item.roomId)}
+                        {item.status === "PendingSettlement"
+                          ? " · Hóa đơn cuối"
+                          : ""}
                       </option>
                     ))}
                   </select>
@@ -238,8 +445,18 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                   Kỳ hóa đơn
                   <input
                     type="month"
-                    min="2000-01"
-                    max="2100-12"
+                    min={
+                      selectedContract?.status === "PendingSettlement" &&
+                      selectedContract.handoverOn
+                        ? selectedContract.handoverOn.slice(0, 7)
+                        : "2000-01"
+                    }
+                    max={
+                      selectedContract?.status === "PendingSettlement" &&
+                      selectedContract.handoverOn
+                        ? selectedContract.handoverOn.slice(0, 7)
+                        : "2100-12"
+                    }
                     value={month}
                     onChange={(event) => {
                       setMonth(event.target.value);
@@ -247,10 +464,39 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                     }}
                   />
                 </label>
+                <label>
+                  Giảm trừ thủ công (₫)
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={discountAmount}
+                    onChange={(event) => {
+                      setDiscountAmount(event.target.value);
+                      setPreview(null);
+                    }}
+                    placeholder="0"
+                  />
+                </label>
+                {Number(discountAmount || 0) > 0 && (
+                  <label>
+                    Lý do giảm trừ *
+                    <input
+                      type="text"
+                      maxLength={255}
+                      value={discountReason}
+                      onChange={(event) => {
+                        setDiscountReason(event.target.value);
+                        setPreview(null);
+                      }}
+                      placeholder="Ví dụ: hỗ trợ phí dịch vụ tháng đầu"
+                    />
+                  </label>
+                )}
                 <button
                   className="bill-button"
                   type="button"
-                  disabled={!contractId || !month || busy}
+                  disabled={!contractId || !month || busy || discountInvalid}
                   onClick={() =>
                     action(
                       () => billingApi.preview(propertyId, monthlyPayload),
@@ -268,7 +514,13 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                     Bản xem trước · {preview.month}/{preview.year}
                   </h3>
                   <p>Hạn thanh toán: {preview.dueDate}</p>
+                  <MeterReadingSummary preview={preview} />
                   <InvoiceItems items={preview.items} />
+                  {Number(discountAmount || 0) > 0 && (
+                    <p className="bill-hint">
+                      Giảm trừ {money(discountAmount)}: {discountReason}
+                    </p>
+                  )}
                   <div className="bill-total">
                     <span>Tổng cộng</span>
                     <strong>{money(preview.totalAmount)}</strong>
@@ -325,30 +577,67 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
               </div>
             </section>
           </div>
+          <OneOffInvoiceForm
+            propertyId={propertyId}
+            contracts={contracts}
+            roomName={roomName}
+            onCreated={(result) => {
+              setRevision((value) => value + 1);
+              navigate(`landlord/billing/${result.id}`);
+            }}
+          />
           <section className="bill-card">
             <div className="bill-list-heading">
               <div>
                 <h2>Danh sách hóa đơn</h2>
                 {roomId && <p>Đang xem hóa đơn phòng {roomName(roomId)}.</p>}
               </div>
-              <label>
-                Phòng
-                <select
-                  value={roomId}
-                  onChange={(event) => {
-                    setRoomId(event.target.value);
-                    setPage(1);
-                  }}
-                >
-                  <option value="">Tất cả phòng</option>
-                  {rooms.map((room) => (
-                    <option key={room.id} value={room.id}>
-                      {room.roomNumber}
-                      {room.roomName ? ` · ${room.roomName}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="bill-list-filters">
+                <label>
+                  Phòng
+                  <select
+                    value={roomId}
+                    onChange={(event) => {
+                      setRoomId(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">Tất cả phòng</option>
+                    {rooms.map((room) => (
+                      <option key={room.id} value={room.id}>
+                        {room.roomNumber}
+                        {room.roomName ? ` · ${room.roomName}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Trạng thái
+                  <select
+                    value={listStatus}
+                    onChange={(event) => {
+                      setListStatus(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">Tất cả</option>
+                    <option value="Draft">Bản nháp</option>
+                    <option value="Issued">Đã phát hành</option>
+                    <option value="Cancelled">Đã hủy</option>
+                  </select>
+                </label>
+                <label>
+                  Kỳ tháng
+                  <input
+                    type="month"
+                    value={listPeriod}
+                    onChange={(event) => {
+                      setListPeriod(event.target.value);
+                      setPage(1);
+                    }}
+                  />
+                </label>
+              </div>
             </div>
             {loading ? (
               <p role="status">Đang tải...</p>
@@ -461,6 +750,24 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [revision, setRevision] = useState(0);
+  const [selectedAction, setSelectedAction] = useState("");
+  const [pendingPayments, setPendingPayments] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    billingApi
+      .landlordPayments(invoiceId, controller.signal)
+      .then((rows) => {
+        if (!controller.signal.aborted)
+          setPendingPayments(
+            (rows || []).filter((row) => row.status === "Pending").length,
+          );
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setPendingPayments(0);
+      });
+    return () => controller.abort();
+  }, [invoiceId, revision]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -518,6 +825,7 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
     try {
       await request();
       setSuccess(message);
+      setSelectedAction("");
       setRevision((value) => value + 1);
     } catch (cause) {
       setError(errorOf(cause));
@@ -581,6 +889,48 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
       )}
       {summary && (
         <>
+          <div className="bill-detail-actions" aria-label="Xử lý hóa đơn">
+            <button
+              type="button"
+              className="bill-button"
+              disabled={
+                summary.status === "Cancelled" ||
+                (summary.status === "Issued" &&
+                  !["Monthly", "Damage", "Other"].includes(summary.type))
+              }
+              onClick={() =>
+                setSelectedAction(
+                  summary.status === "Draft" ? "edit" : "adjustment",
+                )
+              }
+            >
+              Phụ thu giảm trừ
+            </button>
+            <button
+              type="button"
+              className={`bill-button bill-button--secondary ${pendingPayments ? "bill-button--attention" : ""}`}
+              disabled={summary.status !== "Issued"}
+              onClick={() => setSelectedAction("review")}
+            >
+              Duyệt yêu cầu thanh toán
+              {pendingPayments > 0 && (
+                <span className="bill-action-count">{pendingPayments}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="bill-button bill-button--secondary"
+              disabled={summary.status !== "Issued"}
+              onClick={() => setSelectedAction("record")}
+            >
+              Ghi nhận thanh toán thủ công
+            </button>
+            {pendingPayments > 0 && (
+              <p className="bill-action-note" role="status">
+                Có {pendingPayments} yêu cầu thanh toán đang chờ duyệt.
+              </p>
+            )}
+          </div>
           <section className="bill-card" aria-labelledby="bill-detail-title">
             <div className="bill-detail-head">
               <h2 id="bill-detail-title">Thông tin hóa đơn</h2>
@@ -601,7 +951,9 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
             {Number(summary.creditToRefund) > 0 ? (
               <div className="bill-flow-hero bill-flow-hero--credit">
                 <div className="bill-flow-hero__column">
-                  <span>{summary.type === "Deposit" ? "TIỀN CỌC" : "HÓA ĐƠN"}</span>
+                  <span>
+                    {summary.type === "Deposit" ? "TIỀN CỌC" : "HÓA ĐƠN"}
+                  </span>
                   <strong>{money(0)}</strong>
                   <small>Đã thanh toán thành công</small>
                 </div>
@@ -613,9 +965,15 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
               </div>
             ) : (
               <div className="bill-flow-hero">
-                <span>{summary.type === "Deposit" ? "TIỀN CỌC" : "HÓA ĐƠN"}</span>
+                <span>
+                  {summary.type === "Deposit" ? "TIỀN CỌC" : "HÓA ĐƠN"}
+                </span>
                 <strong>{money(Math.max(0, Number(summary.amountDue)))}</strong>
-                <small>{Number(summary.amountDue) > 0 ? "Còn phải thu" : "Đã thanh toán đủ"}</small>
+                <small>
+                  {Number(summary.amountDue) > 0
+                    ? "Còn phải thu"
+                    : "Đã thanh toán đủ"}
+                </small>
               </div>
             )}
             <InvoiceSummary
@@ -625,75 +983,194 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
               }
             />
           </section>
-          <InvoiceTenants tenants={detail.tenants} />
+          <section
+            className="bill-card bill-primary-context"
+            aria-labelledby="bill-primary-context-title"
+          >
+            <h2 id="bill-primary-context-title">Phòng và người thuê chính</h2>
+            <dl className="bill-summary">
+              <div>
+                <dt>Khu trọ</dt>
+                <dd>{location?.property.name || "Đang cập nhật"}</dd>
+              </div>
+              <div>
+                <dt>Phòng</dt>
+                <dd>
+                  {location?.room.roomNumber || summary.roomId.slice(0, 8)}
+                </dd>
+              </div>
+              <div>
+                <dt>Người thuê chính</dt>
+                <dd>
+                  {detail.tenants?.find((person) => person.isContactPerson)
+                    ?.fullName ||
+                    detail.tenants?.[0]?.fullName ||
+                    "Chưa có thông tin"}
+                </dd>
+              </div>
+            </dl>
+          </section>
           <section className="bill-card">
             <h2>Các khoản trên hóa đơn</h2>
+            <MeterReadingSummary preview={detail} />
             <InvoiceItems items={detail.items} />
           </section>
-          {summary.status === "Issued" && (
-            <LandlordPaymentPanel
-              invoiceId={invoiceId}
-              amountDue={summary.amountDue}
-              creditToRefund={summary.creditToRefund}
-              onChanged={(message) => {
-                setSuccess(message);
-                setRevision((value) => value + 1);
-              }}
-              onRefresh={() => setRevision((value) => value + 1)}
-            />
-          )}
-          {summary.status === "Issued" && (
-            <OverpaymentRefund
-              invoiceId={invoiceId}
-              creditToRefund={summary.creditToRefund}
-              onChanged={(message) => {
-                setSuccess(message);
-                setRevision((value) => value + 1);
-              }}
-            />
-          )}
-          <div className="bill-actions">
-            {summary.status === "Draft" && (
+          <section
+            className="bill-card"
+            aria-labelledby="bill-adjustment-history-title"
+          >
+            <h2 id="bill-adjustment-history-title">
+              Lịch sử phụ thu, giảm trừ
+            </h2>
+            <InvoiceAdjustmentHistory adjustments={detail.adjustments || []} />
+          </section>
+          <InvoicePaymentHistory
+            key={`${invoiceId}:${revision}`}
+            invoiceId={invoiceId}
+          />
+          {summary.status !== "Cancelled" && (
+            <div className="bill-detail-secondary-actions">
+              {summary.status === "Draft" && (
+                <button
+                  className="bill-link"
+                  type="button"
+                  onClick={() => setSelectedAction("issue")}
+                >
+                  Phát hành hóa đơn
+                </button>
+              )}
+              {summary.status === "Issued" &&
+                Number(summary.creditToRefund) > 0 && (
+                  <button
+                    className="bill-link"
+                    type="button"
+                    onClick={() => setSelectedAction("refund")}
+                  >
+                    Hoàn tiền thu vượt
+                  </button>
+                )}
               <button
+                className="bill-link bill-link--danger"
                 type="button"
-                className="bill-button"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Phát hành hóa đơn này? Người thuê sẽ nhìn thấy hóa đơn.",
-                    )
-                  )
-                    action(
-                      () => billingApi.issue(invoiceId),
-                      "Đã phát hành hóa đơn.",
-                    );
-                }}
-              >
-                Phát hành
-              </button>
-            )}
-            {summary.status !== "Cancelled" && (
-              <button
-                type="button"
-                className="bill-button bill-button--danger"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Hủy hóa đơn này? Thao tác không thể hoàn tác.",
-                    )
-                  )
-                    action(
-                      () => billingApi.cancel(invoiceId),
-                      "Đã hủy hóa đơn.",
-                    );
-                }}
+                onClick={() => setSelectedAction("cancel")}
               >
                 Hủy hóa đơn
               </button>
-            )}
-          </div>
+            </div>
+          )}
+          {selectedAction && (
+            <InvoiceActionDialog
+              title={
+                {
+                  edit: "Chỉnh các khoản hóa đơn nháp",
+                  adjustment: "Phụ thu và giảm trừ",
+                  review: "Duyệt yêu cầu thanh toán",
+                  record: "Ghi nhận thanh toán thủ công",
+                  refund: "Hoàn tiền thu vượt",
+                  issue: "Phát hành hóa đơn",
+                  cancel: "Hủy hóa đơn",
+                }[selectedAction]
+              }
+              onClose={() => setSelectedAction("")}
+            >
+              {selectedAction === "edit" && summary.status === "Draft" && (
+                <DraftItemsEditor
+                  key={`${invoiceId}:${revision}`}
+                  invoiceId={invoiceId}
+                  items={detail.items}
+                  initialOpen
+                  onChanged={(message) => {
+                    setSuccess(message);
+                    setRevision((value) => value + 1);
+                    setSelectedAction("");
+                  }}
+                />
+              )}
+              {selectedAction === "adjustment" &&
+                ["Monthly", "Damage", "Other"].includes(summary.type) &&
+                summary.status === "Issued" && (
+                  <InvoiceAdjustmentEditor
+                    invoiceId={invoiceId}
+                    adjustments={detail.adjustments || []}
+                    summary={summary}
+                    onChanged={(message) => {
+                      setSuccess(message);
+                      setRevision((value) => value + 1);
+                    }}
+                  />
+                )}
+              {(selectedAction === "review" || selectedAction === "record") &&
+                summary.status === "Issued" && (
+                  <LandlordPaymentPanel
+                    invoiceId={invoiceId}
+                    amountDue={summary.amountDue}
+                    creditToRefund={summary.creditToRefund}
+                    mode={selectedAction}
+                    onChanged={(message) => {
+                      setSuccess(message);
+                      setRevision((value) => value + 1);
+                    }}
+                    onRefresh={() => setRevision((value) => value + 1)}
+                  />
+                )}
+              {selectedAction === "refund" && summary.status === "Issued" && (
+                <OverpaymentRefund
+                  invoiceId={invoiceId}
+                  creditToRefund={summary.creditToRefund}
+                  onChanged={(message) => {
+                    setSuccess(message);
+                    setSelectedAction("");
+                    setRevision((value) => value + 1);
+                  }}
+                />
+              )}
+              {(selectedAction === "issue" || selectedAction === "cancel") && (
+                <div className="bill-card bill-actions">
+                  {selectedAction === "issue" && summary.status === "Draft" && (
+                    <button
+                      type="button"
+                      className="bill-button"
+                      disabled={busy}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            "Phát hành hóa đơn này? Người thuê sẽ nhìn thấy hóa đơn.",
+                          )
+                        )
+                          action(
+                            () => billingApi.issue(invoiceId),
+                            "Đã phát hành hóa đơn.",
+                          );
+                      }}
+                    >
+                      Phát hành
+                    </button>
+                  )}
+                  {selectedAction === "cancel" &&
+                    summary.status !== "Cancelled" && (
+                      <button
+                        type="button"
+                        className="bill-button bill-button--danger"
+                        disabled={busy}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Hủy hóa đơn này? Thao tác không thể hoàn tác.",
+                            )
+                          )
+                            action(
+                              () => billingApi.cancel(invoiceId),
+                              "Đã hủy hóa đơn.",
+                            );
+                        }}
+                      >
+                        Hủy hóa đơn
+                      </button>
+                    )}
+                </div>
+              )}
+            </InvoiceActionDialog>
+          )}
         </>
       )}
     </div>
@@ -772,6 +1249,45 @@ export function InvoiceTenants({ tenants, selfOnly = false }) {
         </ul>
       )}
     </section>
+  );
+}
+
+function MeterReadingSummary({ preview }) {
+  const readings = [
+    ["Điện", preview?.electricityReading, "kWh"],
+    ["Nước", preview?.waterReading, "m³"],
+  ].filter(([, reading]) => reading);
+  if (!readings.length) return null;
+  return (
+    <div className="bill-table-wrap">
+      <table className="bill-table">
+        {/* <caption>Chỉ số và tiền điện nước của kỳ</caption> */}
+        <thead>
+          <tr>
+            <th>Loại</th>
+            <th>Chỉ số đầu → cuối</th>
+            <th>Tiêu thụ</th>
+            <th>Đơn giá</th>
+            <th>Thành tiền</th>
+          </tr>
+        </thead>
+        <tbody>
+          {readings.map(([label, reading, unit]) => (
+            <tr key={label}>
+              <td>{label}</td>
+              <td>
+                {reading.previousValue} → {reading.currentValue}
+              </td>
+              <td>
+                {reading.usage} {unit}
+              </td>
+              <td>{money(reading.unitPrice)}</td>
+              <td>{money(reading.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

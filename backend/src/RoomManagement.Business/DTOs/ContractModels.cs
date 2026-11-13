@@ -7,16 +7,22 @@ public sealed record CreateContractInput(
     Guid RoomId, string ContractCode, DateOnly StartDate, DateOnly? EndDate,
     decimal MonthlyRent, decimal DepositAmount, byte? PaymentDueDay, string? Note,
     InitialDepositPaymentStatus DepositPaymentStatus = InitialDepositPaymentStatus.Unpaid,
-    PaymentMethod? DepositPaymentMethod = null, DateTimeOffset? DepositPaidAt = null);
+    PaymentMethod? DepositPaymentMethod = null, DateTimeOffset? DepositPaidAt = null,
+    ContractTenancyMode TenancyMode = ContractTenancyMode.CoTenancy,
+    IReadOnlyList<InitialRoomServiceInput>? RoomServices = null);
+
+public sealed record InitialRoomServiceInput(Guid ServiceId, int Quantity, decimal? CustomPrice);
 
 public enum InitialDepositPaymentStatus { Unpaid = 1, Paid = 2 }
 
 public sealed record CreateContractResult(Contract Contract, Guid? DepositInvoiceId);
 
 public sealed record ContractCreation(Contract Contract, Invoice? DepositInvoice,
-    InvoiceItem? DepositItem, Payment? InitialPayment, PaymentReviewEvent? InitialPaymentReview);
+    InvoiceItem? DepositItem, Payment? InitialPayment, PaymentReviewEvent? InitialPaymentReview,
+    IReadOnlyList<InitialRoomServiceInput>? RoomServices = null);
 
-public sealed record AddContractTenantInput(Guid TenantId, DateOnly JoinDate, bool IsContactPerson);
+public sealed record AddContractTenantInput(Guid TenantId, DateOnly JoinDate, bool IsContactPerson,
+    ContractTenantRole Role = ContractTenantRole.ContractParty);
 public sealed record AddContractUserInput(string Email, DateOnly JoinDate);
 public sealed record ContractTenantInfo(Guid Id, Guid TenantId, string? UserId, string FullName,
     string? PhoneNumber, string? Email, DateOnly JoinDate, DateOnly? LeaveDate, bool IsContactPerson)
@@ -28,6 +34,9 @@ public sealed record ContractTenantInfo(Guid Id, Guid TenantId, string? UserId, 
     public bool HasConfirmedCommitment { get; init; }
     public Guid? CurrentRulesVersionId { get; init; }
     public bool HasAcceptedCurrentRules { get; init; }
+    public ContractTenantRole Role { get; init; } = ContractTenantRole.ContractParty;
+    public DateTime? ResidenceApprovedAt { get; init; }
+    public string? ResidenceApprovedByUserId { get; init; }
     public IReadOnlyList<ContractTenureSpan> TenureSpans { get; init; } = [];
 }
 public sealed record ContractDetail(Contract Contract, string RoomNumber, IReadOnlyList<ContractTenantInfo> Tenants,

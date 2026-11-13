@@ -16,5 +16,9 @@ public sealed class Invoice
     public decimal TotalAmount { get; set; }
     public InvoiceStatus Status { get; set; } = InvoiceStatus.Draft;
     public string? Note { get; set; }
+    public string? CreationSource { get; set; }
+    public string? SettlementOperationKey { get; set; }
+    public string? SettlementRequestHash { get; set; }
+    public string? SettlementChargeFingerprint { get; set; }
     public DateTime CreatedAt { get; set; }
 }

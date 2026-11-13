@@ -11,6 +11,7 @@ public sealed class ContractTenantConfiguration : IEntityTypeConfiguration<Contr
         builder.ToTable("ContractTenants", "dbo", table =>
         {
             table.HasCheckConstraint("CK_ContractTenants_Dates", @"(LeaveDate IS NULL OR LeaveDate >= JoinDate)");
+            table.HasCheckConstraint("CK_ContractTenants_Role", @"(Role IN (N'ContractParty', N'AuthorizedOccupant'))");
         });
         builder.HasKey(e => e.Id).HasName("PK_ContractTenants");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
@@ -20,6 +21,9 @@ public sealed class ContractTenantConfiguration : IEntityTypeConfiguration<Contr
         builder.Property(e => e.LeaveDate).HasColumnType("date");
         builder.Property(e => e.IsContactPerson).HasColumnType("bit").IsRequired().HasDefaultValue(false);
         builder.Property(e => e.OnlineRulesRequired).HasColumnType("bit").IsRequired().HasDefaultValue(false);
+        builder.Property(e => e.Role).HasConversion<string>().HasColumnType("nvarchar(32)").IsRequired().HasDefaultValueSql(@"N'ContractParty'");
+        builder.Property(e => e.ResidenceApprovedAt).HasColumnType("datetime2(0)");
+        builder.Property(e => e.ResidenceApprovedByUserId).HasColumnType("nvarchar(450)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_ContractTenants_CreatedAt");
         builder.HasOne<Contract>().WithMany().HasForeignKey(e => e.ContractId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_ContractTenants_Contracts");
         builder.HasOne<TenantProfile>().WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_ContractTenants_Tenants");

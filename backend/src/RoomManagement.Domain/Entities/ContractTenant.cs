@@ -1,3 +1,5 @@
+using RoomManagement.Domain.Enums;
+
 namespace RoomManagement.Domain.Entities;
 
 public sealed class ContractTenant
@@ -9,5 +11,8 @@ public sealed class ContractTenant
     public DateOnly? LeaveDate { get; set; }
     public bool IsContactPerson { get; set; }
     public bool OnlineRulesRequired { get; set; }
+    public ContractTenantRole Role { get; set; } = ContractTenantRole.ContractParty;
+    public DateTime? ResidenceApprovedAt { get; set; }
+    public string? ResidenceApprovedByUserId { get; set; }
     public DateTime CreatedAt { get; set; }
 }

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using RoomManagement.Business.DTOs;
 using RoomManagement.Business.Errors;
 using RoomManagement.Data;
 using RoomManagement.Domain;
@@ -362,6 +363,61 @@ public sealed class BillingInvoiceStoreTests
                 RecordedAt = DateTime.UtcNow
             }, CancellationToken.None));
         Assert.Equal("METER_READING_GAP", gapError.Code);
+    }
+
+    [SqlServerFact]
+    public async Task Draft_edits_and_issued_adjustments_update_the_invoice_balance()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId, contractId) = await SeedAsync(database);
+        var today = RoomManagement.Business.Services.VietnamDate.Today;
+        var invoiceId = Guid.NewGuid();
+        var serviceId = Guid.NewGuid();
+        await using var context = database.CreateContext();
+        var store = new InvoiceStore(context);
+        var invoice = new Invoice
+        {
+            Id = invoiceId, ContractId = contractId, RoomId = roomId,
+            InvoiceCode = $"INV-{invoiceId:N}", InvoiceType = InvoiceType.Monthly,
+            BillingYear = (short)today.Year, BillingMonth = (byte)today.Month,
+            IssueDate = today, DueDate = today.AddDays(5), TotalAmount = 3_100_000,
+            Status = InvoiceStatus.Draft, CreatedAt = DateTime.UtcNow
+        };
+        await store.CreateDraftAsync(invoice, [
+            new InvoiceItem { Id = Guid.NewGuid(), InvoiceId = invoiceId,
+                ItemType = InvoiceItemType.Rent, Description = "Tiền phòng",
+                Quantity = 1, UnitPrice = 3_000_000, Amount = 3_000_000,
+                CreatedAt = DateTime.UtcNow },
+            new InvoiceItem { Id = serviceId, InvoiceId = invoiceId,
+                ItemType = InvoiceItemType.Service, Description = "Dịch vụ",
+                Quantity = 1, UnitPrice = 100_000, Amount = 100_000,
+                CreatedAt = DateTime.UtcNow }
+        ], ownerId, CancellationToken.None);
+
+        await store.ReplaceDraftItemsAsync(invoiceId, ownerId, [
+            new EditableInvoiceItem(serviceId, InvoiceItemType.Service, "Dịch vụ kỳ này", 1, 150_000),
+            new EditableInvoiceItem(null, InvoiceItemType.Discount, "Giảm phí", 1, 50_000)
+        ], CancellationToken.None);
+        var draft = await store.GetOwnedDetailAsync(invoiceId, ownerId, CancellationToken.None);
+        Assert.Equal(3_100_000, draft!.Invoice.TotalAmount);
+        Assert.Contains(draft.Items, item => item.ItemType == InvoiceItemType.Rent && item.Amount == 3_000_000);
+        Assert.Contains(draft.Items, item => item.ItemType == InvoiceItemType.Discount && item.Amount == -50_000);
+
+        await store.IssueAsync(invoiceId, ownerId, CancellationToken.None);
+        await store.AddAdjustmentAsync(invoiceId, ownerId,
+            new InvoiceAdjustmentInput(InvoiceAdjustmentType.AdditionalCharge, 200_000,
+                "Phí sửa chữa", Guid.NewGuid().ToString("N")), CancellationToken.None);
+        await store.AddAdjustmentAsync(invoiceId, ownerId,
+            new InvoiceAdjustmentInput(InvoiceAdjustmentType.Discount, 100_000,
+                "Giảm tiền điện", Guid.NewGuid().ToString("N")), CancellationToken.None);
+
+        var issued = await store.GetOwnedDetailAsync(invoiceId, ownerId, CancellationToken.None);
+        Assert.Equal(3_200_000, issued!.Balance.EffectiveAmount);
+        Assert.Equal(3_200_000, issued.Balance.RemainingAmount);
+        Assert.Equal(2, issued.Adjustments.Count);
+        var attention = await store.AttentionAsync(propertyId, ownerId, CancellationToken.None);
+        Assert.Contains(attention.Unpaid, row => row.Invoice.Id == invoiceId);
+        Assert.Null(await store.GetOwnedDetailAsync(invoiceId, "another-owner", CancellationToken.None));
     }
 
     private static async Task<(string OwnerId, Guid PropertyId, Guid RoomId, Guid ContractId)> SeedAsync(SqlServerDatabase database)

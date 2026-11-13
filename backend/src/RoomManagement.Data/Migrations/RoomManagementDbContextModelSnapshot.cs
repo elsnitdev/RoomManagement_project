@@ -243,6 +243,9 @@ namespace RoomManagement.Data.Migrations
                     b.Property<DateOnly?>("EndDate")
                         .HasColumnType("date");
 
+                    b.Property<DateOnly?>("HandoverOn")
+                        .HasColumnType("date");
+
                     b.Property<decimal>("MonthlyRent")
                         .HasColumnType("decimal(18,2)");
 
@@ -263,6 +266,12 @@ namespace RoomManagement.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("nvarchar(20)")
                         .HasDefaultValueSql("N'Draft'", "DF_Contracts_Status");
+
+                    b.Property<string>("TenancyMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValueSql("N'CoTenancy'");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2(0)");
@@ -292,7 +301,9 @@ namespace RoomManagement.Data.Migrations
 
                             t.HasCheckConstraint("CK_Contracts_DueDay", "(PaymentDueDay IS NULL OR PaymentDueDay BETWEEN 1 AND 31)");
 
-                            t.HasCheckConstraint("CK_Contracts_Status", "(Status IN (N'Draft', N'Active', N'Expired', N'Terminated', N'Cancelled'))");
+                            t.HasCheckConstraint("CK_Contracts_Status", "(Status IN (N'Draft', N'Active', N'Expired', N'Terminated', N'Cancelled', N'PendingMoveOut', N'PendingSettlement'))");
+
+                            t.HasCheckConstraint("CK_Contracts_TenancyMode", "(TenancyMode IN (N'CoTenancy', N'PrimaryTenantWithFamily'))");
                         });
                 });
 
@@ -488,6 +499,10 @@ namespace RoomManagement.Data.Migrations
                     b.Property<decimal>("DepositAmount")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("DepositDisposition")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(1000)");
 
@@ -506,6 +521,27 @@ namespace RoomManagement.Data.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasDefaultValueSql("0", "DF_ContractSettlements_Refund");
 
+                    b.Property<string>("RefundEvidenceBlobName")
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RefundEvidenceContentType")
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("RefundEvidenceFileName")
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<Guid?>("RefundEvidenceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RefundEvidenceSha256")
+                        .HasColumnType("char(64)");
+
+                    b.Property<long?>("RefundEvidenceSizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("RefundEvidenceUploadedAt")
+                        .HasColumnType("datetime2(0)");
+
                     b.Property<DateOnly>("SettlementDate")
                         .HasColumnType("date");
 
@@ -519,6 +555,8 @@ namespace RoomManagement.Data.Migrations
                     b.ToTable("ContractSettlements", "dbo", t =>
                         {
                             t.HasCheckConstraint("CK_ContractSettlements_Amounts", "(DepositAmount >= 0 AND OutstandingAmount >= 0 AND DamageFee >= 0 AND OtherFee >= 0 AND RefundAmount >= 0)");
+
+                            t.HasCheckConstraint("CK_ContractSettlements_Disposition", "(DepositDisposition IN (N'Refunded', N'Offset', N'NoDeposit'))");
                         });
                 });
 
@@ -551,6 +589,18 @@ namespace RoomManagement.Data.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<DateTime?>("ResidenceApprovedAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("ResidenceApprovedByUserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValueSql("N'ContractParty'");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
@@ -572,6 +622,8 @@ namespace RoomManagement.Data.Migrations
                     b.ToTable("ContractTenants", "dbo", t =>
                         {
                             t.HasCheckConstraint("CK_ContractTenants_Dates", "(LeaveDate IS NULL OR LeaveDate >= JoinDate)");
+
+                            t.HasCheckConstraint("CK_ContractTenants_Role", "(Role IN (N'ContractParty', N'AuthorizedOccupant'))");
                         });
                 });
 
@@ -648,6 +700,9 @@ namespace RoomManagement.Data.Migrations
                         .HasColumnType("datetime2(0)")
                         .HasDefaultValueSql("SYSUTCDATETIME()", "DF_Invoices_CreatedAt");
 
+                    b.Property<string>("CreationSource")
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<DateOnly>("DueDate")
                         .HasColumnType("date");
 
@@ -667,6 +722,15 @@ namespace RoomManagement.Data.Migrations
 
                     b.Property<Guid>("RoomId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SettlementChargeFingerprint")
+                        .HasColumnType("char(64)");
+
+                    b.Property<string>("SettlementOperationKey")
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("SettlementRequestHash")
+                        .HasColumnType("char(64)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -694,6 +758,16 @@ namespace RoomManagement.Data.Migrations
 
                     b.HasIndex("ContractId", "RoomId");
 
+                    b.HasIndex("ContractId", "SettlementChargeFingerprint")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Invoices_SettlementCharge")
+                        .HasFilter("CreationSource = N'EarlyExitSettlement' AND Status <> N'Cancelled'");
+
+                    b.HasIndex("ContractId", "SettlementOperationKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Invoices_SettlementOperation")
+                        .HasFilter("SettlementOperationKey IS NOT NULL");
+
                     b.HasIndex("ContractId", "Status")
                         .HasDatabaseName("IX_Invoices_Contract_Status");
 
@@ -709,6 +783,8 @@ namespace RoomManagement.Data.Migrations
                             t.HasCheckConstraint("CK_Invoices_MonthlyPeriod", "(InvoiceType <> N'Monthly' OR BillingYear IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_Invoices_Period", "((BillingYear IS NULL AND BillingMonth IS NULL) OR (BillingYear IS NOT NULL AND BillingMonth IS NOT NULL AND BillingYear BETWEEN 2000 AND 2100 AND BillingMonth BETWEEN 1 AND 12))");
+
+                            t.HasCheckConstraint("CK_Invoices_SettlementSource", "((CreationSource IS NULL AND SettlementOperationKey IS NULL AND SettlementRequestHash IS NULL AND SettlementChargeFingerprint IS NULL) OR (CreationSource = N'EarlyExitSettlement' AND SettlementOperationKey IS NOT NULL AND SettlementRequestHash IS NOT NULL AND SettlementChargeFingerprint IS NOT NULL))");
 
                             t.HasCheckConstraint("CK_Invoices_Status", "(Status IN (N'Draft', N'Issued', N'Cancelled'))");
 
@@ -777,7 +853,7 @@ namespace RoomManagement.Data.Migrations
                         {
                             t.HasCheckConstraint("CK_InvoiceAdjustments_Amount", "(Amount > 0)");
 
-                            t.HasCheckConstraint("CK_InvoiceAdjustments_Type", "(AdjustmentType IN (N'Discount', N'Correction', N'WriteOff'))");
+                            t.HasCheckConstraint("CK_InvoiceAdjustments_Type", "(AdjustmentType IN (N'Discount', N'Correction', N'WriteOff', N'AdditionalCharge'))");
 
                             t.HasCheckConstraint("CK_InvoiceAdjustments_Void", "((VoidedAt IS NULL AND VoidReason IS NULL AND VoidedByUserId IS NULL) OR (VoidedAt IS NOT NULL AND VoidReason IS NOT NULL AND VoidedByUserId IS NOT NULL))");
                         });
@@ -906,6 +982,9 @@ namespace RoomManagement.Data.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<decimal>("CurrentValue")
                         .HasColumnType("decimal(18,2)");
 
@@ -936,9 +1015,15 @@ namespace RoomManagement.Data.Migrations
                     b.HasKey("Id")
                         .HasName("PK_MeterReadings");
 
+                    b.HasIndex("ContractId", "MeterType", "Year", "Month")
+                        .IsUnique()
+                        .HasDatabaseName("UX_MeterReadings_ContractPeriod")
+                        .HasFilter("ContractId IS NOT NULL");
+
                     b.HasIndex("RoomId", "MeterType", "Year", "Month")
                         .IsUnique()
-                        .HasDatabaseName("UX_MeterReadings_Period");
+                        .HasDatabaseName("UX_MeterReadings_Period")
+                        .HasFilter("ContractId IS NULL");
 
                     b.ToTable("MeterReadings", "dbo", t =>
                         {
@@ -2018,6 +2103,11 @@ namespace RoomManagement.Data.Migrations
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.MeterReading", b =>
                 {
+                    b.HasOne("RoomManagement.Domain.Entities.Contract", null)
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("RoomManagement.Domain.Entities.Room", null)
                         .WithMany()
                         .HasForeignKey("RoomId")

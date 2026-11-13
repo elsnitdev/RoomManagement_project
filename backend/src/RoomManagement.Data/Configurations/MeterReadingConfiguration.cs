@@ -17,6 +17,7 @@ public sealed class MeterReadingConfiguration : IEntityTypeConfiguration<MeterRe
         builder.HasKey(e => e.Id).HasName("PK_MeterReadings");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.RoomId).HasColumnType("uniqueidentifier").IsRequired();
+        builder.Property(e => e.ContractId).HasColumnType("uniqueidentifier");
         builder.Property(e => e.MeterType).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.Year).HasColumnType("smallint").IsRequired();
         builder.Property(e => e.Month).HasColumnType("tinyint").IsRequired();
@@ -25,6 +26,8 @@ public sealed class MeterReadingConfiguration : IEntityTypeConfiguration<MeterRe
         builder.Property(e => e.RecordedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_MeterReadings_RecordedAt");
         builder.Property(e => e.Note).HasColumnType("nvarchar(500)");
         builder.HasOne<Room>().WithMany().HasForeignKey(e => e.RoomId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_MeterReadings_Rooms");
-        builder.HasIndex(e => new { e.RoomId, e.MeterType, e.Year, e.Month }).HasDatabaseName("UX_MeterReadings_Period").IsUnique();
+        builder.HasOne<Contract>().WithMany().HasForeignKey(e => e.ContractId).OnDelete(DeleteBehavior.NoAction);
+        builder.HasIndex(e => new { e.RoomId, e.MeterType, e.Year, e.Month }).HasDatabaseName("UX_MeterReadings_Period").IsUnique().HasFilter("ContractId IS NULL");
+        builder.HasIndex(e => new { e.ContractId, e.MeterType, e.Year, e.Month }).HasDatabaseName("UX_MeterReadings_ContractPeriod").IsUnique().HasFilter("ContractId IS NOT NULL");
     }
 }

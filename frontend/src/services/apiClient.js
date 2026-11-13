@@ -62,6 +62,9 @@ export async function apiRequest(path, { method = 'GET', body, headers, signal, 
     })
   } catch (error) {
     if (error.name === 'AbortError') throw error
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new ApiError('Trình duyệt đang ở chế độ ngoại tuyến. Hãy tắt Offline trong DevTools hoặc kiểm tra kết nối rồi thử lại.', 0, error)
+    }
     throw new ApiError('Không kết nối được máy chủ. Vui lòng thử lại sau.', 0, error)
   }
 

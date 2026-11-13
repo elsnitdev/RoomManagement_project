@@ -21,6 +21,7 @@ public interface IBillingInputStore
     Task<IReadOnlyList<MeterReading>> ListReadingsAsync(Guid roomId, UtilityType? type, CancellationToken ct);
     /// <summary>Tìm chỉ số điện hoặc nước của phòng trong tháng chỉ định.</summary>
     Task<MeterReading?> ReadingAtAsync(Guid roomId, UtilityType type, short year, byte month, CancellationToken ct);
+    Task<MeterReading?> ReadingForContractAsync(Contract contract, UtilityType type, short year, byte month, CancellationToken ct);
     /// <summary>Tìm kỳ ghi chỉ số gần nhất trước tháng chỉ định.</summary>
     Task<MeterReading?> LatestReadingBeforeAsync(Guid roomId, UtilityType type, short year, byte month, CancellationToken ct);
     /// <summary>Tìm kỳ ghi chỉ số gần nhất sau tháng chỉ định.</summary>

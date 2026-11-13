@@ -23,10 +23,7 @@ const emptyDraft = {
   permanentAddress: "",
 };
 
-export default function TenantManager({
-  notify,
-  navigate,
-}) {
+export default function TenantManager({ notify, navigate }) {
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [page, setPage] = useState(1);
@@ -65,7 +62,9 @@ export default function TenantManager({
     }),
   );
 
-  const pagedTenants = Array.isArray(listResponse?.data) ? listResponse.data : [];
+  const pagedTenants = Array.isArray(listResponse?.data)
+    ? listResponse.data
+    : [];
   const totalItems =
     typeof listResponse?.meta?.total === "number"
       ? listResponse.meta.total
@@ -82,11 +81,9 @@ export default function TenantManager({
     error: detailError,
     isLoading: isDetailLoading,
     reload: reloadDetail,
-  } = useApiQuery(
-    detailCacheKey,
-    () => getLandlordTenantById(selectedId),
-    { enabled: Boolean(selectedId) },
-  );
+  } = useApiQuery(detailCacheKey, () => getLandlordTenantById(selectedId), {
+    enabled: Boolean(selectedId),
+  });
 
   const selectedTenant =
     detailResponse?.data ||
@@ -95,14 +92,20 @@ export default function TenantManager({
 
   // Đồng bộ dữ liệu mới nhất vào form sửa nếu người dùng bấm "Sửa" trực tiếp từ bảng
   useEffect(() => {
-    if (isEditing && detailResponse?.data && detailResponse.data.id === selectedId) {
+    if (
+      isEditing &&
+      detailResponse?.data &&
+      detailResponse.data.id === selectedId
+    ) {
       const fresh = detailResponse.data;
       setDraft({
         fullName: fresh.fullName || "",
         phoneNumber: fresh.phoneNumber || "",
         email: fresh.email || "",
         citizenId: fresh.citizenId || "",
-        dateOfBirth: fresh.dateOfBirth ? String(fresh.dateOfBirth).split("T")[0] : "",
+        dateOfBirth: fresh.dateOfBirth
+          ? String(fresh.dateOfBirth).split("T")[0]
+          : "",
         gender: fresh.gender || "",
         permanentAddress: fresh.permanentAddress || "",
       });
@@ -130,7 +133,9 @@ export default function TenantManager({
       phoneNumber: tenant.phoneNumber || "",
       email: tenant.email || "",
       citizenId: tenant.citizenId || "",
-      dateOfBirth: tenant.dateOfBirth ? String(tenant.dateOfBirth).split("T")[0] : "",
+      dateOfBirth: tenant.dateOfBirth
+        ? String(tenant.dateOfBirth).split("T")[0]
+        : "",
       gender: tenant.gender || "",
       permanentAddress: tenant.permanentAddress || "",
     });
@@ -177,7 +182,9 @@ export default function TenantManager({
     const validation = validateTenantProfile(draft);
     if (!validation.isValid) {
       setFieldErrors(validation.errors);
-      setGeneralError("Vui lòng kiểm tra lại các trường thông tin đánh dấu đỏ.");
+      setGeneralError(
+        "Vui lòng kiểm tra lại các trường thông tin đánh dấu đỏ.",
+      );
       return;
     }
 
@@ -209,7 +216,8 @@ export default function TenantManager({
         reloadList();
         reloadDetail();
         notify?.(
-          response?.message || `Đã cập nhật hồ sơ người ở "${payload.fullName}".`,
+          response?.message ||
+            `Đã cập nhật hồ sơ người ở "${payload.fullName}".`,
         );
       } else {
         const response = await createLandlordTenant(payload);
@@ -264,12 +272,17 @@ export default function TenantManager({
 
       {/* FORM TẠO MỚI HỒ SƠ */}
       {showAddForm && (
-        <section className="content-card inline-form" aria-label="Biểu mẫu tạo hồ sơ">
+        <section
+          className="content-card inline-form"
+          aria-label="Biểu mẫu tạo hồ sơ"
+        >
           <div className="detail-header">
             <div>
               <span className="eyebrow">HỒ SƠ MỚI · KHÔNG CẦN TÀI KHOẢN</span>
               <h2>Nhập thông tin người ở mới</h2>
-              <p>Hồ sơ này có thể dùng lại khi lập hợp đồng thuê bất cứ lúc nào.</p>
+              <p>
+                Hồ sơ này có thể dùng lại khi lập hợp đồng thuê bất cứ lúc nào.
+              </p>
             </div>
             <button
               className="icon-button"
@@ -282,7 +295,11 @@ export default function TenantManager({
           </div>
 
           {generalError && (
-            <p className="form-error" role="alert" style={{ marginBottom: "16px" }}>
+            <p
+              className="form-error"
+              role="alert"
+              style={{ marginBottom: "16px" }}
+            >
               <Icon name="alert" size={16} /> {generalError}
             </p>
           )}
@@ -299,7 +316,10 @@ export default function TenantManager({
                 aria-invalid={Boolean(fieldErrors.fullName)}
               />
               {fieldErrors.fullName && (
-                <small className="field-error-text" style={{ color: "#dc2626", fontSize: "11px" }}>
+                <small
+                  className="field-error-text"
+                  style={{ color: "#dc2626", fontSize: "11px" }}
+                >
                   {fieldErrors.fullName}
                 </small>
               )}
@@ -313,11 +333,16 @@ export default function TenantManager({
                 disabled={isSubmitting}
                 placeholder="10 số, bắt đầu bằng 0 (vd: 0912345678)"
                 value={draft.phoneNumber}
-                onChange={(e) => handleDraftChange("phoneNumber", e.target.value)}
+                onChange={(e) =>
+                  handleDraftChange("phoneNumber", e.target.value)
+                }
                 aria-invalid={Boolean(fieldErrors.phoneNumber)}
               />
               {fieldErrors.phoneNumber && (
-                <small className="field-error-text" style={{ color: "#dc2626", fontSize: "11px" }}>
+                <small
+                  className="field-error-text"
+                  style={{ color: "#dc2626", fontSize: "11px" }}
+                >
                   {fieldErrors.phoneNumber}
                 </small>
               )}
@@ -333,7 +358,10 @@ export default function TenantManager({
                 aria-invalid={Boolean(fieldErrors.citizenId)}
               />
               {fieldErrors.citizenId && (
-                <small className="field-error-text" style={{ color: "#dc2626", fontSize: "11px" }}>
+                <small
+                  className="field-error-text"
+                  style={{ color: "#dc2626", fontSize: "11px" }}
+                >
                   {fieldErrors.citizenId}
                 </small>
               )}
@@ -350,7 +378,10 @@ export default function TenantManager({
                 aria-invalid={Boolean(fieldErrors.email)}
               />
               {fieldErrors.email && (
-                <small className="field-error-text" style={{ color: "#dc2626", fontSize: "11px" }}>
+                <small
+                  className="field-error-text"
+                  style={{ color: "#dc2626", fontSize: "11px" }}
+                >
                   {fieldErrors.email}
                 </small>
               )}
@@ -361,11 +392,16 @@ export default function TenantManager({
                 type="date"
                 disabled={isSubmitting}
                 value={draft.dateOfBirth}
-                onChange={(e) => handleDraftChange("dateOfBirth", e.target.value)}
+                onChange={(e) =>
+                  handleDraftChange("dateOfBirth", e.target.value)
+                }
                 aria-invalid={Boolean(fieldErrors.dateOfBirth)}
               />
               {fieldErrors.dateOfBirth && (
-                <small className="field-error-text" style={{ color: "#dc2626", fontSize: "11px" }}>
+                <small
+                  className="field-error-text"
+                  style={{ color: "#dc2626", fontSize: "11px" }}
+                >
                   {fieldErrors.dateOfBirth}
                 </small>
               )}
@@ -385,7 +421,10 @@ export default function TenantManager({
                 ))}
               </select>
               {fieldErrors.gender && (
-                <small className="field-error-text" style={{ color: "#dc2626", fontSize: "11px" }}>
+                <small
+                  className="field-error-text"
+                  style={{ color: "#dc2626", fontSize: "11px" }}
+                >
                   {fieldErrors.gender}
                 </small>
               )}
@@ -398,11 +437,16 @@ export default function TenantManager({
                 disabled={isSubmitting}
                 placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành phố..."
                 value={draft.permanentAddress}
-                onChange={(e) => handleDraftChange("permanentAddress", e.target.value)}
+                onChange={(e) =>
+                  handleDraftChange("permanentAddress", e.target.value)
+                }
                 aria-invalid={Boolean(fieldErrors.permanentAddress)}
               />
               {fieldErrors.permanentAddress && (
-                <small className="field-error-text" style={{ color: "#dc2626", fontSize: "11px" }}>
+                <small
+                  className="field-error-text"
+                  style={{ color: "#dc2626", fontSize: "11px" }}
+                >
                   {fieldErrors.permanentAddress}
                 </small>
               )}
@@ -411,11 +455,20 @@ export default function TenantManager({
             <div className="notice field--wide">
               <Icon name="alert" size={17} />
               <span>
-                <strong>Lưu ý:</strong> Việc lưu hồ sơ không tạo tài khoản hệ thống (User ID trống). Khi lập hợp đồng, hồ sơ này sẽ được chọn qua danh sách người ở của hợp đồng (ContractTenants).
+                <strong>Lưu ý:</strong> Việc lưu hồ sơ không tạo tài khoản hệ
+                thống (User ID trống). Khi lập hợp đồng, hồ sơ này sẽ được chọn
+                qua danh sách người ở của hợp đồng (ContractTenants).
               </span>
             </div>
 
-            <div className="form-action field--wide" style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+            <div
+              className="form-action field--wide"
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+              }}
+            >
               <Button
                 variant="secondary"
                 disabled={isSubmitting}
@@ -462,7 +515,11 @@ export default function TenantManager({
               variant="secondary"
               disabled={isListLoading}
               onClick={reloadList}
-              style={{ minHeight: "36px", padding: "6px 12px", fontSize: "12px" }}
+              style={{
+                minHeight: "36px",
+                padding: "6px 12px",
+                fontSize: "12px",
+              }}
             >
               {isListLoading ? "Đang tải..." : "Làm mới"}
             </Button>
@@ -478,7 +535,10 @@ export default function TenantManager({
               <Icon name="alert" size={26} />
             </span>
             <strong>Không thể tải danh sách hồ sơ người ở</strong>
-            <p>{listError.message || "Không kết nối được với máy chủ Backend API."}</p>
+            <p>
+              {listError.message ||
+                "Không kết nối được với máy chủ Backend API."}
+            </p>
             <div style={{ marginTop: "14px" }}>
               <Button variant="secondary" onClick={reloadList}>
                 Thử tải lại
@@ -491,7 +551,10 @@ export default function TenantManager({
               <Icon name="clock" size={26} />
             </span>
             <strong>Đang tải danh sách hồ sơ người ở...</strong>
-            <p>Vui lòng chờ trong giây lát khi hệ thống đồng bộ dữ liệu từ máy chủ.</p>
+            <p>
+              Vui lòng chờ trong giây lát khi hệ thống đồng bộ dữ liệu từ máy
+              chủ.
+            </p>
           </div>
         ) : pagedTenants.length > 0 ? (
           <>
@@ -521,14 +584,22 @@ export default function TenantManager({
                     >
                       <td>
                         <strong>{item.fullName}</strong>
-                        {item.email && <small className="table-sub">{item.email}</small>}
+                        {item.email && (
+                          <small className="table-sub">{item.email}</small>
+                        )}
                       </td>
                       <td>
                         <strong>{item.phoneNumber}</strong>
                       </td>
-                      <td>{item.citizenId || <span className="muted">Chưa cập nhật</span>}</td>
                       <td>
-                        {GENDER_LABELS[item.gender] || <span className="muted">—</span>}
+                        {item.citizenId || (
+                          <span className="muted">Chưa cập nhật</span>
+                        )}
+                      </td>
+                      <td>
+                        {GENDER_LABELS[item.gender] || (
+                          <span className="muted">—</span>
+                        )}
                       </td>
                       <td>
                         {item.userId ? (
@@ -581,7 +652,11 @@ export default function TenantManager({
                     variant="secondary"
                     disabled={currentPage <= 1 || isListLoading}
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    style={{ minHeight: "34px", padding: "6px 12px", fontSize: "12px" }}
+                    style={{
+                      minHeight: "34px",
+                      padding: "6px 12px",
+                      fontSize: "12px",
+                    }}
                   >
                     Trang trước
                   </Button>
@@ -589,7 +664,11 @@ export default function TenantManager({
                     variant="secondary"
                     disabled={currentPage >= totalPages || isListLoading}
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    style={{ minHeight: "34px", padding: "6px 12px", fontSize: "12px" }}
+                    style={{
+                      minHeight: "34px",
+                      padding: "6px 12px",
+                      fontSize: "12px",
+                    }}
                   >
                     Trang sau
                   </Button>
@@ -661,7 +740,8 @@ export default function TenantManager({
                   <p>
                     {selectedTenant.userId ? (
                       <span style={{ color: "#16804a", fontWeight: "600" }}>
-                        ✓ Tài khoản hệ thống đã liên kết ({selectedTenant.userId})
+                        ✓ Tài khoản hệ thống đã liên kết (
+                        {selectedTenant.userId})
                       </span>
                     ) : (
                       <span style={{ color: "#2563eb", fontWeight: "600" }}>
@@ -670,9 +750,14 @@ export default function TenantManager({
                     )}
                   </p>
                 </div>
-                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <div
+                  style={{ display: "flex", gap: "8px", alignItems: "center" }}
+                >
                   {!isEditing && (
-                    <Button variant="secondary" onClick={() => openEditForm(selectedTenant)}>
+                    <Button
+                      variant="secondary"
+                      onClick={() => openEditForm(selectedTenant)}
+                    >
                       Sửa hồ sơ
                     </Button>
                   )}
@@ -706,7 +791,9 @@ export default function TenantManager({
                       maxLength={150}
                       disabled={isSubmitting}
                       value={draft.fullName}
-                      onChange={(e) => handleDraftChange("fullName", e.target.value)}
+                      onChange={(e) =>
+                        handleDraftChange("fullName", e.target.value)
+                      }
                       aria-invalid={Boolean(fieldErrors.fullName)}
                     />
                     {fieldErrors.fullName && (
@@ -723,7 +810,9 @@ export default function TenantManager({
                       maxLength={20}
                       disabled={isSubmitting}
                       value={draft.phoneNumber}
-                      onChange={(e) => handleDraftChange("phoneNumber", e.target.value)}
+                      onChange={(e) =>
+                        handleDraftChange("phoneNumber", e.target.value)
+                      }
                       aria-invalid={Boolean(fieldErrors.phoneNumber)}
                     />
                     {fieldErrors.phoneNumber && (
@@ -738,7 +827,9 @@ export default function TenantManager({
                       maxLength={12}
                       disabled={isSubmitting}
                       value={draft.citizenId}
-                      onChange={(e) => handleDraftChange("citizenId", e.target.value)}
+                      onChange={(e) =>
+                        handleDraftChange("citizenId", e.target.value)
+                      }
                       aria-invalid={Boolean(fieldErrors.citizenId)}
                     />
                     {fieldErrors.citizenId && (
@@ -754,7 +845,9 @@ export default function TenantManager({
                       maxLength={150}
                       disabled={isSubmitting}
                       value={draft.email}
-                      onChange={(e) => handleDraftChange("email", e.target.value)}
+                      onChange={(e) =>
+                        handleDraftChange("email", e.target.value)
+                      }
                       aria-invalid={Boolean(fieldErrors.email)}
                     />
                     {fieldErrors.email && (
@@ -769,7 +862,9 @@ export default function TenantManager({
                       type="date"
                       disabled={isSubmitting}
                       value={draft.dateOfBirth}
-                      onChange={(e) => handleDraftChange("dateOfBirth", e.target.value)}
+                      onChange={(e) =>
+                        handleDraftChange("dateOfBirth", e.target.value)
+                      }
                       aria-invalid={Boolean(fieldErrors.dateOfBirth)}
                     />
                     {fieldErrors.dateOfBirth && (
@@ -783,7 +878,9 @@ export default function TenantManager({
                     <select
                       disabled={isSubmitting}
                       value={draft.gender}
-                      onChange={(e) => handleDraftChange("gender", e.target.value)}
+                      onChange={(e) =>
+                        handleDraftChange("gender", e.target.value)
+                      }
                       aria-invalid={Boolean(fieldErrors.gender)}
                     >
                       {GENDER_OPTIONS.map((opt) => (
@@ -805,7 +902,9 @@ export default function TenantManager({
                       maxLength={300}
                       disabled={isSubmitting}
                       value={draft.permanentAddress}
-                      onChange={(e) => handleDraftChange("permanentAddress", e.target.value)}
+                      onChange={(e) =>
+                        handleDraftChange("permanentAddress", e.target.value)
+                      }
                       aria-invalid={Boolean(fieldErrors.permanentAddress)}
                     />
                     {fieldErrors.permanentAddress && (
@@ -818,13 +917,18 @@ export default function TenantManager({
                   <div className="notice field--wide">
                     <Icon name="alert" size={16} />
                     <span>
-                      Lưu ý nghiệp vụ: Việc sửa hồ sơ người ở không tự ý làm thay đổi các chứng từ hợp đồng đã chốt trước đó.
+                      Lưu ý nghiệp vụ: Việc sửa hồ sơ người ở không tự ý làm
+                      thay đổi các chứng từ hợp đồng đã chốt trước đó.
                     </span>
                   </div>
 
                   <div
                     className="detail-actions field--wide"
-                    style={{ display: "flex", justifyContent: "flex-end", gap: "9px" }}
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: "9px",
+                    }}
                   >
                     <Button
                       variant="secondary"
@@ -847,18 +951,28 @@ export default function TenantManager({
                 <>
                   <div className="detail-grid">
                     <Info label="Họ và tên" value={selectedTenant.fullName} />
-                    <Info label="Số điện thoại" value={selectedTenant.phoneNumber} />
-                    <Info label="Số CCCD" value={selectedTenant.citizenId || "—"} />
+                    <Info
+                      label="Số điện thoại"
+                      value={selectedTenant.phoneNumber}
+                    />
+                    <Info
+                      label="Số CCCD"
+                      value={selectedTenant.citizenId || "—"}
+                    />
                     <Info label="Email" value={selectedTenant.email || "—"} />
                     <Info
                       label="Giới tính"
-                      value={GENDER_LABELS[selectedTenant.gender] || "Chưa xác định"}
+                      value={
+                        GENDER_LABELS[selectedTenant.gender] || "Chưa xác định"
+                      }
                     />
                     <Info
                       label="Ngày sinh"
                       value={
                         selectedTenant.dateOfBirth
-                          ? new Date(selectedTenant.dateOfBirth).toLocaleDateString("vi-VN")
+                          ? new Date(
+                              selectedTenant.dateOfBirth,
+                            ).toLocaleDateString("vi-VN")
                           : "—"
                       }
                     />
@@ -879,23 +993,42 @@ export default function TenantManager({
                       label="Ngày khởi tạo hồ sơ"
                       value={
                         selectedTenant.createdAt
-                          ? new Date(selectedTenant.createdAt).toLocaleString("vi-VN")
+                          ? new Date(selectedTenant.createdAt).toLocaleString(
+                              "vi-VN",
+                            )
                           : "—"
                       }
                     />
                     {selectedTenant.updatedAt && (
                       <Info
                         label="Cập nhật gần nhất"
-                        value={new Date(selectedTenant.updatedAt).toLocaleString("vi-VN")}
+                        value={new Date(
+                          selectedTenant.updatedAt,
+                        ).toLocaleString("vi-VN")}
                       />
                     )}
                   </div>
 
-                  {navigate && <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid #eef1f6" }}>
-                    <button className="text-link" type="button" onClick={() => navigate(`landlord/tenants/${selectedTenant.id}`)}>
-                      Xem phòng hiện tại và lịch sử hợp đồng <Icon name="arrow" size={15} />
-                    </button>
-                  </div>}
+                  {navigate && (
+                    <div
+                      style={{
+                        marginTop: "24px",
+                        paddingTop: "20px",
+                        borderTop: "1px solid #eef1f6",
+                      }}
+                    >
+                      <button
+                        className="text-link"
+                        type="button"
+                        onClick={() =>
+                          navigate(`landlord/tenants/${selectedTenant.id}`)
+                        }
+                      >
+                        Xem phòng hiện tại và lịch sử hợp đồng{" "}
+                        <Icon name="arrow" size={15} />
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
             </>

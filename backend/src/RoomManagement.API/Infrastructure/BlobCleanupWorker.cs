@@ -9,7 +9,7 @@ public sealed class BlobCleanupWorker(IServiceScopeFactory scopes, ILogger<BlobC
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
-        do
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
@@ -21,6 +21,7 @@ public sealed class BlobCleanupWorker(IServiceScopeFactory scopes, ILogger<BlobC
                 foreach (var job in jobs)
                 {
                     try { await storage.DeleteAsync(job.BlobName, stoppingToken); db.BlobCleanupJobs.Remove(job); }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
                     catch (Exception ex)
                     {
                         job.Attempts++;
@@ -31,7 +32,16 @@ public sealed class BlobCleanupWorker(IServiceScopeFactory scopes, ILogger<BlobC
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { logger.LogError(ex, "Blob cleanup cycle failed"); }
-        } while (await timer.WaitForNextTickAsync(stoppingToken));
+            catch (Exception ex)
+            {
+                if (stoppingToken.IsCancellationRequested) break;
+                logger.LogError(ex, "Blob cleanup cycle failed");
+            }
+            try
+            {
+                if (!await timer.WaitForNextTickAsync(stoppingToken)) break;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+        }
     }
 }

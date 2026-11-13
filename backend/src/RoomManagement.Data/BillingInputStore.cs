@@ -80,25 +80,39 @@ public sealed class BillingInputStore : IBillingInputStore
     /// <inheritdoc />
     public async Task<IReadOnlyList<MeterReading>> ListReadingsAsync(Guid roomId, UtilityType? type, CancellationToken ct)
     {
-        var query = _db.MeterReadings.AsNoTracking().Where(x => x.RoomId == roomId);
+        var query = _db.MeterReadings.AsNoTracking().Where(x => x.RoomId == roomId && x.ContractId == null);
         if (type.HasValue) query = query.Where(x => x.MeterType == type.Value);
         return await query.OrderByDescending(x => x.Year).ThenByDescending(x => x.Month).ToListAsync(ct);
     }
 
     /// <inheritdoc />
     public Task<MeterReading?> ReadingAtAsync(Guid roomId, UtilityType type, short year, byte month, CancellationToken ct) =>
-        _db.MeterReadings.AsNoTracking().SingleOrDefaultAsync(x => x.RoomId == roomId &&
+        _db.MeterReadings.AsNoTracking().SingleOrDefaultAsync(x => x.RoomId == roomId && x.ContractId == null &&
             x.MeterType == type && x.Year == year && x.Month == month, ct);
+
+    public async Task<MeterReading?> ReadingForContractAsync(Contract contract, UtilityType type,
+        short year, byte month, CancellationToken ct)
+    {
+        var scoped = await _db.MeterReadings.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.ContractId == contract.Id && x.MeterType == type && x.Year == year && x.Month == month, ct);
+        if (scoped is not null) return scoped;
+        var periodStart = new DateOnly(year, month, 1);
+        var periodEnd = periodStart.AddMonths(1).AddDays(-1);
+        var shared = await _db.Contracts.AnyAsync(x => x.Id != contract.Id && x.RoomId == contract.RoomId &&
+            x.Status != ContractStatus.Cancelled && x.Status != ContractStatus.Draft &&
+            x.StartDate <= periodEnd && (x.HandoverOn ?? x.EndDate ?? DateOnly.MaxValue) >= periodStart, ct);
+        return shared ? null : await ReadingAtAsync(contract.RoomId, type, year, month, ct);
+    }
 
     /// <inheritdoc />
     public Task<MeterReading?> LatestReadingBeforeAsync(Guid roomId, UtilityType type, short year, byte month, CancellationToken ct) =>
-        _db.MeterReadings.AsNoTracking().Where(x => x.RoomId == roomId && x.MeterType == type &&
+        _db.MeterReadings.AsNoTracking().Where(x => x.RoomId == roomId && x.ContractId == null && x.MeterType == type &&
             (x.Year < year || (x.Year == year && x.Month < month)))
             .OrderByDescending(x => x.Year).ThenByDescending(x => x.Month).FirstOrDefaultAsync(ct);
 
     /// <inheritdoc />
     public Task<MeterReading?> NextReadingAfterAsync(Guid roomId, UtilityType type, short year, byte month, CancellationToken ct) =>
-        _db.MeterReadings.AsNoTracking().Where(x => x.RoomId == roomId && x.MeterType == type &&
+        _db.MeterReadings.AsNoTracking().Where(x => x.RoomId == roomId && x.ContractId == null && x.MeterType == type &&
             (x.Year > year || (x.Year == year && x.Month > month)))
             .OrderBy(x => x.Year).ThenBy(x => x.Month).FirstOrDefaultAsync(ct);
 

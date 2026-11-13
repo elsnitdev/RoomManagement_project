@@ -5,11 +5,16 @@ namespace RoomManagement.Business.Interfaces;
 
 public interface IInvoiceStore
 {
+    Task<IReadOnlyList<MonthlyBillingCandidate>> ListMonthlyCandidatesAsync(
+        Guid propertyId, string ownerId, short year, byte month, CancellationToken ct);
     /// <summary>Tìm hợp đồng trong khu trọ đang hoạt động của chủ trọ.</summary>
     Task<Contract?> GetOwnedContractAsync(Guid propertyId, Guid contractId, string ownerId, CancellationToken ct);
     /// <summary>Tìm hợp đồng thuộc chủ trọ theo mã hợp đồng.</summary>
     Task<Contract?> GetOwnedContractByIdAsync(Guid contractId, string ownerId, CancellationToken ct);
     Task<Invoice?> GetOwnedDepositAsync(Guid contractId, string ownerId, CancellationToken ct);
+    Task<Invoice?> GetOwnedBySettlementKeyAsync(Guid contractId, string key, string ownerId, CancellationToken ct);
+    Task<Invoice?> GetOwnedBySettlementFingerprintAsync(Guid contractId, string fingerprint, string ownerId, CancellationToken ct);
+    Task<IReadOnlyList<InvoiceSummaryResult>> ListForContractAsync(Guid contractId, CancellationToken ct);
     /// <summary>Lấy danh sách hóa đơn của chủ trọ theo bộ lọc và phân trang.</summary>
     Task<(IReadOnlyList<InvoiceSummaryResult> Items, long Total)> ListOwnedAsync(
         Guid propertyId, string ownerId, InvoiceFilter filter, CancellationToken ct);
@@ -29,4 +34,11 @@ public interface IInvoiceStore
     Task<Invoice> IssueAsync(Guid invoiceId, string ownerId, CancellationToken ct);
     /// <summary>Hủy hóa đơn nếu chưa phát sinh giao dịch tài chính.</summary>
     Task<Invoice> CancelAsync(Guid invoiceId, string ownerId, CancellationToken ct);
+    Task<InvoiceAttention> AttentionAsync(Guid propertyId, string ownerId, CancellationToken ct);
+    Task<Invoice> ReplaceDraftItemsAsync(Guid invoiceId, string ownerId,
+        IReadOnlyList<EditableInvoiceItem> items, CancellationToken ct);
+    Task<InvoiceAdjustment> AddAdjustmentAsync(Guid invoiceId, string ownerId,
+        InvoiceAdjustmentInput input, CancellationToken ct);
+    Task<IReadOnlyList<InvoiceAdjustment>> ListAdjustmentsAsync(Guid invoiceId,
+        string ownerId, CancellationToken ct);
 }

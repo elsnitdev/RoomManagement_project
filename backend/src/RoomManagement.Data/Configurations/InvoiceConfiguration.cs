@@ -16,6 +16,7 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
             table.HasCheckConstraint("CK_Invoices_MonthlyPeriod", @"(InvoiceType <> N'Monthly' OR BillingYear IS NOT NULL)");
             table.HasCheckConstraint("CK_Invoices_Dates", @"(DueDate >= IssueDate)");
             table.HasCheckConstraint("CK_Invoices_Total", @"(TotalAmount >= 0)");
+            table.HasCheckConstraint("CK_Invoices_SettlementSource", @"((CreationSource IS NULL AND SettlementOperationKey IS NULL AND SettlementRequestHash IS NULL AND SettlementChargeFingerprint IS NULL) OR (CreationSource = N'EarlyExitSettlement' AND SettlementOperationKey IS NOT NULL AND SettlementRequestHash IS NOT NULL AND SettlementChargeFingerprint IS NOT NULL))");
         });
         builder.HasKey(e => e.Id).HasName("PK_Invoices");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
@@ -30,6 +31,10 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         builder.Property(e => e.TotalAmount).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(e => e.Status).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Draft'", "DF_Invoices_Status");
         builder.Property(e => e.Note).HasColumnType("nvarchar(1000)");
+        builder.Property(e => e.CreationSource).HasColumnType("nvarchar(40)");
+        builder.Property(e => e.SettlementOperationKey).HasColumnType("nvarchar(100)");
+        builder.Property(e => e.SettlementRequestHash).HasColumnType("char(64)");
+        builder.Property(e => e.SettlementChargeFingerprint).HasColumnType("char(64)");
         builder.Property(e => e.CreatedAt).HasColumnType("datetime2(0)").IsRequired().HasDefaultValueSql(@"SYSUTCDATETIME()", "DF_Invoices_CreatedAt");
         builder.HasOne<Contract>().WithMany().HasForeignKey(e => new { e.ContractId, e.RoomId }).HasPrincipalKey(e => new { e.Id, e.RoomId }).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Invoices_ContractRoom");
         builder.HasAlternateKey(e => new { e.Id, e.ContractId }).HasName("UQ_Invoices_Id_Contract");
@@ -37,5 +42,11 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         builder.HasIndex(e => new { e.ContractId, e.BillingYear, e.BillingMonth }).HasDatabaseName("UX_Invoices_Monthly").IsUnique().HasFilter(@"InvoiceType = N'Monthly' AND Status <> N'Cancelled'");
         builder.HasIndex(e => e.ContractId).HasDatabaseName("UX_Invoices_Deposit").IsUnique().HasFilter(@"InvoiceType = N'Deposit' AND Status <> N'Cancelled'");
         builder.HasIndex(e => new { e.ContractId, e.Status }).HasDatabaseName("IX_Invoices_Contract_Status");
+        builder.HasIndex(e => new { e.ContractId, e.SettlementOperationKey })
+            .HasDatabaseName("UX_Invoices_SettlementOperation").IsUnique()
+            .HasFilter("SettlementOperationKey IS NOT NULL");
+        builder.HasIndex(e => new { e.ContractId, e.SettlementChargeFingerprint })
+            .HasDatabaseName("UX_Invoices_SettlementCharge").IsUnique()
+            .HasFilter("CreationSource = N'EarlyExitSettlement' AND Status <> N'Cancelled'");
     }
 }

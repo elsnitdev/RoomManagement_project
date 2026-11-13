@@ -6,6 +6,7 @@ public sealed class MeterReading
 {
     public Guid Id { get; set; }
     public Guid RoomId { get; set; }
+    public Guid? ContractId { get; set; }
     public UtilityType MeterType { get; set; }
     public short Year { get; set; }
     public byte Month { get; set; }

@@ -9,7 +9,9 @@ Tạo `backend/src/RoomManagement.API/appsettings.Local.json` một lần với 
 Trong PowerShell, từ thư mục gốc dự án:
 
     dotnet ef database update --project backend/src/RoomManagement.Data --startup-project backend/src/RoomManagement.API
-    dotnet run --project backend/src/RoomManagement.API --launch-profile http
+    powershell -ExecutionPolicy Bypass -File backend/scripts/Start-LocalApi.ps1
+
+Lệnh khởi động trên chuẩn bị Azurite và container ảnh riêng tư trước khi chạy API. Chạy lại lệnh này sau khi khởi động lại máy để chức năng tải ảnh phòng và chứng từ thanh toán hoạt động.
 
 API sẽ không khởi động khi thiếu khóa ký JWT hoặc khi đã yêu cầu seed Admin nhưng seed thất bại. Có thể bỏ qua seed bằng cách để trống InitialAdmin:Password nếu database đã được cấp Admin theo cách khác. Ngoài Development, cấu hình bằng biến môi trường hoặc hệ thống quản lý secrets của môi trường triển khai.
 
@@ -20,6 +22,8 @@ POST /api/auth/login nhận userNameOrEmail và password, trả accessToken Bear
     dotnet test backend/RoomManagement.sln
 
 Các test SQL chỉ chạy khi cấu hình ROOMMANAGEMENT_TEST_SQLSERVER trỏ tới SQL Server dành cho kiểm thử. Chúng tạo database tên ngẫu nhiên RoomManagement_Tests_<guid> rồi xóa chính database đó sau test. Tài khoản kết nối cần quyền tạo/xóa database; không dùng connection của database ứng dụng để chạy test.
+
+Để kiểm thử thủ công nhiều lần với người thuê, chủ trọ, hợp đồng, dịch vụ, hóa đơn và thanh toán, dùng công cụ [DemoDataTool](tools/DemoDataTool/README.md). Công cụ có lệnh `seed`, `status`, `reset` và chỉ dọn dữ liệu mẫu của nó.
 
 Sơ đồ luồng và trách nhiệm từng file: [account-and-approval-flow.md](docs/account-and-approval-flow.md).
 

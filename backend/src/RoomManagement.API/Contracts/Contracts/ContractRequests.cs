@@ -16,25 +16,39 @@ public sealed record CreateContractRequest(
     [StringLength(1000)] string? Note,
     InitialDepositPaymentStatus DepositPaymentStatus = InitialDepositPaymentStatus.Unpaid,
     PaymentMethod? DepositPaymentMethod = null,
-    DateTimeOffset? DepositPaidAt = null)
+    DateTimeOffset? DepositPaidAt = null,
+    ContractTenancyMode TenancyMode = ContractTenancyMode.CoTenancy,
+    IReadOnlyList<InitialRoomServiceInput>? RoomServices = null)
 {
   public CreateContractInput ToInput() => new(RoomId, ContractCode, StartDate,
       EndDate, MonthlyRent, DepositAmount, PaymentDueDay, Note,
-      DepositPaymentStatus, DepositPaymentMethod, DepositPaidAt);
+      DepositPaymentStatus, DepositPaymentMethod, DepositPaidAt, TenancyMode, RoomServices);
 }
 
 public sealed record AddContractTenantRequest(
     [property: JsonRequired] Guid TenantId,
     [property: JsonRequired] DateOnly JoinDate,
-    bool IsContactPerson = false)
+    bool IsContactPerson = false,
+    ContractTenantRole Role = ContractTenantRole.ContractParty)
 {
-  public AddContractTenantInput ToInput() => new(TenantId, JoinDate, IsContactPerson);
+  public AddContractTenantInput ToInput() => new(TenantId, JoinDate, IsContactPerson, Role);
 }
 
-public sealed record AddContractUserRequest([property: Required, EmailAddress] string Email,
+public sealed record AddContractUserRequest([Required, EmailAddress] string Email,
     [property: JsonRequired] DateOnly JoinDate);
 public sealed record LeaveContractRequest([property: JsonRequired] DateOnly LeaveDate);
-public sealed record TerminateContractRequest([property: Required, StringLength(1000)] string Reason);
+public sealed record TerminateContractRequest([Required, StringLength(1000)] string Reason);
+public sealed record HandoverContractRequest([property: JsonRequired] DateOnly HandoverOn);
+public sealed record ContractMeterReadingRequest([property: JsonRequired] UtilityType Type,
+    [property: JsonRequired] short Year, [property: JsonRequired] byte Month,
+    [property: JsonRequired] decimal PreviousValue, [property: JsonRequired] decimal CurrentValue);
+public sealed record CompleteContractSettlementRequest(
+    [Required] string DepositDisposition,
+    [property: JsonRequired] decimal RefundAmount,
+    [StringLength(1000)] string? Note);
+public sealed record ApplyDepositRequest([property: JsonRequired] Guid InvoiceId,
+    [property: JsonRequired] decimal Amount, [Required] string Reason,
+    [Required] string IdempotencyKey);
 public sealed record SetContractEndDateRequest([property: JsonRequired] DateOnly EndDate);
 
 public sealed record ConfirmMemberCommitmentRequest(
@@ -51,11 +65,11 @@ public sealed record ConfirmMemberCommitmentRequest(
 
 public sealed record CreateMoveOutNoticeRequest(
     [property: JsonRequired] Guid TenantId,
-    [property: Required, StringLength(200)] string Title,
-    [property: Required, StringLength(2000)] string Description)
+    [Required, StringLength(200)] string Title,
+    [Required, StringLength(2000)] string Description)
 {
     public CreateMoveOutNoticeInput ToInput() => new(TenantId, Title, Description);
 }
 
 public sealed record ResolveMoveOutNoticeRequest(
-    [property: Required, StringLength(1000)] string ResolutionNote);
+    [Required, StringLength(1000)] string ResolutionNote);

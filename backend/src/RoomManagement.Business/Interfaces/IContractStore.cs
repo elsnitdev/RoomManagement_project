@@ -23,7 +23,7 @@ public interface IContractStore
   Task<ContractTenant> AddUserAsync(Contract contract, string email, DateOnly joinDate, CancellationToken ct);
   /// <summary>Gắn hồ sơ người thuê do chủ trọ quản lý với hợp đồng phòng.</summary>
   Task<ContractTenant> AddProfileAsync(Contract contract, Guid tenantId, string ownerId,
-      DateOnly joinDate, bool isContactPerson, CancellationToken ct);
+      DateOnly joinDate, bool isContactPerson, ContractTenantRole role, CancellationToken ct);
   /// <summary>Đổi người liên hệ ưu tiên của hợp đồng.</summary>
   Task<ContractTenant> SetContactAsync(Contract contract, Guid linkId, CancellationToken ct);
   /// <summary>Lấy chi tiết hợp đồng thuộc quyền sở hữu của chủ trọ.</summary>
@@ -49,6 +49,17 @@ public interface IContractStore
   /// <summary>Đóng hợp đồng nếu trạng thái hiện tại khớp trạng thái dự kiến.</summary>
   Task CloseSafelyAsync(Contract contract, ContractStatus expectedStatus,
       ContractStatus newStatus, DateOnly closedOn, string? reason, CancellationToken ct);
+  Task StartEarlyExitAsync(Contract contract, string reason, CancellationToken ct);
+  Task HandoverAsync(Contract contract, DateOnly handoverOn, CancellationToken ct);
+  Task<MeterReading> RecordContractReadingAsync(Contract contract, UtilityType type, short year, byte month,
+      decimal previousValue, decimal currentValue, CancellationToken ct);
+  Task<IReadOnlyList<MeterReading>> ListContractReadingsAsync(Guid contractId, CancellationToken ct);
+  Task CompleteSettlementAsync(Contract contract, string disposition, decimal refundAmount, string? note, CancellationToken ct);
+  Task<ContractSettlement?> GetSettlementAsync(Guid contractId, CancellationToken ct);
+  Task<ContractSettlement> SaveRefundEvidenceAsync(Guid contractId, Guid imageId, string blobName,
+      string fileName, string contentType, long sizeBytes, string sha256, DateTime uploadedAt, CancellationToken ct);
+  Task<DepositApplication> ApplyDepositAsync(Contract contract, Guid invoiceId, decimal amount,
+      string reason, string idempotencyKey, string ownerId, CancellationToken ct);
   /// <summary>Tạo hợp đồng, hóa đơn cọc và khoản thu ban đầu trong một giao dịch.</summary>
   Task CreateWithDepositAsync(Guid propertyId, string ownerId, ContractCreation creation, CancellationToken ct);
   /// <summary>Lưu thay đổi hợp đồng và xử lý lỗi trùng dữ liệu.</summary>

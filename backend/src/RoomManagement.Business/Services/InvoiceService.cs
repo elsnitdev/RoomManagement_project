@@ -32,23 +32,87 @@ public sealed class InvoiceService
         return owner;
     }
 
+    public async Task<MonthlyBillingWorklist> MonthlyWorklistAsync(Guid propertyId,
+        short? year, byte? month, CancellationToken ct)
+    {
+        var previous = VietnamToday().AddDays(1 - VietnamToday().Day).AddDays(-1);
+        var y = year ?? (short)previous.Year;
+        var m = month ?? (byte)previous.Month;
+        if (y is < 2000 or > 2100 || m is < 1 or > 12 || new DateOnly(y, m, 1) > previous)
+            throw Validation("INVOICE_PERIOD_INVALID", "Kỳ chốt hóa đơn không hợp lệ.");
+        var owner = await OwnerAsync(ct);
+        if (!await _inputs.PropertyOwnedAsync(propertyId, owner, ct))
+            throw NotFound("PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
+        var candidates = await _invoices.ListMonthlyCandidatesAsync(propertyId, owner, y, m, ct);
+        var first = new DateOnly(y, m, 1);
+        var electricRate = await _inputs.RateAtAsync(propertyId, UtilityType.Electricity, first, ct);
+        var waterRate = await _inputs.RateAtAsync(propertyId, UtilityType.Water, first, ct);
+        var items = new List<MonthlyBillingWorkItem>(candidates.Count);
+        foreach (var candidate in candidates)
+        {
+            var missing = new List<string>();
+            if (candidate.InvoiceId is null)
+            {
+                if (electricRate is null) missing.Add("ElectricityRate");
+                if (waterRate is null) missing.Add("WaterRate");
+                var contract = await _invoices.GetOwnedContractAsync(propertyId, candidate.ContractId, owner, ct);
+                if (contract is not null)
+                {
+                    if (await _inputs.ReadingForContractAsync(contract, UtilityType.Electricity, y, m, ct) is null)
+                        missing.Add("ElectricityReading");
+                    if (await _inputs.ReadingForContractAsync(contract, UtilityType.Water, y, m, ct) is null)
+                        missing.Add("WaterReading");
+                }
+            }
+            var needsAttention = false;
+            if (candidate.InvoiceId is null && missing.Count == 0)
+            {
+                try { await PreviewMonthlyAsync(propertyId, new MonthlyInvoiceInput(candidate.ContractId, y, m), ct); }
+                catch (BusinessException ex) { missing.Add(ex.Code); needsAttention = true; }
+            }
+            items.Add(new MonthlyBillingWorkItem(candidate.ContractId, candidate.RoomId,
+                candidate.RoomNumber, candidate.ContractCode,
+                candidate.InvoiceStatus == InvoiceStatus.Issued ? "Issued" :
+                candidate.InvoiceStatus == InvoiceStatus.Draft ? "Draft" :
+                needsAttention ? "NeedsAttention" :
+                missing.Count > 0 ? "MissingInputs" : "ReadyToPreview",
+                missing, candidate.InvoiceId, candidate.InvoiceStatus));
+        }
+        return new MonthlyBillingWorklist(y, m, items);
+    }
+
     public async Task<InvoicePreviewResult> PreviewMonthlyAsync(Guid propertyId, MonthlyInvoiceInput input, CancellationToken ct)
     {
         var owner = await OwnerAsync(ct);
-        if (input.Year is < 2000 or > 2100 || input.Month is < 1 or > 12)
+        if (input.Year is < 2000 or > 2100 || input.Month is < 1 or > 12 ||
+            input.DiscountAmount < 0 || input.DiscountAmount != decimal.Round(input.DiscountAmount, 2) ||
+            input.DiscountReason is { Length: > 255 } ||
+            input.DiscountAmount > 0 && string.IsNullOrWhiteSpace(input.DiscountReason))
             throw Validation("INVOICE_PERIOD_INVALID", "Kỳ hóa đơn không hợp lệ.");
         var contract = await _invoices.GetOwnedContractAsync(propertyId, input.ContractId, owner, ct)
             ?? throw NotFound("CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
-        if (contract.Status != ContractStatus.Active)
-            throw Invalid("CONTRACT_NOT_ACTIVE", "Chỉ hợp đồng đang hoạt động mới có hóa đơn tháng.");
         var periodStart = new DateOnly(input.Year, input.Month, 1);
         var periodEnd = new DateOnly(input.Year, input.Month, DateTime.DaysInMonth(input.Year, input.Month));
-        var electricity = await _inputs.ReadingAtAsync(contract.RoomId, UtilityType.Electricity, input.Year, input.Month, ct);
-        var water = await _inputs.ReadingAtAsync(contract.RoomId, UtilityType.Water, input.Year, input.Month, ct);
+        var currentMonth = new DateOnly(VietnamToday().Year, VietnamToday().Month, 1);
+        if (contract.Status is not (ContractStatus.Active or ContractStatus.PendingMoveOut or ContractStatus.PendingSettlement) ||
+            contract.Status == ContractStatus.PendingMoveOut && periodStart >= currentMonth ||
+            contract.Status == ContractStatus.PendingSettlement &&
+            (contract.HandoverOn is null || periodStart > new DateOnly(contract.HandoverOn.Value.Year, contract.HandoverOn.Value.Month, 1)))
+            throw Invalid("CONTRACT_NOT_BILLABLE", "Hợp đồng hoặc kỳ này chưa sẵn sàng lập hóa đơn.");
+        var electricity = await _inputs.ReadingForContractAsync(contract, UtilityType.Electricity, input.Year, input.Month, ct);
+        var water = await _inputs.ReadingForContractAsync(contract, UtilityType.Water, input.Year, input.Month, ct);
         var electricityRate = await _inputs.RateAtAsync(propertyId, UtilityType.Electricity, periodStart, ct);
         var waterRate = await _inputs.RateAtAsync(propertyId, UtilityType.Water, periodStart, ct);
         if (electricity is null || water is null || electricityRate is null || waterRate is null)
-            throw Validation("INVOICE_INPUT_INCOMPLETE", "Thiếu chỉ số hoặc đơn giá điện nước của kỳ.");
+        {
+            var missingInputs = new List<string>();
+            if (electricity is null) missingInputs.Add("chỉ số điện");
+            if (water is null) missingInputs.Add("chỉ số nước");
+            if (electricityRate is null) missingInputs.Add("đơn giá điện có hiệu lực từ đầu kỳ");
+            if (waterRate is null) missingInputs.Add("đơn giá nước có hiệu lực từ đầu kỳ");
+            throw Validation("INVOICE_INPUT_INCOMPLETE",
+                $"Kỳ {input.Month:D2}/{input.Year} còn thiếu: {string.Join(", ", missingInputs)}.");
+        }
 
         var assignments = await _inputs.ListRoomServicesAsync(contract.RoomId, ct);
         var services = new List<BillableRoomService>();
@@ -66,8 +130,24 @@ public sealed class InvoiceService
             services.Add(new BillableRoomService(item.ServiceId, assignment.Service.Name, price, item.Quantity));
         }
         var issueDate = VietnamToday();
-        return _calculator.Calculate(contract, input.Year, input.Month, issueDate,
+        var result = _calculator.Calculate(contract, input.Year, input.Month, issueDate,
             electricity, electricityRate, water, waterRate, services);
+        if (input.DiscountAmount > result.TotalAmount)
+            throw Validation("INVOICE_DISCOUNT_EXCEEDS_TOTAL", "Giảm trừ vượt tổng tiền hóa đơn.");
+        if (input.DiscountAmount > 0)
+            result = result with {
+                Items = result.Items.Concat([new CalculatedInvoiceItem(InvoiceItemType.Discount,
+                    input.DiscountReason!.Trim(), 1, input.DiscountAmount, -input.DiscountAmount, null)]).ToList(),
+                TotalAmount = result.TotalAmount - input.DiscountAmount
+            };
+        return result with {
+            ElectricityReading = new MeterCostSnapshot(electricity.PreviousValue, electricity.CurrentValue,
+                electricity.CurrentValue - electricity.PreviousValue, electricityRate.UnitPrice,
+                (electricity.CurrentValue - electricity.PreviousValue) * electricityRate.UnitPrice),
+            WaterReading = new MeterCostSnapshot(water.PreviousValue, water.CurrentValue,
+                water.CurrentValue - water.PreviousValue, waterRate.UnitPrice,
+                (water.CurrentValue - water.PreviousValue) * waterRate.UnitPrice)
+        };
     }
 
     public async Task<Invoice> CreateMonthlyAsync(Guid propertyId, MonthlyInvoiceInput input, CancellationToken ct)
@@ -118,6 +198,128 @@ public sealed class InvoiceService
             Amount = contract.DepositAmount, CreatedAt = now
         };
         return await _invoices.CreateDraftAsync(invoice, [item], owner, ct);
+    }
+
+    public async Task<Invoice> CreateOneOffAsync(Guid propertyId, OneOffInvoiceInput input, CancellationToken ct)
+    {
+        var owner = await OwnerAsync(ct);
+        if (input.Type is not (InvoiceType.Damage or InvoiceType.Other) ||
+            input.Note is { Length: > 1000 } ||
+            input.Items is null || input.Items.Count is < 1 or > 50 ||
+            input.Items.Any(x => x.Type is not (InvoiceItemType.Damage or InvoiceItemType.Other)) ||
+            (input.Source is not null && input.Source != "EarlyExitSettlement") ||
+            (input.Source is null && input.IdempotencyKey is not null) ||
+            (input.Source is not null && (string.IsNullOrWhiteSpace(input.IdempotencyKey) ||
+                input.IdempotencyKey.Trim().Length > 100)))
+            throw Validation("INVOICE_ONE_OFF_INVALID", "Thông tin hóa đơn riêng không hợp lệ.");
+        var editable = ValidateEditable(input.Items, false);
+        var contract = await _invoices.GetOwnedContractAsync(propertyId, input.ContractId, owner, ct)
+            ?? throw NotFound("CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+        var operationKey = input.Source is null ? null : input.IdempotencyKey!.Trim();
+        var requestHash = operationKey is null ? null : SettlementChargeIdentity.RequestHash(
+            input.ContractId, input.Type, input.DueDate, input.Note, editable);
+        var fingerprint = operationKey is null ? null : SettlementChargeIdentity.ChargeFingerprint(
+            input.ContractId, input.Type, editable);
+        if (operationKey is not null)
+        {
+            var existing = await _invoices.GetOwnedBySettlementKeyAsync(input.ContractId, operationKey, owner, ct);
+            if (SettlementChargeIdentity.VerifyRetry(existing, requestHash!) is { } retry) return retry;
+            var sameCharge = await _invoices.GetOwnedBySettlementFingerprintAsync(input.ContractId, fingerprint!, owner, ct);
+            if (sameCharge is not null) return sameCharge;
+        }
+        if (input.DueDate < VietnamToday())
+            throw Validation("INVOICE_ONE_OFF_INVALID", "Hạn thanh toán hóa đơn riêng không được ở quá khứ.");
+        if (contract.Status is not (ContractStatus.Active or ContractStatus.PendingMoveOut or ContractStatus.PendingSettlement))
+            throw Invalid("CONTRACT_NOT_BILLABLE", "Hợp đồng không thể lập hóa đơn riêng.");
+        if (operationKey is not null && contract.Status != ContractStatus.PendingSettlement)
+            throw new BusinessException(BusinessErrorType.Conflict, "SETTLEMENT_CHARGES_CLOSED",
+                "Chỉ thêm phí bàn giao khi hợp đồng đang chờ tất toán.");
+        var id = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        var items = editable.Select(x => NewItem(id, x, now)).ToList();
+        var total = items.Sum(x => x.Amount);
+        if (total <= 0 || total > 9_999_999_999_999_999.99m)
+            throw Validation("INVOICE_ONE_OFF_INVALID", "Tổng hóa đơn riêng không hợp lệ.");
+        var invoice = new Invoice
+        {
+            Id = id, ContractId = contract.Id, RoomId = contract.RoomId,
+            InvoiceCode = $"ONE-{id:N}", InvoiceType = input.Type,
+            IssueDate = VietnamToday(), DueDate = input.DueDate,
+            Note = input.Note?.Trim(), TotalAmount = total,
+            CreationSource = input.Source, SettlementOperationKey = operationKey,
+            SettlementRequestHash = requestHash, SettlementChargeFingerprint = fingerprint,
+            Status = InvoiceStatus.Draft, CreatedAt = now
+        };
+        try { return await _invoices.CreateDraftAsync(invoice, items, owner, ct); }
+        catch (BusinessException ex) when (operationKey is not null && ex.Code == "INVOICE_ALREADY_EXISTS")
+        {
+            var existing = await _invoices.GetOwnedBySettlementKeyAsync(input.ContractId, operationKey, owner, ct);
+            if (SettlementChargeIdentity.VerifyRetry(existing, requestHash!) is { } retry) return retry;
+            var sameCharge = await _invoices.GetOwnedBySettlementFingerprintAsync(input.ContractId, fingerprint!, owner, ct);
+            if (sameCharge is not null) return sameCharge;
+            throw;
+        }
+    }
+
+    public async Task<Invoice> ReplaceDraftItemsAsync(Guid invoiceId, DraftInvoiceItemsInput input, CancellationToken ct)
+    {
+        if (input.Items is null || input.Items.Count > 100)
+            throw Validation("INVOICE_ITEMS_INVALID", "Danh sách khoản tiền không hợp lệ.");
+        return await _invoices.ReplaceDraftItemsAsync(invoiceId, await OwnerAsync(ct),
+            ValidateEditable(input.Items, true), ct);
+    }
+
+    public async Task<InvoiceAdjustment> AddAdjustmentAsync(Guid invoiceId, InvoiceAdjustmentInput input, CancellationToken ct)
+    {
+        if (!Enum.IsDefined(input.Type) || input.Amount <= 0 ||
+            input.Amount > 9_999_999_999_999_999.99m ||
+            input.Amount != decimal.Round(input.Amount, 2) ||
+            string.IsNullOrWhiteSpace(input.Reason) || input.Reason.Trim().Length > 500 ||
+            string.IsNullOrWhiteSpace(input.IdempotencyKey) || input.IdempotencyKey.Length > 100)
+            throw Validation("INVOICE_ADJUSTMENT_INVALID", "Khoản cộng/trừ không hợp lệ.");
+        return await _invoices.AddAdjustmentAsync(invoiceId, await OwnerAsync(ct),
+            input with { Reason = input.Reason.Trim(), IdempotencyKey = input.IdempotencyKey.Trim() }, ct);
+    }
+
+    public async Task<IReadOnlyList<InvoiceAdjustment>> ListAdjustmentsAsync(Guid invoiceId, CancellationToken ct) =>
+        await _invoices.ListAdjustmentsAsync(invoiceId, await OwnerAsync(ct), ct);
+
+    public async Task<InvoiceAttention> AttentionAsync(Guid propertyId, CancellationToken ct)
+    {
+        var owner = await OwnerAsync(ct);
+        if (!await _inputs.PropertyOwnedAsync(propertyId, owner, ct))
+            throw NotFound("PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
+        return await _invoices.AttentionAsync(propertyId, owner, ct);
+    }
+
+    private static IReadOnlyList<EditableInvoiceItem> ValidateEditable(
+        IReadOnlyList<EditableInvoiceItem> items, bool allowServicesAndDiscounts)
+    {
+        foreach (var item in items)
+        {
+            if (item.Type is not (InvoiceItemType.Service or InvoiceItemType.Damage or InvoiceItemType.Other or InvoiceItemType.Discount) ||
+                !allowServicesAndDiscounts && item.Type is not (InvoiceItemType.Damage or InvoiceItemType.Other) ||
+                string.IsNullOrWhiteSpace(item.Description) || item.Description.Trim().Length > 255 ||
+                item.Quantity <= 0 || item.Quantity > 9_999_999_999_999_999.99m ||
+                item.Quantity != decimal.Round(item.Quantity, 2) ||
+                item.UnitPrice < 0 || item.UnitPrice > 9_999_999_999_999_999.99m ||
+                item.UnitPrice != decimal.Round(item.UnitPrice, 2) ||
+                item.UnitPrice > 0 && item.Quantity > 9_999_999_999_999_999.99m / item.UnitPrice)
+                throw Validation("INVOICE_ITEMS_INVALID", "Khoản tiền không hợp lệ.");
+        }
+        return items.Select(x => x with { Description = x.Description.Trim() }).ToList();
+    }
+
+    private static InvoiceItem NewItem(Guid invoiceId, EditableInvoiceItem x, DateTime now)
+    {
+        var amount = decimal.Round(x.Quantity * x.UnitPrice, 2, MidpointRounding.AwayFromZero);
+        return new InvoiceItem
+        {
+            Id = Guid.NewGuid(), InvoiceId = invoiceId, ItemType = x.Type,
+            Description = x.Description, Quantity = x.Quantity, UnitPrice = x.UnitPrice,
+            Amount = x.Type == InvoiceItemType.Discount ? -amount : amount,
+            CreatedAt = now
+        };
     }
 
     public async Task<Invoice?> FindDepositAsync(Guid contractId, CancellationToken ct)

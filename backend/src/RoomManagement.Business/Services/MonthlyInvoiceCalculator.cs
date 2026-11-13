@@ -33,11 +33,13 @@ public sealed class MonthlyInvoiceCalculator
 
         var first = contract.StartDate > periodStart ? contract.StartDate : periodStart;
         var last = contract.EndDate is { } contractEnd && contractEnd < periodEnd ? contractEnd : periodEnd;
+        if (contract.HandoverOn is { } handover && handover < last) last = handover;
         var days = last.DayNumber - first.DayNumber + 1;
 
         if (days <= 0) throw Validation("CONTRACT_OUTSIDE_PERIOD", "Hợp đồng không thuộc kỳ hóa đơn.");
         // cần xem xét phần logic này, có nên thêm số ngày cụ thể để được tính là thuê lẻ 
         if (days != DateTime.DaysInMonth(year, month) &&
+            (electricity.ContractId != contract.Id || water.ContractId != contract.Id) &&
             (electricity.CurrentValue != electricity.PreviousValue || water.CurrentValue != water.PreviousValue))
             throw Validation("INVOICE_PARTIAL_METER_UNSUPPORTED",
                 "Kỳ thuê lẻ tháng có tiêu thụ điện nước nhưng chưa có chỉ số bàn giao để phân bổ.");
@@ -47,7 +49,9 @@ public sealed class MonthlyInvoiceCalculator
             Math.Min(contract.PaymentDueDay.Value, DateTime.DaysInMonth(nextMonth.Year, nextMonth.Month)));
 
         if (dueDate < issueDate)
-            throw Validation("INVOICE_DUE_DATE_PASSED", "Hạn thanh toán của kỳ này đã qua.");
+        {
+            dueDate = issueDate;
+        }
 
         var rentAmount = Money(contract.MonthlyRent * days / DateTime.DaysInMonth(year, month));
         var items = new List<CalculatedInvoiceItem>
