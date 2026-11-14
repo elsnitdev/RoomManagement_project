@@ -1532,6 +1532,102 @@ namespace RoomManagement.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("RoomManagement.Domain.Entities.Request", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(0)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()", "DF_Requests_CreatedAt");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RecipientType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("SenderUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id")
+                        .HasName("PK_Requests");
+
+                    b.HasIndex("PropertyId", "Type", "CreatedAt")
+                        .HasDatabaseName("IX_Requests_PropertyId_Type_CreatedAt");
+
+                    b.HasIndex("SenderUserId", "Type", "CreatedAt")
+                        .HasDatabaseName("IX_Requests_SenderUserId_Type_CreatedAt");
+
+                    b.ToTable("Requests", "dbo", t =>
+                        {
+                            t.HasCheckConstraint("CK_Requests_RecipientType", "(RecipientType IN (N'Single', N'Multiple', N'All', N'Owner'))");
+
+                            t.HasCheckConstraint("CK_Requests_Type", "(Type IN (N'Request', N'Announcement'))");
+                        });
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.RequestRecipient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsRead")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValueSql("0", "DF_RequestRecipients_IsRead");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("ReceiverUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValueSql("N'Open'", "DF_RequestRecipients_Status");
+
+                    b.HasKey("Id")
+                        .HasName("PK_RequestRecipients");
+
+                    b.HasIndex("RequestId", "ReceiverUserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_RequestRecipients_RequestId_ReceiverUserId");
+
+                    b.HasIndex("ReceiverUserId", "Status", "IsRead")
+                        .HasDatabaseName("IX_RequestRecipients_ReceiverUserId_Status_IsRead");
+
+                    b.ToTable("RequestRecipients", "dbo", t =>
+                        {
+                            t.HasCheckConstraint("CK_RequestRecipients_Status", "(Status IN (N'Open', N'InProgress', N'Resolved', N'Closed'))");
+                        });
+                });
+
             modelBuilder.Entity("RoomManagement.Domain.Entities.Room", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2527,6 +2623,40 @@ namespace RoomManagement.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_Refunds_Invoices");
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.Request", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.Property", null)
+                        .WithMany()
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_Requests_Properties");
+
+                    b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("SenderUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_Requests_Sender");
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.RequestRecipient", b =>
+                {
+                    b.HasOne("RoomManagement.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiverUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_RequestRecipients_Receiver");
+
+                    b.HasOne("RoomManagement.Domain.Entities.Request", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_RequestRecipients_Requests");
                 });
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.Room", b =>

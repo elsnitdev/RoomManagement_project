@@ -45,6 +45,8 @@ public DbSet<Refund> Refunds => Set<Refund>();
 public DbSet<DepositApplication> DepositApplications => Set<DepositApplication>();
 public DbSet<ContractSettlement> ContractSettlements => Set<ContractSettlement>();
 public DbSet<TenantRequest> TenantRequests => Set<TenantRequest>();
+public DbSet<Request> Requests => Set<Request>();
+public DbSet<RequestRecipient> RequestRecipients => Set<RequestRecipient>();
 public DbSet<InvoiceBalanceRow> InvoiceBalances => Set<InvoiceBalanceRow>();
 public DbSet<ContractDepositBalanceRow> ContractDepositBalances => Set<ContractDepositBalanceRow>();
 

@@ -6,6 +6,7 @@ import InvoicePaymentPage from "./components/billing/InvoicePaymentPage";
 import TenantManager from "./TenantManager";
 import TenantDetailPage from "./pages/TenantDetailPage";
 import LandlordContracts from "./components/contracts/LandlordContracts";
+import LandlordRequestsPage from "./pages/LandlordRequestsPage";
 
 const roomStatus = {
   occupied: "Đã thuê",
@@ -485,66 +486,7 @@ export default function Landlord({
   if (page === "billing")
     return <InvoicePaymentPage invoices={scopedInvoices} historyInvoices={invoiceHistory} invoiceId={roomId} navigate={navigate} onAddAdjustment={addInvoiceAdjustment} />;
   if (page === "requests")
-    return (
-      <>
-        <Heading
-          eyebrow="HỖ TRỢ NGƯỜI THUÊ"
-          title="Yêu cầu người thuê"
-          description="Theo dõi sự cố và phản hồi các yêu cầu gửi từ phòng trọ."
-        />
-        <div className="request-grid">
-          {requests.map((item) => (
-            <article className="request-card" key={item.id}>
-              <div className="request-top">
-                <span className="request-id">{item.id}</span>
-                <Badge
-                  kind={
-                    item.status === "new"
-                      ? "rejected"
-                      : item.status === "progress"
-                        ? "pending"
-                        : "approved"
-                  }
-                >
-                  {item.status === "new"
-                    ? "Mới"
-                    : item.status === "progress"
-                      ? "Đang xử lý"
-                      : "Đã hoàn tất"}
-                </Badge>
-              </div>
-              <h2>{item.title}</h2>
-              <p>
-                Phòng {item.room} · {item.tenant}
-              </p>
-              <div className="request-bottom">
-                <span>
-                  {item.date} · Ưu tiên {item.priority}
-                </span>
-                {item.status !== "done" && (
-                  <button
-                    type="button"
-                    className="text-link"
-                    onClick={() => {
-                      setRequests((current) =>
-                        current.map((request) =>
-                          request.id === item.id
-                            ? { ...request, status: "done" }
-                            : request,
-                        ),
-                      );
-                      notify("Đã cập nhật yêu cầu mẫu.");
-                    }}
-                  >
-                    Đánh dấu xong <Icon name="check" size={15} />
-                  </button>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      </>
-    );
+    return <LandlordRequestsPage notify={notify} />;
   return (
     <>
       <Heading

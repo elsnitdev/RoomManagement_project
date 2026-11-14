@@ -48,6 +48,7 @@ public static class ServiceCollectionExtensions
     services.AddScoped<IInvoiceStore, InvoiceStore>();
     services.AddScoped<IPaymentStore, PaymentStore>();
     services.AddScoped<IPaymentEvidenceStore, PaymentEvidenceStore>();
+    services.AddScoped<IRequestStore, RequestStore>();
     return services;
   }
 }

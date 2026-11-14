@@ -10,17 +10,19 @@ namespace RoomManagement.Business;
 /// </summary>
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddRoomManagementBusiness(this IServiceCollection services)
-    {
-        // Đăng ký các Service xử lý nghiệp vụ (Services)
-        services.AddScoped<IUserService, UserService>();
-        services.AddScoped<IAuthenticationService, AuthenticationService>();
-        services.AddScoped<ILandlordApprovalService, LandlordApprovalService>();
-        services.AddScoped<ITenantProfileService, TenantProfileService>();
-        services.AddScoped<ITenantRegistrationService, TenantRegistrationService>();
-        services.AddScoped<IManagerService, ManagerService>();
-        services.AddSingleton<TenantLookupRateLimiter>();
+        public static IServiceCollection AddRoomManagementBusiness(this IServiceCollection services)
+        {
+                // Đăng ký các Service xử lý nghiệp vụ (Services)
+                services.AddScoped<IUserService, UserService>();
+                services.AddScoped<IAuthenticationService, AuthenticationService>();
+                services.AddScoped<ILandlordApprovalService, LandlordApprovalService>();
+                services.AddScoped<ITenantProfileService, TenantProfileService>();
+                services.AddScoped<ITenantRegistrationService, TenantRegistrationService>();
+                services.AddScoped<IManagerService, ManagerService>();
+                services.AddSingleton<TenantLookupRateLimiter>();
+                services.AddScoped<IRequestService, RequestService>();
+                services.AddScoped<RequestService>();
 
-        return services;
-    }
+                return services;
+        }
 }
