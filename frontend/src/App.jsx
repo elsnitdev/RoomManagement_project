@@ -1,5 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Check, ChevronRight, CircleAlert, FileText, House, LayoutDashboard, LogOut, Menu, MessageSquareText, ReceiptText, UserRound, X } from "lucide-react";
+import {
+  Bell,
+  Building2,
+  Check,
+  ChevronRight,
+  CircleAlert,
+  FileText,
+  House,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  MessageSquareText,
+  ReceiptText,
+  UserCog,
+  UserRound,
+  Users,
+  X,
+} from "lucide-react";
 import { useAuth } from "./contexts/AuthContext";
 import Admin from "./Admin";
 import Auth from "./Auth";
@@ -26,35 +43,76 @@ import {
   initialRooms,
   initialUsers,
 } from "./mockData";
-import { Brand, Icon } from "./ui";
+import { Brand } from "./ui";
 import "./App.css";
 
-const adminNav = [
-  { id: "overview", label: "Tổng quan", icon: "grid" },
-  { id: "approvals", label: "Duyệt chủ trọ", icon: "users" },
-  { id: "users", label: "Tài khoản", icon: "file" },
-  { id: "services", label: "Dịch vụ", icon: "file" },
-  { id: "profile", label: "Hồ sơ", icon: "users" },
+const adminNavGroups = [
+  {
+    label: "Quản trị hệ thống",
+    items: [
+      { id: "overview", label: "Tổng quan", icon: LayoutDashboard },
+      { id: "approvals", label: "Duyệt chủ trọ", icon: Users },
+      { id: "users", label: "Tài khoản", icon: UserCog },
+      { id: "services", label: "Dịch vụ", icon: FileText },
+    ],
+  },
+  {
+    label: "Tài khoản",
+    items: [{ id: "profile", label: "Hồ sơ", icon: UserRound }],
+  },
 ];
-const landlordNav = [
-  { id: "overview", label: "Tổng quan", icon: "grid" },
-  { id: "properties", label: "Khu trọ", icon: "building" },
-  { id: "managers", label: "Quản lý nhân sự", icon: "users" },
-  { id: "tenants", label: "Người ở", icon: "users" },
-  { id: "contracts", label: "Hợp đồng", icon: "file" },
-  { id: "billing", label: "Hóa đơn", icon: "receipt" },
-  { id: "requests", label: "Yêu cầu", icon: "chat" },
-  { id: "profile", label: "Hồ sơ", icon: "users" },
+
+const landlordNavGroups = [
+  {
+    label: "Vận hành",
+    items: [
+      { id: "overview", label: "Tổng quan", icon: LayoutDashboard },
+      { id: "properties", label: "Khu trọ", icon: Building2 },
+      { id: "tenants", label: "Người ở", icon: Users },
+      { id: "requests", label: "Yêu cầu", icon: MessageSquareText },
+    ],
+  },
+  {
+    label: "Tài chính & Hợp đồng",
+    items: [
+      { id: "contracts", label: "Hợp đồng", icon: FileText },
+      { id: "billing", label: "Hóa đơn", icon: ReceiptText },
+    ],
+  },
+  {
+    label: "Quản trị & Tài khoản",
+    items: [
+      { id: "managers", label: "Quản lý nhân sự", icon: UserCog },
+      { id: "profile", label: "Hồ sơ", icon: UserRound },
+    ],
+  },
 ];
-const managerNav = landlordNav.filter((item) => item.id !== "managers");
-const tenantNav = [
-  { id: "overview", label: "Tổng quan", icon: LayoutDashboard },
-  { id: "room", label: "Chỗ ở của tôi", icon: House },
-  { id: "billing", label: "Hóa đơn", icon: ReceiptText },
-  { id: "contracts", label: "Hợp đồng", icon: FileText },
-  { id: "requests", label: "Yêu cầu", icon: MessageSquareText },
-  { id: "notices", label: "Thông báo", icon: Bell },
-  { id: "profile", label: "Tài khoản", icon: UserRound },
+
+const managerNavGroups = landlordNavGroups
+  .map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.id !== "managers"),
+  }))
+  .filter((group) => group.items.length > 0);
+
+const tenantNavGroups = [
+  {
+    label: "Chỗ ở & Giao dịch",
+    items: [
+      { id: "overview", label: "Tổng quan", icon: LayoutDashboard },
+      { id: "room", label: "Chỗ ở của tôi", icon: House },
+      { id: "billing", label: "Hóa đơn", icon: ReceiptText },
+      { id: "contracts", label: "Hợp đồng", icon: FileText },
+    ],
+  },
+  {
+    label: "Hỗ trợ & Tài khoản",
+    items: [
+      { id: "requests", label: "Yêu cầu", icon: MessageSquareText },
+      { id: "notices", label: "Thông báo", icon: Bell },
+      { id: "profile", label: "Tài khoản", icon: UserRound },
+    ],
+  },
 ];
 const titleMap = {
   overview: "Tổng quan",
@@ -98,8 +156,11 @@ export default function App() {
         : user?.role === "Tenant"
           ? "tenant"
           : null;
-  const mustChangePassword = Boolean(isAuthenticated && user?.mustChangePassword);
-  const canAccess = isAuthenticated && !mustChangePassword && routeRole === userRoute;
+  const mustChangePassword = Boolean(
+    isAuthenticated && user?.mustChangePassword,
+  );
+  const canAccess =
+    isAuthenticated && !mustChangePassword && routeRole === userRoute;
   const isPublic = !protectedRoute;
   useEffect(() => {
     const onHash = () => {
@@ -116,20 +177,22 @@ export default function App() {
       page === "properties" && section === "rooms"
         ? action === "new"
           ? "Tạo phòng"
-          : action ? "Chi tiết phòng" : "Quản lý phòng"
+          : action
+            ? "Chi tiết phòng"
+            : "Quản lý phòng"
         : page === "billing" && detailId && detailId !== "rooms"
           ? "Chi tiết hóa đơn"
-        : page === "tenants" && detailId
-          ? "Chi tiết người thuê"
-        : titleMap[page] ||
-          (route === "register"
-            ? "Đăng ký chủ trọ"
-            : route === "tenant-register"
-              ? "Đăng ký người thuê"
-              : route === "change-password"
-                ? "Đổi mật khẩu tạm"
-                : "Đăng nhập");
-    document.title = `${route.startsWith('tenant/room') ? 'Chỗ ở của tôi' : title} | Nhà Trọ Xanh`;
+          : page === "tenants" && detailId
+            ? "Chi tiết người thuê"
+            : titleMap[page] ||
+              (route === "register"
+                ? "Đăng ký chủ trọ"
+                : route === "tenant-register"
+                  ? "Đăng ký người thuê"
+                  : route === "change-password"
+                    ? "Đổi mật khẩu tạm"
+                    : "Đăng nhập");
+    document.title = `${route.startsWith("tenant/room") ? "Chỗ ở của tôi" : title} | Nhà Trọ Xanh`;
   }, [route]);
   useEffect(() => {
     if (mustChangePassword && route !== "change-password") {
@@ -185,25 +248,30 @@ export default function App() {
     propertySection === "rooms"
       ? roomAction === "new"
         ? "Tạo phòng"
-        : roomAction ? "Chi tiết phòng" : "Quản lý phòng"
+        : roomAction
+          ? "Chi tiết phòng"
+          : "Quản lý phòng"
       : titleMap[page];
-  const items =
+  const navGroups =
     activeRole === "admin"
-      ? adminNav
+      ? adminNavGroups
       : activeRole === "tenant"
-        ? tenantNav
+        ? tenantNavGroups
         : user?.role === "Manager"
-          ? managerNav
-          : landlordNav;
+          ? managerNavGroups
+          : landlordNavGroups;
+  const pendingApprovalCount = approvals.filter(
+    (entry) => entry.status === "pending",
+  ).length;
   return (
     <div className="app-shell">
-      <button
+      {/* <button
         className="skip-link"
         type="button"
         onClick={() => document.getElementById("main-content")?.focus()}
       >
         Bỏ qua menu
-      </button>
+      </button> */}
       {mobileNav && (
         <button
           className="sidebar-backdrop"
@@ -224,63 +292,67 @@ export default function App() {
             onClick={() => setMobileNav(false)}
             aria-label="Đóng menu"
           >
-            {activeRole === "tenant" ? <X size={19} aria-hidden="true" /> : <Icon name="close" />}
+            <X size={19} strokeWidth={1.85} aria-hidden="true" />
           </button>
         </div>
-        <div className="sidebar-section-label">KHÔNG GIAN LÀM VIỆC</div>
         <nav
-          className="nav-list"
-          aria-label={activeRole === "admin" ? "Menu quản trị" : activeRole === "tenant" ? "Menu người thuê" : "Menu chủ trọ"}
+          className="sidebar-nav"
+          aria-label={
+            activeRole === "admin"
+              ? "Menu quản trị"
+              : activeRole === "tenant"
+                ? "Menu người thuê"
+                : "Menu chủ trọ"
+          }
         >
-          {items.map((item) => (
-            <button
-              key={item.id}
-              className={`nav-item ${page === item.id || (page === "room" && item.id === "rooms") ? "nav-item--active" : ""}`}
-              type="button"
-              aria-current={
-                page === item.id || (page === "room" && item.id === "rooms")
-                  ? "page"
-                  : undefined
-              }
-              onClick={() => navigate(`${activeRole}/${item.id}`)}
-            >
-              {activeRole === "tenant" ? (
-                <item.icon size={19} aria-hidden="true" />
-              ) : item.id === "billing" ? (
-                <ReceiptText size={19} aria-hidden="true" />
-              ) : (
-                <Icon name={item.icon} size={19} />
-              )}
-              <span>{item.label}</span>
-              {item.id === "approvals" &&
-                approvals.filter((entry) => entry.status === "pending").length >
-                  0 && (
-                  <span className="nav-count">
-                    {
-                      approvals.filter((entry) => entry.status === "pending")
-                        .length
-                    }
-                  </span>
-                )}
-            </button>
+          {navGroups.map((group) => (
+            <div key={group.label} className="sidebar-group">
+              <div className="sidebar-section-label">{group.label}</div>
+              <div className="nav-list">
+                {group.items.map((item) => {
+                  const NavIcon = item.icon;
+                  const isActive =
+                    page === item.id ||
+                    (page === "room" && item.id === "rooms");
+                  return (
+                    <button
+                      key={item.id}
+                      className={`nav-item ${isActive ? "nav-item--active" : ""}`}
+                      type="button"
+                      aria-current={isActive ? "page" : undefined}
+                      onClick={() => navigate(`${activeRole}/${item.id}`)}
+                    >
+                      <NavIcon
+                        size={18}
+                        strokeWidth={1.85}
+                        aria-hidden="true"
+                      />
+                      <span>{item.label}</span>
+                      {item.id === "approvals" && pendingApprovalCount > 0 && (
+                        <span className="nav-count">
+                          {pendingApprovalCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && page !== "managers" && page !== "users" && (
-            <div className="sidebar-help">
-              <span className="help-icon">
-                {activeRole === "tenant" ? <CircleAlert size={18} aria-hidden="true" /> : <Icon name="alert" size={18} />}
-              </span>
-              <strong>Đang xem giao diện mẫu</strong>
-              <p>Mọi thao tác chỉ thay đổi dữ liệu trong phiên này.</p>
-            </div>
-          )}
+          {page !== "properties" &&
+            page !== "billing" &&
+            page !== "services" &&
+            page !== "contracts" &&
+            page !== "managers" &&
+            page !== "users"}
           <button
             className="nav-item logout-button"
             type="button"
             onClick={logout}
           >
-            {activeRole === "tenant" ? <LogOut size={19} aria-hidden="true" /> : <Icon name="logout" size={19} />}
+            <LogOut size={18} strokeWidth={1.85} aria-hidden="true" />
             <span>Đăng xuất</span>
           </button>
         </div>
@@ -295,26 +367,50 @@ export default function App() {
               aria-expanded={mobileNav}
               onClick={() => setMobileNav(true)}
             >
-              {activeRole === "tenant" ? <Menu size={19} aria-hidden="true" /> : <Icon name="menu" />}
+              <Menu size={20} strokeWidth={1.85} aria-hidden="true" />
             </button>
             <span className="breadcrumb">
-              Không gian làm việc {activeRole === "tenant" ? <ChevronRight size={15} aria-hidden="true" /> : <Icon name="chevron" size={15} />} {" "}
+              <span>Không gian làm việc</span>
+              <ChevronRight size={15} strokeWidth={1.85} aria-hidden="true" />
               <strong>
-                {activeRole === "tenant" && page === "room" ? "Chỗ ở của tôi" : page === "properties" ? propertyPageTitle : page === "billing" && roomId && roomId !== "rooms" ? "Chi tiết hóa đơn" : titleMap[page]}
+                {activeRole === "tenant" && page === "room"
+                  ? "Chỗ ở của tôi"
+                  : page === "properties"
+                    ? propertyPageTitle
+                    : page === "billing" && roomId && roomId !== "rooms"
+                      ? "Chi tiết hóa đơn"
+                      : titleMap[page]}
               </strong>
             </span>
           </div>
           <div className="topbar-right">
-            {page !== "properties" && page !== "billing" && page !== "services" && page !== "contracts" && page !== "managers" && page !== "users" && (
-              <span className="demo-chip">
-                <span className="preview-dot" /> Dữ liệu mẫu
+            {user?.role === "Landlord" && user?.landlordCode && (
+              <span className="topbar-code-chip">
+                Mã chủ trọ: <strong>{user.landlordCode}</strong>
               </span>
             )}
-            <div className="topbar-profile">
+            {page !== "properties" &&
+              page !== "billing" &&
+              page !== "services" &&
+              page !== "contracts" &&
+              page !== "managers" &&
+              page !== "users"}
+            <button
+              type="button"
+              className="topbar-profile"
+              onClick={() => navigate(`${activeRole}/profile`)}
+              aria-label="Mở hồ sơ tài khoản"
+            >
               <span className="avatar">
-                {activeRole === "admin" ? "AD" : activeRole === "tenant" ? "NT" : user?.role === "Manager" ? "QL" : "NA"}
+                {activeRole === "admin"
+                  ? "AD"
+                  : activeRole === "tenant"
+                    ? "NT"
+                    : user?.role === "Manager"
+                      ? "QL"
+                      : "NA"}
               </span>
-              <span>
+              <span className="topbar-profile__meta">
                 <strong>{user?.userName || "Người dùng"}</strong>
                 <small>
                   {activeRole === "admin"
@@ -323,10 +419,10 @@ export default function App() {
                       ? "Người thuê"
                       : user?.role === "Manager"
                         ? "Quản lý khu trọ"
-                        : `Chủ trọ · Mã ${user?.landlordCode || "đang cập nhật"}`}
+                        : "Chủ trọ"}
                 </small>
               </span>
-            </div>
+            </button>
           </div>
         </header>
         <main
@@ -365,15 +461,33 @@ export default function App() {
               navigate={navigate}
               notify={notify}
             />
-          ) : activeRole === "landlord" && page === "managers" && user?.role === "Landlord" ? (
+          ) : activeRole === "landlord" &&
+            page === "managers" &&
+            user?.role === "Landlord" ? (
             <ManagerManagement notify={notify} />
           ) : activeRole === "landlord" && page === "billing" ? (
-            <LandlordBilling invoiceId={roomId === 'rooms' ? undefined : roomId} initialPropertyId={roomId === 'rooms' ? propertySection : undefined} initialRoomId={roomId === 'rooms' ? roomAction : undefined} navigate={navigate} />
+            <LandlordBilling
+              invoiceId={roomId === "rooms" ? undefined : roomId}
+              initialPropertyId={
+                roomId === "rooms" ? propertySection : undefined
+              }
+              initialRoomId={roomId === "rooms" ? roomAction : undefined}
+              navigate={navigate}
+            />
           ) : activeRole === "landlord" && page === "contracts" ? (
-            <LandlordContracts key={route} routeParts={[roomId, propertySection, roomAction]} navigate={navigate} notify={notify} />
+            <LandlordContracts
+              key={route}
+              routeParts={[roomId, propertySection, roomAction]}
+              navigate={navigate}
+              notify={notify}
+            />
           ) : page === "properties" ? (
             propertySection === "rules" && roomId ? (
-              <PropertyRules key={roomId} propertyId={roomId} navigate={navigate} />
+              <PropertyRules
+                key={roomId}
+                propertyId={roomId}
+                navigate={navigate}
+              />
             ) : propertySection === "rooms" && roomId ? (
               roomAction === "new" ? (
                 <CreateRoomPage
@@ -409,7 +523,7 @@ export default function App() {
             <Landlord
               page={page}
               roomId={roomId}
-              contractId={page === 'contracts' ? propertySection : undefined}
+              contractId={page === "contracts" ? propertySection : undefined}
               properties={properties}
               setProperties={setProperties}
               rooms={rooms}
@@ -428,7 +542,7 @@ export default function App() {
       </div>
       {toast && (
         <div className="toast" role="status">
-          {activeRole === "tenant" ? <Check size={18} aria-hidden="true" /> : <Icon name="check" size={18} />}
+          <Check size={18} strokeWidth={1.85} aria-hidden="true" />
           {toast}
         </div>
       )}

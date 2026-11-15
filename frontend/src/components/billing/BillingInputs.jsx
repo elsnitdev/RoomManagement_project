@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Droplets, Pencil, Plus, Zap } from "lucide-react";
 import { billingApi } from "../../services/api/billingApi";
+import InvoiceActionDialog from "./InvoiceActionDialog";
 
 const today = () =>
   new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
@@ -11,19 +13,13 @@ const monthAfter = (date) => {
   const [y, m] = date.split("-").map(Number);
   return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
 };
+const fixedRateUnit = (type) => (type === "Electricity" ? "kWh" : "m³");
+const SERVICE_UNITS = ["tháng", "người", "khác"];
 const rateDraft = (type) => ({
   type,
   unitPrice: "",
-  unit: type === "Electricity" ? "kWh" : "m³",
+  unit: fixedRateUnit(type),
   effectiveFrom: nextMonth(),
-});
-const readingDraft = () => ({
-  type: "Electricity",
-  year: Number(today().slice(0, 4)),
-  month: Number(today().slice(5, 7)),
-  previousValue: "",
-  currentValue: "",
-  note: "",
 });
 const serviceDraft = () => ({
   name: "",
@@ -55,14 +51,17 @@ const futureRate = (rates, type) =>
     .filter((r) => r.type === type && r.effectiveFrom > today())
     .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))[0];
 
-export default function BillingInputs({ propertyId, rooms = [], onChanged, onReadingSaved, initialRoomId = "", initialPeriod }) {
+export default function BillingInputs({
+  propertyId,
+  rooms = [],
+  onChanged,
+  initialRoomId = "",
+}) {
   const [roomId, setRoomId] = useState(initialRoomId);
   const [rates, setRates] = useState([]);
-  const [readings, setReadings] = useState([]);
   const [services, setServices] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [rateForm, setRateForm] = useState(null);
-  const [reading, setReading] = useState(() => ({ ...readingDraft(), year: Number(initialPeriod?.slice(0, 4)) || readingDraft().year, month: Number(initialPeriod?.slice(5, 7)) || readingDraft().month }));
   const [serviceForm, setServiceForm] = useState(null);
   const [assignmentForm, setAssignmentForm] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -74,23 +73,24 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
   useEffect(() => {
     setRoomId(initialRoomId);
     setRates([]);
-    setReadings([]);
     setServices([]);
     setAssignments([]);
     setRateForm(null);
     setServiceForm(null);
     setAssignmentForm(null);
+    setError("");
   }, [propertyId, initialRoomId]);
-  useEffect(() => {
-    if (initialPeriod) setReading((current) => ({ ...current, year: Number(initialPeriod.slice(0, 4)), month: Number(initialPeriod.slice(5, 7)) }));
-  }, [initialPeriod]);
+
   useEffect(() => {
     if (roomId && !rooms.some((r) => String(r.id) === String(roomId)))
       setRoomId("");
   }, [roomId, rooms]);
+
   useEffect(() => {
     setAssignmentForm(null);
+    setError("");
   }, [roomId]);
+
   useEffect(() => {
     if (!propertyId) return;
     const controller = new AbortController();
@@ -99,16 +99,12 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
       billingApi.rates(propertyId, controller.signal),
       billingApi.propertyServices(propertyId, controller.signal),
       roomId
-        ? billingApi.readings(propertyId, roomId, controller.signal)
-        : Promise.resolve([]),
-      roomId
         ? billingApi.roomServices(propertyId, roomId, controller.signal)
         : Promise.resolve([]),
     ])
-      .then(([r, s, m, a]) => {
+      .then(([r, s, a]) => {
         setRates(r || []);
         setServices(s || []);
-        setReadings(m || []);
         setAssignments(a || []);
       })
       .catch((e) => {
@@ -138,21 +134,78 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
       setBusy(false);
     }
   }
-  function editRate(type) {
+
+  function openRateModal(type) {
     const existing = activeRate(rates, type) || futureRate(rates, type);
+    setError("");
+    setServiceForm(null);
+    setAssignmentForm(null);
     setRateForm({
       ...rateDraft(type),
       unitPrice: existing?.unitPrice ?? "",
-      unit: existing?.unit || rateDraft(type).unit,
+      unit: fixedRateUnit(type),
       initial: !rates.some((r) => r.type === type),
       effectiveFrom: existing ? nextMonth() : today().slice(0, 7) + "-01",
     });
   }
+
+  function closeRateModal() {
+    setRateForm(null);
+    setError("");
+  }
+
+  function openServiceModal(service = null) {
+    setError("");
+    setRateForm(null);
+    setAssignmentForm(null);
+    setServiceForm(
+      service
+        ? {
+            ...service,
+            defaultPrice: service.defaultPrice ?? "",
+          }
+        : serviceDraft(),
+    );
+  }
+
+  function closeServiceModal() {
+    setServiceForm(null);
+    setError("");
+  }
+
+  function openAssignmentModal(assignment = null) {
+    setError("");
+    setRateForm(null);
+    setServiceForm(null);
+    if (assignment) {
+      const earliestStartDate =
+        monthAfter(assignment.startDate) > nextMonth()
+          ? monthAfter(assignment.startDate)
+          : nextMonth();
+      setAssignmentForm({
+        ...assignmentDraft(),
+        id: assignment.id,
+        serviceId: assignment.serviceId,
+        quantity: String(assignment.quantity || 1),
+        customPrice: assignment.unitPrice ?? "",
+        startDate: earliestStartDate,
+        earliestStartDate,
+      });
+      return;
+    }
+    setAssignmentForm(assignmentDraft());
+  }
+
+  function closeAssignmentModal() {
+    setAssignmentForm(null);
+    setError("");
+  }
+
   function saveRate(event) {
     const body = {
       type: rateForm.type,
       unitPrice: Number(rateForm.unitPrice),
-      unit: rateForm.unit.trim(),
+      unit: fixedRateUnit(rateForm.type),
       effectiveFrom: rateForm.effectiveFrom,
       effectiveTo: null,
     };
@@ -162,14 +215,15 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
         rateForm.initial
           ? billingApi.createRate(propertyId, body)
           : billingApi.reviseRate(propertyId, body),
-      () => setRateForm(null),
+      closeRateModal,
       "Đã lưu đơn giá.",
     );
   }
+
   function saveService(event) {
     const body = {
       name: serviceForm.name.trim(),
-      description: serviceForm.description.trim() || null,
+      description: serviceForm.description?.trim() || null,
       unit: serviceForm.unit.trim(),
       defaultPrice:
         serviceForm.defaultPrice === ""
@@ -183,10 +237,11 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
         serviceForm.id
           ? billingApi.updateService(propertyId, serviceForm.id, body)
           : billingApi.createPropertyService(propertyId, body),
-      () => setServiceForm(null),
+      closeServiceModal,
       "Đã lưu dịch vụ của khu trọ.",
     );
   }
+
   function saveAssignment(event) {
     const body = {
       serviceId: assignmentForm.serviceId,
@@ -209,10 +264,11 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
               body,
             )
           : billingApi.assignService(propertyId, roomId, body),
-      () => setAssignmentForm(null),
+      closeAssignmentModal,
       "Đã lưu dịch vụ. Thay đổi áp dụng từ tháng sau.",
     );
   }
+
   const chosen = services.find(
     (s) => String(s.id) === String(assignmentForm?.serviceId),
   );
@@ -223,31 +279,61 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
   const quantity = Number(assignmentForm?.quantity || 0);
   const earliestAssignmentDate =
     assignmentForm?.earliestStartDate || nextMonth();
+  const hasOpenModal = Boolean(rateForm || serviceForm || assignmentForm);
+  const selectedRoom = rooms.find((r) => String(r.id) === String(roomId));
+  const selectedRoomLabel =
+    selectedRoom?.roomNumber || selectedRoom?.number || roomId;
+
+  const isRateDateInvalid =
+    rateForm && !rateForm.initial && !rateForm.effectiveFrom.endsWith("-01");
+  const isAssignmentInvalid =
+    assignmentForm &&
+    (!assignmentForm.serviceId ||
+      (chosen?.defaultPrice == null && assignmentForm.customPrice === "") ||
+      !Number.isInteger(quantity) ||
+      quantity < 1 ||
+      assignmentForm.startDate < earliestAssignmentDate ||
+      !assignmentForm.startDate.endsWith("-01"));
+
   if (!propertyId)
     return (
       <p className="bill-empty">Chọn khu trọ để nhập dữ liệu tính hóa đơn.</p>
     );
+
   return (
     <div className="bill-inputs">
+      {/* Tầng 1: Giá điện nước hiện hành */}
       <section className="bill-card">
-        <h2>Giá điện nước hiện hành</h2>
-        <p>Giá được áp dụng theo khu trọ. Chỉ mở biểu mẫu khi muốn thay đổi.</p>
+        <div className="bill-section-head">
+          <div>
+            <h2>Giá điện nước hiện hành</h2>
+            <p>
+              Giá được áp dụng theo khu trọ. Chỉ mở biểu mẫu khi muốn thay đổi.
+            </p>
+          </div>
+        </div>
         <div className="bill-rate-grid">
           {["Electricity", "Water"].map((type) => {
-            const current = activeRate(rates, type),
-              upcoming = futureRate(rates, type);
+            const current = activeRate(rates, type);
+            const upcoming = futureRate(rates, type);
+            const Icon = type === "Electricity" ? Zap : Droplets;
             return (
               <div className="bill-rate-card" key={type}>
-                <div>
-                  <span>{nameOf(type)}</span>
-                  <strong>
+                <div className="bill-rate-card__info">
+                  <span className="bill-rate-card__label">
+                    <Icon size={14} aria-hidden="true" />
+                    {nameOf(type)}
+                  </span>
+                  <strong className="bill-rate-card__price">
                     {current
-                      ? money(current.unitPrice) + "/" + current.unit
+                      ? `${money(current.unitPrice)}/${current.unit}`
                       : "Chưa có đơn giá hiện hành"}
                   </strong>
-                  {current && <small>Từ {current.effectiveFrom}</small>}
+                  {current && (
+                    <small>Áp dụng từ {current.effectiveFrom}</small>
+                  )}
                   {upcoming && (
-                    <small>
+                    <small className="bill-rate-card__upcoming">
                       Giá từ {upcoming.effectiveFrom}:{" "}
                       {money(upcoming.unitPrice)}/{upcoming.unit}
                     </small>
@@ -256,9 +342,10 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
                 <button
                   type="button"
                   className="bill-button bill-button--secondary"
-                  onClick={() => editRate(type)}
+                  onClick={() => openRateModal(type)}
                   disabled={busy}
                 >
+                  <Pencil size={14} aria-hidden="true" />
                   {rates.some((r) => r.type === type)
                     ? "Chỉnh giá"
                     : "Thêm giá ban đầu"}
@@ -267,209 +354,56 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
             );
           })}
         </div>
-        {rateForm && (
-          <form className="bill-form bill-edit-panel" onSubmit={saveRate}>
-            <div className="bill-field--wide">
-              <h3>
-                {rateForm.initial
-                  ? "Thêm giá ban đầu"
-                  : "Chỉnh giá " + nameOf(rateForm.type).toLowerCase()}
-              </h3>
-              <p className="bill-hint">
-                {rateForm.initial
-                  ? "Giá ban đầu có thể áp dụng từ đầu tháng hiện tại."
-                  : "Giá sửa đổi có hiệu lực từ ngày đầu tháng sau hoặc muộn hơn."}
-              </p>
-            </div>
-            <label>
-              Đơn giá
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                required
-                value={rateForm.unitPrice}
-                onChange={(e) =>
-                  setRateForm({ ...rateForm, unitPrice: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Đơn vị
-              <input
-                required
-                maxLength="50"
-                value={rateForm.unit}
-                onChange={(e) =>
-                  setRateForm({ ...rateForm, unit: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Ngày bắt đầu
-              <input
-                type="date"
-                required
-                min={
-                  rateForm.initial ? today().slice(0, 7) + "-01" : nextMonth()
-                }
-                value={rateForm.effectiveFrom}
-                onChange={(e) =>
-                  setRateForm({ ...rateForm, effectiveFrom: e.target.value })
-                }
-              />
-            </label>
-            <div className="bill-form-actions">
-              <button
-                className="bill-button"
-                disabled={
-                  busy ||
-                  (!rateForm.initial && !rateForm.effectiveFrom.endsWith("-01"))
-                }
-              >
-                Lưu giá
-              </button>
-              <button
-                type="button"
-                className="bill-button bill-button--secondary"
-                onClick={() => setRateForm(null)}
-              >
-                Hủy
-              </button>
-            </div>
-          </form>
-        )}
       </section>
+
+      {/* Tầng 2: Danh mục dịch vụ khu trọ + Dịch vụ của phòng */}
       <div className="bill-grid bill-grid--two">
-        <section className="bill-card">
+        <section className="bill-card bill-inputs-card">
           <div className="bill-section-head">
             <div>
               <h2>Danh mục dịch vụ của khu trọ</h2>
-              <p>Mỗi khu trọ có danh mục và giá riêng.</p>
+              <p>Mỗi khu trọ có danh mục và giá mặc định riêng.</p>
             </div>
             <button
               type="button"
               className="bill-button bill-button--secondary"
-              onClick={() => setServiceForm(serviceDraft())}
+              onClick={() => openServiceModal()}
             >
+              <Plus size={15} aria-hidden="true" />
               Thêm dịch vụ
             </button>
           </div>
-          {serviceForm && (
-            <form className="bill-form bill-edit-panel" onSubmit={saveService}>
-              <div className="bill-field--wide">
-                <h3>{serviceForm.id ? "Sửa dịch vụ" : "Tạo dịch vụ"}</h3>
-                <p className="bill-hint">
-                  Thay đổi gán cho phòng bắt đầu từ tháng sau.
-                </p>
-              </div>
-              <label>
-                Tên dịch vụ
-                <input
-                  required
-                  maxLength="100"
-                  value={serviceForm.name}
-                  onChange={(e) =>
-                    setServiceForm({ ...serviceForm, name: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Đơn vị tính
-                <input
-                  required
-                  maxLength="50"
-                  value={serviceForm.unit}
-                  onChange={(e) =>
-                    setServiceForm({ ...serviceForm, unit: e.target.value })
-                  }
-                  placeholder="xe, người, tháng"
-                />
-              </label>
-              <label>
-                Giá mặc định
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={serviceForm.defaultPrice}
-                  onChange={(e) =>
-                    setServiceForm({
-                      ...serviceForm,
-                      defaultPrice: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              {serviceForm.id && (
-                <label className="bill-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={serviceForm.isActive}
-                    onChange={(e) =>
-                      setServiceForm({
-                        ...serviceForm,
-                        isActive: e.target.checked,
-                      })
-                    }
-                  />{" "}
-                  Đang sử dụng
-                </label>
-              )}
-              <label className="bill-field--wide">
-                Mô tả
-                <textarea
-                  maxLength="500"
-                  value={serviceForm.description || ""}
-                  onChange={(e) =>
-                    setServiceForm({
-                      ...serviceForm,
-                      description: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <div className="bill-form-actions bill-field--wide">
-                <button className="bill-button" disabled={busy}>
-                  Lưu dịch vụ
-                </button>
-                <button
-                  type="button"
-                  className="bill-button bill-button--secondary"
-                  onClick={() => setServiceForm(null)}
-                >
-                  Hủy
-                </button>
-              </div>
-            </form>
-          )}
+
           {services.length ? (
-            <ul className="bill-list">
+            <ul className="bill-list bill-list--compact">
               {services.map((s) => (
-                <li key={s.id}>
-                  <div>
+                <li key={s.id} className="bill-inputs-item">
+                  <div className="bill-inputs-item__info">
                     <strong>
                       {s.name} ·{" "}
                       {s.defaultPrice == null
                         ? "Chưa có giá"
-                        : money(s.defaultPrice) + "/" + s.unit}
+                        : `${money(s.defaultPrice)}/${s.unit}`}
                     </strong>
                     <small>
-                      {s.isActive ? "Đang sử dụng" : "Ngừng sử dụng"}
-                      {s.description ? " · " + s.description : ""}
+                      <span
+                        className={`bill-service-status ${
+                          s.isActive ? "is-active" : "is-inactive"
+                        }`}
+                      >
+                        {s.isActive ? "Đang sử dụng" : "Ngừng sử dụng"}
+                      </span>
+                      {s.description ? ` · ${s.description}` : ""}
                     </small>
                   </div>
                   <button
                     type="button"
-                    className="bill-link"
-                    onClick={() =>
-                      setServiceForm({
-                        ...s,
-                        defaultPrice: s.defaultPrice ?? "",
-                      })
-                    }
+                    className="bill-link bill-link--compact"
+                    aria-label={`Sửa ${s.name}`}
+                    onClick={() => openServiceModal(s)}
                   >
-                    Sửa {s.name}
+                    <Pencil size={13} aria-hidden="true" />
+                    Sửa
                   </button>
                 </li>
               ))}
@@ -478,140 +412,9 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
             <p className="bill-empty">Khu trọ chưa có dịch vụ.</p>
           )}
         </section>
-        <section className="bill-card">
-          <h2>Chỉ số điện nước</h2>
-          <label className="bill-field">
-            Phòng
-            <select value={roomId} onChange={(e) => setRoomId(e.target.value)}>
-              <option value="">Chọn phòng</option>
-              {rooms.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.roomNumber || r.number || r.id}
-                </option>
-              ))}
-            </select>
-          </label>
-          {roomId ? (
-            <>
-              <form
-                className="bill-form"
-                onSubmit={(e) =>
-                  submit(
-                    e,
-                    () =>
-                      billingApi.createReading(propertyId, roomId, {
-                        ...reading,
-                        year: Number(reading.year),
-                        month: Number(reading.month),
-                        previousValue: Number(reading.previousValue),
-                        currentValue: Number(reading.currentValue),
-                      }),
-                    () => { setReading({ ...readingDraft(), year: Number(initialPeriod?.slice(0, 4)) || readingDraft().year, month: Number(initialPeriod?.slice(5, 7)) || readingDraft().month }); onReadingSaved?.(); },
-                    "Đã lưu chỉ số.",
-                  )
-                }
-              >
-                <label>
-                  Loại
-                  <select
-                    value={reading.type}
-                    onChange={(e) =>
-                      setReading({ ...reading, type: e.target.value })
-                    }
-                  >
-                    <option value="Electricity">Điện</option>
-                    <option value="Water">Nước</option>
-                  </select>
-                </label>
-                <label>
-                  Năm
-                  <input
-                    type="number"
-                    min="2000"
-                    max="2100"
-                    required
-                    value={reading.year}
-                    onChange={(e) =>
-                      setReading({ ...reading, year: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Tháng
-                  <input
-                    type="number"
-                    min="1"
-                    max="12"
-                    required
-                    value={reading.month}
-                    onChange={(e) =>
-                      setReading({ ...reading, month: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Chỉ số đầu kỳ
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    required
-                    value={reading.previousValue}
-                    onChange={(e) =>
-                      setReading({ ...reading, previousValue: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Chỉ số cuối kỳ
-                  <input
-                    type="number"
-                    min={reading.previousValue || 0}
-                    step="0.01"
-                    required
-                    value={reading.currentValue}
-                    onChange={(e) =>
-                      setReading({ ...reading, currentValue: e.target.value })
-                    }
-                  />
-                </label>
-                <label className="bill-field--wide">
-                  Ghi chú
-                  <input
-                    maxLength="500"
-                    value={reading.note}
-                    onChange={(e) =>
-                      setReading({ ...reading, note: e.target.value })
-                    }
-                  />
-                </label>
-                <button className="bill-button" disabled={busy}>
-                  Lưu chỉ số
-                </button>
-              </form>
-              <ul className="bill-list">
-                {readings.map((r) => (
-                  <li key={r.id}>
-                    <strong>
-                      {nameOf(r.type)} · {r.month}/{r.year}: {r.used} đơn vị
-                    </strong>
-                    <small>
-                      {r.previousValue} → {r.currentValue}
-                    </small>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="bill-empty">
-              Chọn phòng để nhập chỉ số và gán dịch vụ.
-            </p>
-          )}
-        </section>
-      </div>
-      {roomId && (
-        <section className="bill-card">
-          <div className="bill-section-head">
+
+        <section className="bill-card bill-inputs-card">
+          <div className="bill-section-head bill-section-head--room">
             <div>
               <h2>Dịch vụ của phòng</h2>
               <p>
@@ -619,147 +422,41 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
                 tháng sau.
               </p>
             </div>
-            <button
-              type="button"
-              className="bill-button bill-button--secondary"
-              disabled={!services.some((s) => s.isActive)}
-              onClick={() => setAssignmentForm(assignmentDraft())}
-            >
-              Gán dịch vụ
-            </button>
-          </div>
-          {assignmentForm && (
-            <form
-              className="bill-form bill-form--inline bill-edit-panel"
-              onSubmit={saveAssignment}
-            >
-              <div className="bill-field--wide">
-                <h3>
-                  {assignmentForm.id ? "Cập nhật dịch vụ" : "Gán dịch vụ"}
-                </h3>
-                <p className="bill-hint">
-                  Ngày bắt đầu phải là ngày 1 của tháng sau hoặc muộn hơn.
-                </p>
-              </div>
-              <label>
-                Dịch vụ
-                <select
-                  required
-                  disabled={Boolean(assignmentForm.id)}
-                  value={assignmentForm.serviceId}
-                  onChange={(e) =>
-                    setAssignmentForm({
-                      ...assignmentForm,
-                      serviceId: e.target.value,
-                    })
-                  }
-                >
-                  <option value="">Chọn dịch vụ</option>
-                  {services
-                    .filter(
-                      (s) =>
-                        s.isActive ||
-                        String(s.id) === String(assignmentForm.serviceId),
-                    )
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                Số lượng
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  required
-                  value={assignmentForm.quantity}
-                  onChange={(e) =>
-                    setAssignmentForm({
-                      ...assignmentForm,
-                      quantity: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Giá riêng (để trống dùng giá mặc định)
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={assignmentForm.customPrice}
-                  onChange={(e) =>
-                    setAssignmentForm({
-                      ...assignmentForm,
-                      customPrice: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Ngày bắt đầu
-                <input
-                  type="date"
-                  min={earliestAssignmentDate}
-                  required
-                  value={assignmentForm.startDate}
-                  onChange={(e) =>
-                    setAssignmentForm({
-                      ...assignmentForm,
-                      startDate: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <p
-                className="bill-assignment-total bill-field--wide"
-                aria-live="polite"
+            <div className="bill-room-controls">
+              <select
+                aria-label="Chọn phòng"
+                className="bill-room-select"
+                value={roomId}
+                onChange={(e) => setRoomId(e.target.value)}
               >
-                Dự kiến:{" "}
-                <strong>
-                  {chosen && quantity > 0
-                    ? quantity +
-                      " × " +
-                      money(unitPrice) +
-                      " = " +
-                      money(quantity * unitPrice)
-                    : "Chọn dịch vụ và nhập số lượng"}
-                </strong>
-              </p>
-              <div className="bill-form-actions bill-field--wide">
-                <button
-                  className="bill-button"
-                  disabled={
-                    busy ||
-                    !assignmentForm.serviceId ||
-                    (chosen?.defaultPrice == null &&
-                      assignmentForm.customPrice === "") ||
-                    !Number.isInteger(quantity) ||
-                    quantity < 1 ||
-                    assignmentForm.startDate < earliestAssignmentDate ||
-                    !assignmentForm.startDate.endsWith("-01")
-                  }
-                >
-                  Lưu dịch vụ
-                </button>
-                <button
-                  type="button"
-                  className="bill-button bill-button--secondary"
-                  onClick={() => setAssignmentForm(null)}
-                >
-                  Hủy
-                </button>
-              </div>
-            </form>
-          )}
-          {assignments.length ? (
-            <ul className="bill-list">
+                <option value="">Chọn phòng</option>
+                {rooms.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    Phòng {r.roomNumber || r.number || r.id}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="bill-button bill-button--secondary"
+                disabled={!roomId || !services.some((s) => s.isActive)}
+                onClick={() => openAssignmentModal()}
+              >
+                <Plus size={15} aria-hidden="true" />
+                Gán dịch vụ
+              </button>
+            </div>
+          </div>
+
+          {!roomId ? (
+            <p className="bill-empty">
+              Chọn phòng ở góc trên để xem và gán dịch vụ áp dụng riêng.
+            </p>
+          ) : assignments.length ? (
+            <ul className="bill-list bill-list--compact">
               {assignments.map((a) => (
-                <li key={a.id}>
-                  <div>
+                <li key={a.id} className="bill-inputs-item">
+                  <div className="bill-inputs-item__info">
                     <strong>
                       {a.serviceName} · {Number(a.quantity || 1)} ×{" "}
                       {money(a.unitPrice)} ={" "}
@@ -776,23 +473,10 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
                       ?.isActive && (
                       <button
                         type="button"
-                        className="bill-link"
-                        onClick={() => {
-                          const earliestStartDate =
-                            monthAfter(a.startDate) > nextMonth()
-                              ? monthAfter(a.startDate)
-                              : nextMonth();
-                          setAssignmentForm({
-                            ...assignmentDraft(),
-                            id: a.id,
-                            serviceId: a.serviceId,
-                            quantity: String(a.quantity || 1),
-                            customPrice: a.unitPrice ?? "",
-                            startDate: earliestStartDate,
-                            earliestStartDate,
-                          });
-                        }}
+                        className="bill-link bill-link--compact"
+                        onClick={() => openAssignmentModal(a)}
                       >
+                        <Pencil size={13} aria-hidden="true" />
                         Chỉnh số lượng / giá
                       </button>
                     )}
@@ -803,9 +487,10 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
             <p className="bill-empty">Phòng chưa được gán dịch vụ.</p>
           )}
         </section>
-      )}
+      </div>
+
       {loading && <p role="status">Đang tải dữ liệu...</p>}
-      {error && (
+      {!hasOpenModal && error && (
         <p className="bill-error" role="alert">
           {error}
         </p>
@@ -814,6 +499,349 @@ export default function BillingInputs({ propertyId, rooms = [], onChanged, onRea
         <p className="bill-success" role="status">
           {success}
         </p>
+      )}
+
+      {/* Popup 1: Chỉnh / Thêm giá điện nước */}
+      {rateForm && (
+        <InvoiceActionDialog
+          title={
+            rateForm.initial
+              ? `Thêm giá ${nameOf(rateForm.type).toLowerCase()} ban đầu`
+              : `Chỉnh giá ${nameOf(rateForm.type).toLowerCase()}`
+          }
+          onClose={closeRateModal}
+          footer={
+            <div className="bill-dialog__footer-actions bill-dialog__footer-actions--end">
+              <button
+                type="button"
+                className="bill-button bill-button--secondary"
+                onClick={closeRateModal}
+                disabled={busy}
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                form="bill-rate-form"
+                className="bill-button"
+                disabled={busy || isRateDateInvalid}
+              >
+                {busy ? "Đang lưu..." : "Lưu giá"}
+              </button>
+            </div>
+          }
+        >
+          <form
+            id="bill-rate-form"
+            className="bill-form bill-modal-form"
+            onSubmit={saveRate}
+          >
+            <p className="bill-hint bill-field--wide bill-modal-hint">
+              {rateForm.initial
+                ? "Giá ban đầu có thể áp dụng từ đầu tháng hiện tại."
+                : "Giá sửa đổi có hiệu lực từ ngày đầu tháng sau hoặc muộn hơn (ngày 01)."}
+            </p>
+            <label>
+              Đơn giá (₫)
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                required
+                value={rateForm.unitPrice}
+                onChange={(e) =>
+                  setRateForm({ ...rateForm, unitPrice: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Đơn vị (cố định)
+              <input
+                type="text"
+                value={fixedRateUnit(rateForm.type)}
+                readOnly
+                disabled
+                aria-readonly="true"
+              />
+            </label>
+            <label className="bill-field--wide">
+              Ngày bắt đầu
+              <input
+                type="date"
+                required
+                min={
+                  rateForm.initial ? today().slice(0, 7) + "-01" : nextMonth()
+                }
+                value={rateForm.effectiveFrom}
+                onChange={(e) =>
+                  setRateForm({ ...rateForm, effectiveFrom: e.target.value })
+                }
+              />
+            </label>
+            {isRateDateInvalid && (
+              <p className="bill-hint bill-field--wide">
+                Ngày bắt đầu giá mới phải là ngày mùng 1 của tháng (ví dụ:
+                YYYY-MM-01).
+              </p>
+            )}
+            {error && (
+              <p className="bill-error bill-field--wide" role="alert">
+                {error}
+              </p>
+            )}
+          </form>
+        </InvoiceActionDialog>
+      )}
+
+      {/* Popup 2: Thêm / Sửa dịch vụ khu trọ */}
+      {serviceForm && (
+        <InvoiceActionDialog
+          title={
+            serviceForm.id
+              ? `Sửa dịch vụ: ${serviceForm.name || ""}`
+              : "Thêm dịch vụ khu trọ"
+          }
+          onClose={closeServiceModal}
+          footer={
+            <div className="bill-dialog__footer-actions bill-dialog__footer-actions--end">
+              <button
+                type="button"
+                className="bill-button bill-button--secondary"
+                onClick={closeServiceModal}
+                disabled={busy}
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                form="bill-service-form"
+                className="bill-button"
+                disabled={busy}
+              >
+                {busy ? "Đang lưu..." : "Lưu dịch vụ"}
+              </button>
+            </div>
+          }
+        >
+          <form
+            id="bill-service-form"
+            className="bill-form bill-modal-form"
+            onSubmit={saveService}
+          >
+            <p className="bill-hint bill-field--wide bill-modal-hint">
+              Thay đổi gán cho phòng bắt đầu từ tháng sau.
+            </p>
+            <label>
+              Tên dịch vụ
+              <input
+                required
+                maxLength="100"
+                value={serviceForm.name}
+                onChange={(e) =>
+                  setServiceForm({ ...serviceForm, name: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Đơn vị tính
+              <select
+                required
+                value={serviceForm.unit}
+                onChange={(e) =>
+                  setServiceForm({ ...serviceForm, unit: e.target.value })
+                }
+              >
+                <option value="tháng">Tháng</option>
+                <option value="người">Người</option>
+                <option value="khác">Khác</option>
+                {serviceForm.unit &&
+                  !SERVICE_UNITS.includes(serviceForm.unit) && (
+                    <option value={serviceForm.unit}>{serviceForm.unit}</option>
+                  )}
+              </select>
+            </label>
+            <label>
+              Giá mặc định
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={serviceForm.defaultPrice}
+                onChange={(e) =>
+                  setServiceForm({
+                    ...serviceForm,
+                    defaultPrice: e.target.value,
+                  })
+                }
+              />
+            </label>
+            {serviceForm.id && (
+              <label className="bill-checkbox">
+                <input
+                  type="checkbox"
+                  checked={serviceForm.isActive}
+                  onChange={(e) =>
+                    setServiceForm({
+                      ...serviceForm,
+                      isActive: e.target.checked,
+                    })
+                  }
+                />
+                Đang sử dụng
+              </label>
+            )}
+            <label className="bill-field--wide">
+              Mô tả
+              <textarea
+                maxLength="500"
+                rows={3}
+                value={serviceForm.description || ""}
+                onChange={(e) =>
+                  setServiceForm({
+                    ...serviceForm,
+                    description: e.target.value,
+                  })
+                }
+              />
+            </label>
+            {error && (
+              <p className="bill-error bill-field--wide" role="alert">
+                {error}
+              </p>
+            )}
+          </form>
+        </InvoiceActionDialog>
+      )}
+
+      {/* Popup 3: Gán / Cập nhật dịch vụ phòng */}
+      {assignmentForm && (
+        <InvoiceActionDialog
+          title={`${
+            assignmentForm.id ? "Cập nhật dịch vụ" : "Gán dịch vụ"
+          } — Phòng ${selectedRoomLabel}`}
+          onClose={closeAssignmentModal}
+          footer={
+            <div className="bill-dialog__footer-actions bill-dialog__footer-actions--end">
+              <button
+                type="button"
+                className="bill-button bill-button--secondary"
+                onClick={closeAssignmentModal}
+                disabled={busy}
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                form="bill-assignment-form"
+                className="bill-button"
+                disabled={busy || isAssignmentInvalid}
+              >
+                {busy ? "Đang lưu..." : "Lưu dịch vụ"}
+              </button>
+            </div>
+          }
+        >
+          <form
+            id="bill-assignment-form"
+            className="bill-form bill-modal-form"
+            onSubmit={saveAssignment}
+          >
+            <p className="bill-hint bill-field--wide bill-modal-hint">
+              Ngày bắt đầu phải là ngày 1 của tháng sau hoặc muộn hơn.
+            </p>
+            <label>
+              Dịch vụ
+              <select
+                required
+                disabled={Boolean(assignmentForm.id)}
+                value={assignmentForm.serviceId}
+                onChange={(e) =>
+                  setAssignmentForm({
+                    ...assignmentForm,
+                    serviceId: e.target.value,
+                  })
+                }
+              >
+                <option value="">Chọn dịch vụ</option>
+                {services
+                  .filter(
+                    (s) =>
+                      s.isActive ||
+                      String(s.id) === String(assignmentForm.serviceId),
+                  )
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Số lượng
+              <input
+                type="number"
+                min="1"
+                step="1"
+                required
+                value={assignmentForm.quantity}
+                onChange={(e) =>
+                  setAssignmentForm({
+                    ...assignmentForm,
+                    quantity: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Giá riêng (để trống dùng giá mặc định)
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={assignmentForm.customPrice}
+                onChange={(e) =>
+                  setAssignmentForm({
+                    ...assignmentForm,
+                    customPrice: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Ngày bắt đầu
+              <input
+                type="date"
+                min={earliestAssignmentDate}
+                required
+                value={assignmentForm.startDate}
+                onChange={(e) =>
+                  setAssignmentForm({
+                    ...assignmentForm,
+                    startDate: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <p
+              className="bill-assignment-total bill-field--wide"
+              aria-live="polite"
+            >
+              Dự kiến:
+              <strong>
+                {chosen && quantity > 0
+                  ? `${quantity} × ${money(unitPrice)} = ${money(
+                      quantity * unitPrice,
+                    )}`
+                  : "Chọn dịch vụ và nhập số lượng"}
+              </strong>
+            </p>
+            {error && (
+              <p className="bill-error bill-field--wide" role="alert">
+                {error}
+              </p>
+            )}
+          </form>
+        </InvoiceActionDialog>
       )}
     </div>
   );

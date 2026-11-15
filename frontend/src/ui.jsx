@@ -1,3 +1,5 @@
+import { Building2 } from "lucide-react";
+
 const paths = {
   grid: (
     <>
@@ -110,7 +112,7 @@ export function Brand() {
   return (
     <div className="brand">
       <span className="brand-mark">
-        <Icon name="building" size={22} />
+        <Building2 size={20} strokeWidth={1.85} aria-hidden="true" />
       </span>
       <span>
         <strong>Nhà Trọ Xanh</strong>

@@ -61,6 +61,23 @@ const statusText = {
   Terminated: "Đã kết thúc",
   Cancelled: "Đã hủy",
 };
+const PENDING_STATUSES = [
+  "Draft",
+  "PendingTenantConfirmation",
+  "PendingOperatorConfirmation",
+];
+const daysUntil = (dateStr) => {
+  if (!dateStr) return null;
+  const now = new Date(`${today()}T00:00:00`);
+  const target = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return null;
+  return Math.round((target - now) / 86400000);
+};
+const isExpiringSoon = (contract) => {
+  if (contract?.status !== "Active" || !contract.endDate) return false;
+  const diff = daysUntil(contract.endDate);
+  return diff !== null && diff >= 0 && diff <= 30;
+};
 const isUpcoming = (contract) =>
   contract?.status === "Active" && contract.startDate > today();
 const needsSettlement = (contract) =>
@@ -69,6 +86,19 @@ const needsSettlement = (contract) =>
     Number(contract.depositHeld) > 0 ||
     contract.hasDraftInvoices ||
     !contract.hasSettlement);
+const settlementReasons = (contract) => {
+  const parts = [];
+  if (Number(contract.outstandingAmount) > 0) {
+    parts.push(`Còn nợ ${money(contract.outstandingAmount)}`);
+  }
+  if (Number(contract.depositHeld) > 0) {
+    parts.push(`Giữ cọc ${money(contract.depositHeld)}`);
+  }
+  if (contract.hasDraftInvoices) {
+    parts.push("Có hóa đơn nháp");
+  }
+  return parts.length ? parts.join(" · ") : "Chưa tất toán";
+};
 const errorText = (error) =>
   error?.message || "Không thể thực hiện thao tác. Vui lòng thử lại.";
 const newForm = () => ({
@@ -392,6 +422,7 @@ export default function LandlordContracts({
   const [editForm, setEditForm] = useState(null);
   const [contractSearch, setContractSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -667,14 +698,55 @@ export default function LandlordContracts({
 
   const detailFamilyMode = detail?.tenancyMode === "PrimaryTenantWithFamily";
   const detailHasParty = detail?.tenants?.some((item) => !item.leaveDate && item.role === "ContractParty");
+  const roomNumberOf = (item) =>
+    item.roomNumber ||
+    rooms.find((room) => room.id === item.roomId)?.roomNumber ||
+    "—";
+  const activeCount = contracts.filter((item) => item.status === "Active").length;
+  const pendingCount = contracts.filter((item) =>
+    PENDING_STATUSES.includes(item.status),
+  ).length;
+  const expiringOrMoveOutCount = contracts.filter(
+    (item) => isExpiringSoon(item) || item.status === "PendingMoveOut",
+  ).length;
+  const pendingSettlementCount = contracts.filter(
+    (item) => item.status === "PendingSettlement",
+  ).length;
   const alertContracts = contracts.filter(needsSettlement);
-  const shownContracts = contracts.filter(
-    (item) =>
-      (filter === "all" || item.status === filter) &&
-      `${item.contractCode} ${item.roomNumber || ""} ${item.tenants?.map((tenant) => tenant.fullName).join(" ") || ""}`
-        .toLocaleLowerCase("vi-VN")
-        .includes(contractSearch.trim().toLocaleLowerCase("vi-VN")),
-  );
+  const matchesFilter = (item) => {
+    if (filter === "all") return true;
+    if (filter === "active") return item.status === "Active";
+    if (filter === "pending") return PENDING_STATUSES.includes(item.status);
+    if (filter === "expiring")
+      return isExpiringSoon(item) || item.status === "PendingMoveOut";
+    if (filter === "settlement") return needsSettlement(item);
+    return item.status === filter;
+  };
+  const shownContracts = contracts
+    .filter(
+      (item) =>
+        matchesFilter(item) &&
+        `${item.contractCode} ${roomNumberOf(item)} ${item.tenants?.map((tenant) => tenant.fullName).join(" ") || ""}`
+          .toLocaleLowerCase("vi-VN")
+          .includes(contractSearch.trim().toLocaleLowerCase("vi-VN")),
+    )
+    .slice()
+    .sort((a, b) => {
+      if (sortBy === "room") {
+        return String(roomNumberOf(a)).localeCompare(
+          String(roomNumberOf(b)),
+          "vi",
+          { numeric: true },
+        );
+      }
+      if (sortBy === "expiring") {
+        if (!a.endDate && !b.endDate) return 0;
+        if (!a.endDate) return 1;
+        if (!b.endDate) return -1;
+        return a.endDate.localeCompare(b.endDate);
+      }
+      return (b.startDate || "").localeCompare(a.startDate || "");
+    });
   const patchForm = (key, value) =>
     setForm((current) => ({ ...current, [key]: value }));
 
@@ -984,111 +1056,262 @@ export default function LandlordContracts({
             <div>
               <span className="contract-eyebrow">QUẢN LÝ CHO THUÊ</span>
               <h1>Hợp đồng thuê</h1>
-              <p>Danh sách hợp đồng theo khu trọ.</p>
+              <p>Theo dõi tình trạng hợp đồng, ký duyệt và tất toán theo khu trọ.</p>
             </div>
-            <button
-              className="contract-button contract-button--primary"
-              type="button"
-              onClick={() => routeTo(navigate, "/new")}
-            >
-              <Plus size={17} /> Tạo hợp đồng
-            </button>
+            <div className="ct-head-actions">
+              <label className="ct-property-select">
+                <span>Khu trọ</span>
+                <select
+                  aria-label="Chọn khu trọ"
+                  value={propertyId}
+                  onChange={(event) => setPropertyId(event.target.value)}
+                >
+                  {properties.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="contract-button contract-button--primary"
+                type="button"
+                onClick={() => routeTo(navigate, "/new")}
+              >
+                <Plus size={17} /> Tạo hợp đồng
+              </button>
+            </div>
           </header>
-          <div className="ct-list-toolbar">
-            <label>
-              Khu trọ
+
+          {/* 4 Thẻ KPI tương tác */}
+          <section className="ct-kpi-grid" aria-label="Tổng quan trạng thái hợp đồng">
+            {[
+              {
+                key: "active",
+                label: "Đang hiệu lực",
+                count: activeCount,
+                sub: "Hợp đồng đang thuê",
+                tone: "green",
+              },
+              {
+                key: "pending",
+                label: "Chờ xử lý / Ký duyệt",
+                count: pendingCount,
+                sub: "Nháp, chờ khách & đối ký",
+                tone: "blue",
+              },
+              {
+                key: "expiring",
+                label: "Sắp hết hạn / Bàn giao",
+                count: expiringOrMoveOutCount,
+                sub: "Hạn ≤ 30 ngày hoặc trả phòng",
+                tone: "amber",
+              },
+              {
+                key: "settlement",
+                label: "Cần đối chiếu tất toán",
+                count: alertContracts.length,
+                sub: "Nợ, giữ cọc hoặc hóa đơn nháp",
+                tone: "amber",
+              },
+            ].map((kpi) => {
+              const selected = filter === kpi.key;
+              return (
+                <button
+                  key={kpi.key}
+                  type="button"
+                  aria-pressed={selected}
+                  className={`ct-kpi-card ct-kpi-card--${kpi.tone}${selected ? " is-active" : ""}`}
+                  onClick={() => setFilter((cur) => (cur === kpi.key ? "all" : kpi.key))}
+                >
+                  <span className="ct-kpi-card__label">{kpi.label}</span>
+                  <strong className="ct-kpi-card__value">{kpi.count}</strong>
+                  <small className="ct-kpi-card__sub">{kpi.sub}</small>
+                </button>
+              );
+            })}
+          </section>
+
+          {/* Thanh lọc & Tìm kiếm hiện đại */}
+          <div className="ct-filter-bar">
+            <div className="ct-pill-tabs" role="tablist" aria-label="Nhóm trạng thái hợp đồng">
+              {[
+                { key: "all", label: "Tất cả", count: contracts.length },
+                { key: "active", label: "Đang hiệu lực", count: activeCount },
+                { key: "pending", label: "Chờ xử lý", count: pendingCount },
+                { key: "PendingSettlement", label: "Chờ tất toán", count: pendingSettlementCount },
+                { key: "settlement", label: "Cần đối chiếu", count: alertContracts.length },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === tab.key}
+                  className={`ct-pill-tab${filter === tab.key ? " is-active" : ""}`}
+                  onClick={() => setFilter(tab.key)}
+                >
+                  <span>{tab.label}</span>
+                  <span className="ct-pill-count">{tab.count}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="ct-filter-controls">
+              <label className="ct-search-box">
+                <Search size={16} aria-hidden="true" />
+                <input
+                  type="search"
+                  aria-label="Tìm hợp đồng"
+                  placeholder="Tìm mã HĐ, số phòng, người thuê…"
+                  value={contractSearch}
+                  onChange={(event) => setContractSearch(event.target.value)}
+                />
+                {contractSearch && (
+                  <button
+                    type="button"
+                    className="ct-search-clear"
+                    aria-label="Xóa từ khóa tìm kiếm"
+                    onClick={() => setContractSearch("")}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </label>
+
               <select
-                value={propertyId}
-                onChange={(event) => setPropertyId(event.target.value)}
+                className="ct-select-control"
+                aria-label="Lọc trạng thái chi tiết"
+                value={Object.prototype.hasOwnProperty.call(statusText, filter) ? filter : ""}
+                onChange={(event) => setFilter(event.target.value || "all")}
               >
-                {properties.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Tìm hợp đồng
-              <input
-                type="search"
-                placeholder="Mã, phòng, người thuê…"
-                value={contractSearch}
-                onChange={(event) => setContractSearch(event.target.value)}
-              />
-            </label>
-            <label>
-              Trạng thái
-              <select
-                value={filter}
-                onChange={(event) => setFilter(event.target.value)}
-              >
-                <option value="all">Tất cả</option>
+                <option value="">Trạng thái chi tiết…</option>
                 {Object.entries(statusText).map(([value, text]) => (
                   <option key={value} value={value}>
                     {text}
                   </option>
                 ))}
               </select>
-            </label>
-          </div>
-          {alertContracts.length > 0 && (
-            <div
-              className="contract-message contract-message--warning"
-              role="status"
-            >
-              <strong>{alertContracts.length} hợp đồng cần đối chiếu.</strong>{" "}
-              Kiểm tra công nợ, tiền cọc, hóa đơn nháp và tất toán.
+
+              <select
+                className="ct-select-control"
+                aria-label="Sắp xếp danh sách"
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value)}
+              >
+                <option value="newest">Mới nhất</option>
+                <option value="room">Theo số phòng</option>
+                <option value="expiring">Sắp hết hạn</option>
+              </select>
             </div>
-          )}
+          </div>
+
           <section className="ct-list" aria-label="Danh sách hợp đồng">
             {shownContracts.length ? (
-              shownContracts.map((item) => (
-                <button
-                  className="ct-list-card"
-                  key={item.id}
-                  type="button"
-                  onClick={() => routeTo(navigate, `/${propertyId}/${item.id}`)}
-                >
-                  <span>
-                    <strong>{item.contractCode}</strong>
-                    <Status contract={item} />
-                  </span>
-                  <span>
-                    Phòng{" "}
-                    {item.roomNumber ||
-                      rooms.find((room) => room.id === item.roomId)
-                        ?.roomNumber ||
-                      "—"}{" "}
-                    · {item.tenants?.length || 0} người trong hợp đồng ·{" "}
-                    {item.tenants
-                      ?.map((tenant) => tenant.fullName)
-                      .join(", ") || "Chưa có người thuê"}
-                  </span>
-                  <span>
-                    {displayDate(item.startDate)} – {displayDate(item.endDate)}{" "}
-                    · {money(item.monthlyRent)}/tháng
-                  </span>
-                  {needsSettlement(item) && (
-                    <span className="ct-list-warning">
-                      Cần đối chiếu tất toán
-                    </span>
-                  )}
-                </button>
-              ))
+              shownContracts.map((item) => {
+                const roomNo = roomNumberOf(item);
+                const sortedTenants = item.tenants || [];
+                const primaryTenant =
+                  sortedTenants.find((t) => t.isContactPerson) || sortedTenants[0];
+                const extraCount = Math.max(0, sortedTenants.length - 1);
+                const expDays = isExpiringSoon(item) ? daysUntil(item.endDate) : null;
+                const upcoming = isUpcoming(item);
+                const hasWarning = needsSettlement(item);
+
+                return (
+                  <button
+                    className="ct-list-card"
+                    key={item.id}
+                    type="button"
+                    onClick={() => routeTo(navigate, `/${propertyId}/${item.id}`)}
+                  >
+                    {/* Cụm trái: Badge phòng + Mã HĐ + Người thuê */}
+                    <div className="ct-card-left">
+                      <span className="ct-room-badge">P.{roomNo}</span>
+                      <div className="ct-card-identity">
+                        <strong className="ct-card-code">{item.contractCode}</strong>
+                        <span className="ct-card-tenants">
+                          <Users size={14} aria-hidden="true" />
+                          <span>
+                            {primaryTenant
+                              ? `${primaryTenant.fullName}${extraCount > 0 ? ` (+${extraCount})` : ""}`
+                              : "Chưa có người thuê"}
+                            {sortedTenants.length > 0 ? ` · ${sortedTenants.length} người` : ""}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Cụm giữa: Thời hạn + Tag phụ / Lý do đối chiếu */}
+                    <div className="ct-card-mid">
+                      <span className="ct-card-dates">
+                        <CalendarDays size={14} aria-hidden="true" />
+                        <span>
+                          {displayDate(item.startDate)} – {displayDate(item.endDate)}
+                        </span>
+                      </span>
+                      <div className="ct-card-tags">
+                        {upcoming && (
+                          <span className="ct-subtag ct-subtag--amber">
+                            Chưa đến ngày ở
+                          </span>
+                        )}
+                        {expDays !== null && (
+                          <span className="ct-subtag ct-subtag--amber">
+                            {expDays === 0 ? "Hết hạn hôm nay" : `Sắp hết hạn · còn ${expDays} ngày`}
+                          </span>
+                        )}
+                        {hasWarning && (
+                          <span className="ct-list-warning">
+                            {settlementReasons(item)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Cụm phải: Trạng thái + Giá thuê + Tiền cọc + Chevron */}
+                    <div className="ct-card-right">
+                      <div className="ct-card-status-wrap">
+                        <Status contract={item} />
+                      </div>
+                      <div className="ct-card-money">
+                        <strong>
+                          {money(item.monthlyRent)}
+                          <small>/tháng</small>
+                        </strong>
+                        {Number(item.depositAmount) > 0 && (
+                          <span>Cọc {money(item.depositAmount)}</span>
+                        )}
+                      </div>
+                      <ChevronRight className="ct-card-chevron" size={18} aria-hidden="true" />
+                    </div>
+                  </button>
+                );
+              })
             ) : (
               <div className="contract-empty">
                 <FileText size={28} />
                 <strong>
                   {contracts.length
-                    ? "Không tìm thấy hợp đồng"
+                    ? "Không tìm thấy hợp đồng phù hợp"
                     : "Chưa có hợp đồng"}
                 </strong>
                 <p>
                   {contracts.length
-                    ? "Thử đổi bộ lọc hoặc từ khóa."
+                    ? "Thử đổi thẻ lọc, trạng thái hoặc từ khóa tìm kiếm."
                     : "Tạo hợp đồng đầu tiên cho khu trọ."}
                 </p>
+                {contracts.length > 0 && (filter !== "all" || contractSearch) && (
+                  <button
+                    type="button"
+                    className="contract-button contract-button--secondary"
+                    onClick={() => {
+                      setFilter("all");
+                      setContractSearch("");
+                    }}
+                  >
+                    Xem tất cả hợp đồng
+                  </button>
+                )}
               </div>
             )}
           </section>

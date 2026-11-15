@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
+  DoorOpen,
   FilePlus,
   Plus,
+  RotateCcw,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import { billingApi } from "../../services/api/billingApi";
 import BillingInputs from "./BillingInputs";
@@ -350,6 +353,8 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
     setRoomId(item.roomId);
     setContractId(item.contractId);
     setPreview(null);
+    // TODO: nếu thiếu chỉ số điện nước riêng lẻ, mở luồng nhập chỉ số chuyên biệt khi được bổ sung;
+    // tạm thời điều hướng về tab "Giá và dịch vụ" để kiểm tra đơn giá và dịch vụ phòng.
     if (item.status === "MissingInputs" || item.status === "NeedsAttention")
       setTab("inputs");
     else {
@@ -400,7 +405,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
           className={tab === "inputs" ? "is-active" : ""}
           onClick={() => setTab("inputs")}
         >
-          Giá, chỉ số và dịch vụ
+          Giá và dịch vụ
         </button>
       </div>
       {!propertyId && !loading && (
@@ -411,15 +416,9 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
           propertyId={propertyId}
           rooms={rooms}
           initialRoomId={roomId}
-          initialPeriod={month}
           onChanged={() => {
             setPreview(null);
             setRevision((value) => value + 1);
-          }}
-          onReadingSaved={() => {
-            setTab("invoices");
-            setPreviewRequested(true);
-            setActiveCreateModal("monthly");
           }}
         />
       )}
@@ -634,7 +633,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                 {!preview && (
                   <p className="bill-hint" style={{ marginTop: "12px" }}>
                     Cần có giá điện nước và chỉ số của cả điện, nước cho kỳ này.
-                    Chọn tab “Giá, chỉ số và dịch vụ” để nhập.
+                    Kiểm tra đơn giá tại tab “Giá và dịch vụ”.
                   </p>
                 )}
               </div>
@@ -691,6 +690,8 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                 </p>
                 <OneOffInvoiceForm
                   propertyId={propertyId}
+                  properties={properties}
+                  rooms={rooms}
                   contracts={contracts}
                   roomName={roomName}
                   onCreated={(result) => {
@@ -704,12 +705,22 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
           )}
 
           <section className="bill-card">
-            <div className="bill-toolbar">
-              <div>
+            <div className="bill-card-head">
+              <div className="bill-card-head__title">
                 <h2>Danh sách hóa đơn</h2>
-                {roomId && <p>Đang xem hóa đơn phòng {roomName(roomId)}.</p>}
+                <p>
+                  {roomId ? (
+                    <>Đang xem hóa đơn <strong>Phòng {roomName(roomId)}</strong>{listPeriod ? ` · Kỳ ${listPeriod}` : ""}.</>
+                  ) : listPeriod ? (
+                    <>Đang lọc hóa đơn trong kỳ <strong>{listPeriod}</strong>.</>
+                  ) : (
+                    "Theo dõi tình trạng thanh toán, phát hành và công nợ của các phòng"
+                  )}
+                </p>
               </div>
+            </div>
 
+            <div className="bill-toolbar">
               {/* Status Pill Filter Tabs */}
               <div
                 className="bill-filter-pills"
@@ -743,36 +754,88 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                 ))}
               </div>
 
-              {/* Dropdowns */}
+              {/* Bộ chọn phòng và kỳ tháng */}
               <div className="bill-filter-controls">
-                <select
-                  className="bill-filter-select"
-                  aria-label="Lọc theo phòng"
-                  value={roomId}
-                  onChange={(event) => {
-                    setRoomId(event.target.value);
-                    setPage(1);
-                  }}
-                >
-                  <option value="">Tất cả phòng</option>
-                  {rooms.map((room) => (
-                    <option key={room.id} value={room.id}>
-                      {room.roomNumber}
-                      {room.roomName ? ` · ${room.roomName}` : ""}
-                    </option>
-                  ))}
-                </select>
+                <div className={`bill-filter-item ${roomId ? "is-active" : ""}`}>
+                  <span className="bill-filter-item__icon" aria-hidden="true">
+                    <DoorOpen size={16} />
+                  </span>
+                  <select
+                    className="bill-filter-select"
+                    aria-label="Lọc theo phòng"
+                    value={roomId}
+                    onChange={(event) => {
+                      setRoomId(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">Tất cả phòng ({rooms.length})</option>
+                    {rooms.map((room) => (
+                      <option key={room.id} value={room.id}>
+                        Phòng {room.roomNumber}
+                        {room.roomName ? ` · ${room.roomName}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {roomId && (
+                    <button
+                      type="button"
+                      className="bill-filter-clear-btn"
+                      title="Bỏ lọc theo phòng"
+                      onClick={() => {
+                        setRoomId("");
+                        setPage(1);
+                      }}
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
 
-                <input
-                  type="month"
-                  className="bill-filter-month"
-                  aria-label="Lọc theo kỳ tháng"
-                  value={listPeriod}
-                  onChange={(event) => {
-                    setListPeriod(event.target.value);
-                    setPage(1);
-                  }}
-                />
+                <div className={`bill-filter-item ${listPeriod ? "is-active" : ""}`}>
+                  <span className="bill-filter-item__icon" aria-hidden="true">
+                    <Calendar size={16} />
+                  </span>
+                  <input
+                    type="month"
+                    className="bill-filter-month"
+                    aria-label="Lọc theo kỳ tháng"
+                    value={listPeriod}
+                    onChange={(event) => {
+                      setListPeriod(event.target.value);
+                      setPage(1);
+                    }}
+                  />
+                  {listPeriod && (
+                    <button
+                      type="button"
+                      className="bill-filter-clear-btn"
+                      title="Bỏ lọc theo kỳ tháng"
+                      onClick={() => {
+                        setListPeriod("");
+                        setPage(1);
+                      }}
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+
+                {(roomId || listPeriod) && (
+                  <button
+                    type="button"
+                    className="bill-filter-reset-btn"
+                    title="Đặt lại toàn bộ bộ lọc"
+                    onClick={() => {
+                      setRoomId("");
+                      setListPeriod("");
+                      setPage(1);
+                    }}
+                  >
+                    <RotateCcw size={13} />
+                    <span>Đặt lại</span>
+                  </button>
+                )}
               </div>
             </div>
             {loading ? (

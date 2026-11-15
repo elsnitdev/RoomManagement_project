@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -7,6 +7,8 @@ import {
   CalendarDays,
   ChevronDown,
   DoorOpen,
+  FileText,
+  Landmark,
   MapPin,
   Pencil,
   Plus,
@@ -323,8 +325,9 @@ function PropertyList({ navigate, notify }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [creating, setCreating] = useState(false);
-  const [expandedPropertyId, setExpandedPropertyId] = useState(null);
-  const [rulesPropertyId, setRulesPropertyId] = useState("");
+  const [rulesModalProperty, setRulesModalProperty] = useState(null);
+  const rulesCloseRef = useRef(null);
+  const rulesOpenerRef = useRef(null);
   const query = useApiQuery(
     `properties:${user?.id}:list:${page}:${search}:${status}`,
     () =>
@@ -338,28 +341,39 @@ function PropertyList({ navigate, notify }) {
   );
   const properties = query.data?.data || [];
   const meta = query.data?.meta;
-  const rulesProperties = useApiQuery(
-    `properties:${user?.id}:rules-selector`,
-    async () => {
-      const items = [];
-      for (let currentPage = 1; ; currentPage += 1) {
-        const result = await listProperties({
-          page: currentPage,
-          pageSize: 100,
-        });
-        const rows = result.data || [];
-        items.push(...rows);
-        if (
-          !rows.length ||
-          (result.meta?.totalPages != null
-            ? currentPage >= result.meta.totalPages
-            : rows.length < 100)
-        )
-          return items;
-      }
-    },
-    { enabled: Boolean(user) },
-  );
+
+  function openRulesModal(property, openerEl) {
+    rulesOpenerRef.current = openerEl || null;
+    setRulesModalProperty({
+      id: property.id,
+      name: property.name,
+      isActive: property.isActive,
+    });
+  }
+
+  function closeRulesModal() {
+    setRulesModalProperty(null);
+    const opener = rulesOpenerRef.current;
+    rulesOpenerRef.current = null;
+    if (opener && typeof opener.focus === "function") {
+      requestAnimationFrame(() => opener.focus());
+    }
+  }
+
+  useEffect(() => {
+    if (!rulesModalProperty) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    rulesCloseRef.current?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") closeRulesModal();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [rulesModalProperty]);
 
   function applySearch(event) {
     event.preventDefault();
@@ -479,61 +493,80 @@ function PropertyList({ navigate, notify }) {
         ) : (
           <div className="pm-property-grid">
             {properties.map((property) => {
-              const expanded = expandedPropertyId === property.id;
+              const hasBank = Boolean(
+                property.bankName && property.bankAccountNumber,
+              );
+              const createdLabel = dateText(property.createdAt);
+              const updatedLabel = property.updatedAt
+                ? dateText(property.updatedAt)
+                : "";
               return (
                 <article className="pm-property-card" key={property.id}>
-                  <span className="pm-card-icon">
-                    <Building2 size={23} aria-hidden="true" />
-                  </span>
-                  <div className="pm-property-card-main">
-                    <h3>{property.name}</h3>
-                    <p className="pm-address">
-                      <MapPin size={14} aria-hidden="true" />
-                      {property.address}
-                    </p>
-                  </div>
-                  <div className="pm-property-card-meta">
+                  <header className="pm-property-card__head">
+                    <span className="pm-card-icon">
+                      <Building2 size={21} aria-hidden="true" />
+                    </span>
+                    <div className="pm-property-card__title-wrap">
+                      <h3>{property.name}</h3>
+                      <p className="pm-address">
+                        <MapPin size={14} aria-hidden="true" />
+                        <span>{property.address}</span>
+                      </p>
+                    </div>
                     <Status active={property.isActive} />
-                    <span>Tạo ngày {dateText(property.createdAt)}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="pm-text-action"
-                    aria-expanded={expanded}
-                    aria-controls={`pm-property-preview-${property.id}`}
-                    onClick={() =>
-                      setExpandedPropertyId(expanded ? null : property.id)
-                    }
-                  >
-                    {expanded ? "Ẩn chi tiết" : "Xem chi tiết"}{" "}
-                    <ChevronDown size={17} aria-hidden="true" />
-                  </button>
-                  <div
-                    id={`pm-property-preview-${property.id}`}
-                    className={`pm-property-card-reveal${expanded ? " is-open" : ""}`}
-                    aria-hidden={!expanded}
-                    inert={!expanded}
-                  >
-                    <div className="pm-property-card-reveal-inner">
-                      <div>
-                        <span>Mô tả khu trọ</span>
-                        <p>
-                          {property.description ||
-                            "Chưa có mô tả cho khu trọ này."}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="pm-secondary-action"
-                        onClick={() =>
-                          navigate(`landlord/properties/${property.id}`)
-                        }
+                  </header>
+
+                  <div className="pm-property-card__body">
+                    <p
+                      className={`pm-property-card__desc${
+                        property.description ? "" : " is-empty"
+                      }`}
+                    >
+                      {property.description || "Chưa có mô tả khu trọ"}
+                    </p>
+                    <div className="pm-property-card__chips">
+                      <span
+                        className={`pm-meta-chip ${
+                          hasBank ? "is-valid" : "is-warn"
+                        }`}
                       >
-                        Quản lý khu trọ, hóa đơn và phòng{" "}
-                        <ArrowRight size={16} aria-hidden="true" />
-                      </button>
+                        <Landmark size={13} aria-hidden="true" />
+                        {hasBank
+                          ? `TK nhận tiền: ${property.bankName} · ${property.bankAccountNumber}`
+                          : "Chưa cấu hình TK nhận tiền"}
+                      </span>
+                      <span className="pm-meta-chip">
+                        <CalendarDays size={13} aria-hidden="true" />
+                        Tạo ngày {createdLabel}
+                        {updatedLabel && updatedLabel !== createdLabel
+                          ? ` · Cập nhật ${updatedLabel}`
+                          : ""}
+                      </span>
                     </div>
                   </div>
+
+                  <footer className="pm-property-card__actions">
+                    <button
+                      type="button"
+                      className="pm-card-btn pm-card-btn--secondary"
+                      onClick={(event) =>
+                        openRulesModal(property, event.currentTarget)
+                      }
+                    >
+                      <FileText size={15} aria-hidden="true" />
+                      Điều khoản
+                    </button>
+                    <button
+                      type="button"
+                      className="pm-card-btn pm-card-btn--primary"
+                      onClick={() =>
+                        navigate(`landlord/properties/${property.id}`)
+                      }
+                    >
+                      Quản lý khu trọ
+                      <ArrowRight size={15} aria-hidden="true" />
+                    </button>
+                  </footer>
                 </article>
               );
             })}
@@ -541,51 +574,48 @@ function PropertyList({ navigate, notify }) {
         )}
         <Pagination page={page} meta={meta} onChange={setPage} />
       </section>
-      <section
-        className="pm-list-panel content-card"
-        aria-labelledby="property-rules-select-title"
-      >
-        <div className="pm-section-heading">
-          <div>
-            <h2 id="property-rules-select-title">Điều khoản khu trọ</h2>
-            <p>
-              Chọn khu trọ để xem, tạo hoặc cập nhật điều khoản đang áp dụng.
-            </p>
+
+      {rulesModalProperty && (
+        <div
+          className="pm-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeRulesModal();
+          }}
+        >
+          <div
+            className="pm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pm-rules-modal-title"
+          >
+            <header className="pm-modal__header">
+              <div>
+                <span className="pm-eyebrow">ĐIỀU KHOẢN KHU TRỌ</span>
+                <h2 id="pm-rules-modal-title">
+                  Điều khoản — {rulesModalProperty.name}
+                </h2>
+              </div>
+              <button
+                ref={rulesCloseRef}
+                type="button"
+                className="pm-modal__close"
+                aria-label="Đóng cửa sổ điều khoản"
+                onClick={closeRulesModal}
+              >
+                <X size={19} aria-hidden="true" />
+              </button>
+            </header>
+            <div className="pm-modal__body">
+              <PropertyRules
+                key={rulesModalProperty.id}
+                propertyId={rulesModalProperty.id}
+                navigate={navigate}
+                embedded
+              />
+            </div>
           </div>
         </div>
-        {rulesProperties.isLoading ? (
-          <p role="status">Đang tải khu trọ…</p>
-        ) : rulesProperties.error ? (
-          <Feedback
-            error={rulesProperties.error}
-            onRetry={rulesProperties.reload}
-          />
-        ) : (
-          <label className="pm-filter">
-            <span>Khu trọ</span>
-            <select
-              value={rulesPropertyId}
-              onChange={(event) => setRulesPropertyId(event.target.value)}
-            >
-              <option value="">Chọn khu trọ</option>
-              {(rulesProperties.data || []).map((property) => (
-                <option key={property.id} value={property.id}>
-                  {property.name}
-                  {property.isActive ? "" : " (tạm ngừng)"}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {rulesPropertyId && (
-          <PropertyRules
-            key={rulesPropertyId}
-            propertyId={rulesPropertyId}
-            navigate={navigate}
-            embedded
-          />
-        )}
-      </section>
+      )}
     </div>
   );
 }
