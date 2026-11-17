@@ -46,6 +46,15 @@ public sealed class RequestStore : IRequestStore
             .SingleOrDefaultAsync(p => p.Id == propertyId && p.OwnerUserId == landlordUserId && p.IsActive, ct);
     }
 
+    public async Task<IReadOnlyList<string>> GetActiveManagerIdsAsync(Guid propertyId, CancellationToken ct = default)
+    {
+        return await (from assignment in _db.PropertyManagerAssignments.AsNoTracking()
+                      join manager in _db.Users.AsNoTracking() on assignment.ManagerUserId equals manager.Id
+                      where assignment.PropertyId == propertyId && assignment.RevokedAt == null &&
+                            manager.IsActive && manager.DeletedAt == null
+                      select manager.Id).Distinct().ToListAsync(ct);
+    }
+
     public async Task<Request> AddRequestWithRecipientsAsync(
         Request request, IReadOnlyList<RequestRecipient> recipients, CancellationToken ct = default)
     {
@@ -54,6 +63,20 @@ public sealed class RequestStore : IRequestStore
         if (recipients.Count > 0)
         {
             _db.RequestRecipients.AddRange(recipients);
+            _db.UserNotifications.AddRange(recipients.Select(recipient => new UserNotification
+            {
+                Id = Guid.NewGuid(),
+                UserId = recipient.ReceiverUserId,
+                Type = request.Type == RequestType.Announcement ? "Announcement" : "TenantRequest",
+                Title = request.Title,
+                Message = request.Content,
+                PropertyId = request.PropertyId,
+                RequestId = request.Id,
+                ActorUserId = request.SenderUserId,
+                EventKey = $"{(request.Type == RequestType.Announcement ? "announcement" : "request")}:{request.Id}",
+                IsRead = false,
+                CreatedAt = request.CreatedAt
+            }));
         }
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -216,6 +239,9 @@ public sealed class RequestStore : IRequestStore
             rec.ReadAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(ct);
         }
+        await _db.UserNotifications.Where(n => n.RequestId == requestId && n.UserId == tenantUserId && !n.IsRead)
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsRead, true)
+                .SetProperty(n => n.ReadAt, DateTime.UtcNow), ct);
 
         var info = await (
             from req in _db.Requests.AsNoTracking()
@@ -259,7 +285,8 @@ public sealed class RequestStore : IRequestStore
             join prop in _db.Properties.AsNoTracking() on req.PropertyId equals prop.Id
             join sender in _db.Users.AsNoTracking() on req.SenderUserId equals sender.Id
             where rec.ReceiverUserId == landlordUserId &&
-                  prop.OwnerUserId == landlordUserId &&
+                   (prop.OwnerUserId == landlordUserId || _db.PropertyManagerAssignments.Any(a =>
+                       a.PropertyId == prop.Id && a.ManagerUserId == landlordUserId && a.RevokedAt == null)) &&
                   req.Type == RequestType.Request
             select new
             {
@@ -349,7 +376,8 @@ public sealed class RequestStore : IRequestStore
             join prop in _db.Properties on req.PropertyId equals prop.Id
             where req.Id == requestId &&
                   r.ReceiverUserId == landlordUserId &&
-                  prop.OwnerUserId == landlordUserId &&
+                   (prop.OwnerUserId == landlordUserId || _db.PropertyManagerAssignments.Any(a =>
+                       a.PropertyId == prop.Id && a.ManagerUserId == landlordUserId && a.RevokedAt == null)) &&
                   req.Type == RequestType.Request
             select r
         ).SingleOrDefaultAsync(ct);
@@ -363,6 +391,9 @@ public sealed class RequestStore : IRequestStore
             rec.ReadAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(ct);
         }
+        await _db.UserNotifications.Where(n => n.RequestId == requestId && n.UserId == landlordUserId && !n.IsRead)
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsRead, true)
+                .SetProperty(n => n.ReadAt, DateTime.UtcNow), ct);
 
         return await BuildLandlordRequestDtoAsync(requestId, rec, ct);
     }
@@ -376,7 +407,8 @@ public sealed class RequestStore : IRequestStore
             join prop in _db.Properties on req.PropertyId equals prop.Id
             where req.Id == requestId &&
                   r.ReceiverUserId == landlordUserId &&
-                  prop.OwnerUserId == landlordUserId &&
+                   (prop.OwnerUserId == landlordUserId || _db.PropertyManagerAssignments.Any(a =>
+                       a.PropertyId == prop.Id && a.ManagerUserId == landlordUserId && a.RevokedAt == null)) &&
                   req.Type == RequestType.Request
             select r
         ).SingleOrDefaultAsync(ct);

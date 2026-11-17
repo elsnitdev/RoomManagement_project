@@ -20,24 +20,25 @@ public sealed class InvoiceStore : IInvoiceStore
         var first = new DateOnly(year, month, 1);
         var last = first.AddMonths(1).AddDays(-1);
         var contracts = await (from contract in _db.Contracts.AsNoTracking()
-            join room in _db.Rooms.AsNoTracking() on contract.RoomId equals room.Id
-            join property in _db.Properties.AsNoTracking() on room.PropertyId equals property.Id
-            where property.Id == propertyId && property.OwnerUserId == ownerId && property.IsActive &&
-                contract.StartDate <= last &&
-                (contract.EndDate == null || contract.EndDate >= first) &&
-                (contract.ClosedOn == null || contract.ClosedOn >= first) &&
-                (contract.HandoverOn == null || contract.HandoverOn >= first) &&
-                (contract.Status == ContractStatus.Active || contract.Status == ContractStatus.PendingMoveOut ||
-                 contract.Status == ContractStatus.PendingSettlement || contract.Status == ContractStatus.Expired ||
-                 contract.Status == ContractStatus.Terminated)
-            orderby room.RoomNumber, contract.StartDate
-            select new { contract.Id, contract.RoomId, room.RoomNumber, contract.ContractCode })
+                               join room in _db.Rooms.AsNoTracking() on contract.RoomId equals room.Id
+                               join property in _db.Properties.AsNoTracking() on room.PropertyId equals property.Id
+                               where property.Id == propertyId && property.OwnerUserId == ownerId && property.IsActive &&
+                                   contract.StartDate <= last &&
+                                   (contract.EndDate == null || contract.EndDate >= first) &&
+                                   (contract.ClosedOn == null || contract.ClosedOn >= first) &&
+                                   (contract.HandoverOn == null || contract.HandoverOn >= first) &&
+                                   (contract.Status == ContractStatus.Active || contract.Status == ContractStatus.PendingMoveOut ||
+                                    contract.Status == ContractStatus.PendingSettlement || contract.Status == ContractStatus.Expired ||
+                                    contract.Status == ContractStatus.Terminated)
+                               orderby room.RoomNumber, contract.StartDate
+                               select new { contract.Id, contract.RoomId, room.RoomNumber, contract.ContractCode })
             .ToListAsync(ct);
         var ids = contracts.Select(x => x.Id).ToArray();
         var invoices = await _db.Invoices.AsNoTracking().Where(x => ids.Contains(x.ContractId) &&
             x.InvoiceType == InvoiceType.Monthly && x.BillingYear == year && x.BillingMonth == month &&
             x.Status != InvoiceStatus.Cancelled).Select(x => new { x.ContractId, x.Id, x.Status }).ToListAsync(ct);
-        return contracts.Select(x => {
+        return contracts.Select(x =>
+        {
             var invoice = invoices.FirstOrDefault(i => i.ContractId == x.Id);
             return new MonthlyBillingCandidate(x.Id, x.RoomId, x.RoomNumber, x.ContractCode,
                 invoice?.Id, invoice?.Status);
@@ -101,10 +102,10 @@ public sealed class InvoiceStore : IInvoiceStore
     public async Task<IReadOnlyList<InvoiceSummaryResult>> ListForContractAsync(Guid contractId, CancellationToken ct)
     {
         var rows = await (from invoice in _db.Invoices.AsNoTracking()
-            join balance in _db.InvoiceBalances.AsNoTracking() on invoice.Id equals balance.InvoiceId
-            where invoice.ContractId == contractId && invoice.Status != InvoiceStatus.Cancelled
-            orderby invoice.IssueDate descending, invoice.Id descending
-            select new { Invoice = invoice, Balance = balance }).ToListAsync(ct);
+                          join balance in _db.InvoiceBalances.AsNoTracking() on invoice.Id equals balance.InvoiceId
+                          where invoice.ContractId == contractId && invoice.Status != InvoiceStatus.Cancelled
+                          orderby invoice.IssueDate descending, invoice.Id descending
+                          select new { Invoice = invoice, Balance = balance }).ToListAsync(ct);
         return rows.Select(x => new InvoiceSummaryResult(x.Invoice, Balance(x.Balance))).ToList();
     }
 
@@ -204,7 +205,8 @@ public sealed class InvoiceStore : IInvoiceStore
                 reading.CurrentValue - reading.PreviousValue, unitPrice.Value, line?.Amount ?? 0);
         }
 
-        return detail with {
+        return detail with
+        {
             ElectricityReading = await ReadingAsync(UtilityType.Electricity, InvoiceItemType.Electricity),
             WaterReading = await ReadingAsync(UtilityType.Water, InvoiceItemType.Water)
         };
@@ -326,6 +328,17 @@ public sealed class InvoiceStore : IInvoiceStore
         }
         invoice.IssueDate = today;
         invoice.Status = InvoiceStatus.Issued;
+        if (invoice.InvoiceType == InvoiceType.Monthly)
+        {
+            var roomNumber = await _db.Rooms.AsNoTracking()
+                .Where(x => x.Id == invoice.RoomId).Select(x => x.RoomNumber).SingleOrDefaultAsync(ct);
+            var roomLabel = string.IsNullOrWhiteSpace(roomNumber) ? string.Empty : $" - Phòng {roomNumber}";
+            var roomText = string.IsNullOrWhiteSpace(roomNumber) ? string.Empty : $" cho phòng {roomNumber}";
+            await NotificationFactory.AddForContractMembersAsync(_db, invoice.ContractId,
+                "InvoiceIssued", $"Hóa đơn {invoice.InvoiceCode}{roomLabel} đã phát hành",
+                $"Hóa đơn tháng {invoice.BillingMonth}/{invoice.BillingYear} (mã {invoice.InvoiceCode}){roomText} đã phát hành. Số tiền: {invoice.TotalAmount:N0} đ. Hạn thanh toán: {invoice.DueDate:dd/MM/yyyy}.",
+                $"invoice-issued:{invoice.Id}", invoice.Id, ownerId, ct);
+        }
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return invoice;
@@ -405,7 +418,9 @@ public sealed class InvoiceStore : IInvoiceStore
             var amount = decimal.Round(item.Quantity * item.UnitPrice, 2, MidpointRounding.AwayFromZero);
             var entity = item.Id.HasValue ? editable[item.Id.Value] : new InvoiceItem
             {
-                Id = Guid.NewGuid(), InvoiceId = invoiceId, CreatedAt = now
+                Id = Guid.NewGuid(),
+                InvoiceId = invoiceId,
+                CreatedAt = now
             };
             entity.ItemType = item.Type;
             if (item.Type != InvoiceItemType.Service) entity.ReferenceId = null;
@@ -463,9 +478,14 @@ public sealed class InvoiceStore : IInvoiceStore
             throw Validation("ADJUSTMENT_EXCEEDS_TOTAL", "Tổng phải thu vượt giới hạn.");
         var adjustment = new InvoiceAdjustment
         {
-            Id = Guid.NewGuid(), InvoiceId = invoiceId, AdjustmentType = input.Type,
-            Amount = input.Amount, Reason = input.Reason, IdempotencyKey = input.IdempotencyKey,
-            CreatedByUserId = ownerId, CreatedAt = DateTime.UtcNow
+            Id = Guid.NewGuid(),
+            InvoiceId = invoiceId,
+            AdjustmentType = input.Type,
+            Amount = input.Amount,
+            Reason = input.Reason,
+            IdempotencyKey = input.IdempotencyKey,
+            CreatedByUserId = ownerId,
+            CreatedAt = DateTime.UtcNow
         };
         _db.InvoiceAdjustments.Add(adjustment);
         try { await _db.SaveChangesAsync(ct); await tx.CommitAsync(ct); }

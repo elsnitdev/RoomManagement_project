@@ -30,6 +30,9 @@ public sealed class RequestService : IRequestService
         return ownerId;
     }
 
+    private async Task<string> RequireRequestRecipientAsync(CancellationToken ct) =>
+        (await OperatorAccessGuard.RequireOperatorAsync(_currentLandlord, _landlordStore, ct)).ActorUserId;
+
     private static (string Title, string Content) ValidateTitleAndContent(string? rawTitle, string? rawContent)
     {
         var title = rawTitle?.Trim() ?? string.Empty;
@@ -113,7 +116,16 @@ public sealed class RequestService : IRequestService
             Status = RequestRecipientStatus.Open
         };
 
-        await _store.AddRequestWithRecipientsAsync(request, [recipient], ct);
+        var recipients = new List<RequestRecipient> { recipient };
+        foreach (var managerId in await _store.GetActiveManagerIdsAsync(targetStay.PropertyId, ct))
+        {
+            recipients.Add(new RequestRecipient
+            {
+                Id = Guid.NewGuid(), RequestId = request.Id, ReceiverUserId = managerId,
+                IsRead = false, Status = RequestRecipientStatus.Open
+            });
+        }
+        await _store.AddRequestWithRecipientsAsync(request, recipients, ct);
 
         return new TenantRequestItemDto(
             request.Id,
@@ -163,7 +175,7 @@ public sealed class RequestService : IRequestService
     public async Task<PageResult<LandlordRequestItemDto>> ListLandlordRequestsAsync(
         LandlordRequestFilter filter, CancellationToken ct = default)
     {
-        var landlordId = await RequireActiveLandlordAsync(ct);
+        var landlordId = await RequireRequestRecipientAsync(ct);
         ValidatePagination(filter.Page, filter.PageSize);
         var (items, total) = await _store.ListLandlordRequestsAsync(
             landlordId, filter, (filter.Page - 1) * filter.PageSize, filter.PageSize, ct);
@@ -172,7 +184,7 @@ public sealed class RequestService : IRequestService
 
     public async Task<LandlordRequestItemDto> GetLandlordRequestByIdAsync(Guid requestId, CancellationToken ct = default)
     {
-        var landlordId = await RequireActiveLandlordAsync(ct);
+        var landlordId = await RequireRequestRecipientAsync(ct);
         return await _store.GetLandlordRequestAndMarkReadAsync(requestId, landlordId, ct)
             ?? throw BusinessException.NotFound("Không tìm thấy yêu cầu.", "REQUEST_NOT_FOUND");
     }
@@ -180,7 +192,7 @@ public sealed class RequestService : IRequestService
     public async Task<LandlordRequestItemDto> UpdateLandlordRequestStatusAsync(
         Guid requestId, RequestRecipientStatus status, CancellationToken ct = default)
     {
-        var landlordId = await RequireActiveLandlordAsync(ct);
+        var landlordId = await RequireRequestRecipientAsync(ct);
         if (!Enum.IsDefined(status))
             throw BusinessException.BadRequest("Trạng thái xử lý không hợp lệ.", "INVALID_STATUS");
 

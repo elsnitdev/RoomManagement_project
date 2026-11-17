@@ -178,15 +178,8 @@ public sealed class ContractService
       throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_CANNOT_CANCEL", "Chỉ có thể hủy hợp đồng trước khi kích hoạt.");
     var expectedStatus = contract.Status;
     await _store.CloseSafelyAsync(contract, expectedStatus, ContractStatus.Cancelled,
-        VietnamDate.Today, null, ct);
+        VietnamDate.Today, null, ct, context.ActorUserId);
     await _store.RecordClosedActorAsync(contractId, context.ActorUserId, ct);
-    if (expectedStatus != ContractStatus.Draft)
-    {
-      await _store.NotifyContractTenantsAsync(contractId, "ContractCancelled",
-          "Đề nghị hợp đồng đã bị hủy",
-          $"Đề nghị hợp đồng {contract.ContractCode} đã bị phía chủ trọ hủy.",
-          context.ActorUserId, ct);
-    }
     return contract;
   }
 
@@ -197,12 +190,8 @@ public sealed class ContractService
     if (contract.Status != ContractStatus.Active || contract.StartDate > VietnamDate.Today ||
         string.IsNullOrWhiteSpace(reason) || reason.Length > 1000)
       throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_CANNOT_TERMINATE", "Không thể kết thúc hợp đồng tại thời điểm này.");
-    await _store.StartEarlyExitAsync(contract, reason.Trim(), ct);
+    await _store.StartEarlyExitAsync(contract, reason.Trim(), ct, context.ActorUserId);
     await _store.RecordClosedActorAsync(contractId, context.ActorUserId, ct);
-    await _store.NotifyContractTenantsAsync(contractId, "ContractTerminated",
-        "Thông báo kết thúc hợp đồng",
-        $"Hợp đồng {contract.ContractCode} đã được ghi nhận kết thúc/trả phòng. Lý do: {reason.Trim()}.",
-        context.ActorUserId, ct);
     return contract;
   }
 
@@ -213,12 +202,8 @@ public sealed class ContractService
     if (contract.Status != ContractStatus.PendingMoveOut || handoverOn < contract.StartDate ||
         handoverOn > VietnamDate.Today || contract.EndDate is { } end && handoverOn > end)
       throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_HANDOVER_INVALID", "Ngày bàn giao không hợp lệ.");
-    await _store.HandoverAsync(contract, handoverOn, ct);
+    await _store.HandoverAsync(contract, handoverOn, ct, context.ActorUserId);
     await _store.RecordClosedActorAsync(contractId, context.ActorUserId, ct);
-    await _store.NotifyContractTenantsAsync(contractId, "ContractMoveOut",
-        "Xác nhận bàn giao trả phòng",
-        $"Hợp đồng {contract.ContractCode} đã hoàn tất bàn giao phòng ngày {handoverOn:yyyy-MM-dd}.",
-        context.ActorUserId, ct);
     return contract;
   }
 
@@ -251,12 +236,8 @@ public sealed class ContractService
         disposition is not ("Refunded" or "Offset" or "NoDeposit") || refundAmount < 0 ||
         note is { Length: > 1000 })
       throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_SETTLEMENT_INVALID", "Thông tin tất toán không hợp lệ.");
-    await _store.CompleteSettlementAsync(contract, disposition, refundAmount, note, ct);
+    await _store.CompleteSettlementAsync(contract, disposition, refundAmount, note, ct, context.ActorUserId);
     await _store.RecordClosedActorAsync(contractId, context.ActorUserId, ct);
-    await _store.NotifyContractTenantsAsync(contractId, "ContractSettled",
-        "Hoàn tất tất toán hợp đồng",
-        $"Hợp đồng {contract.ContractCode} đã hoàn tất tất toán tiền cọc ({disposition}).",
-        context.ActorUserId, ct);
     return contract;
   }
 

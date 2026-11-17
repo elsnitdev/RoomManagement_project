@@ -33,6 +33,8 @@ import LandlordContracts from "./components/contracts/LandlordContracts";
 import { PropertyRules } from "./components/contracts/ContractRules";
 import TenantBilling from "./components/billing/TenantBilling";
 import AdminServices from "./components/billing/AdminServices";
+import NotificationCenter from "./components/NotificationCenter";
+import { notificationApi } from "./services/api/notificationApi";
 import {
   initialApprovals,
   contracts,
@@ -125,6 +127,7 @@ const titleMap = {
   room: "Chi tiết phòng",
   tenants: "Hồ sơ người ở",
   notices: "Thông báo quan trọng",
+  notifications: "Thông báo",
   contracts: "Hợp đồng",
   billing: "Hóa đơn & công nợ",
   requests: "Yêu cầu người thuê",
@@ -137,6 +140,7 @@ export default function App() {
   const [route, setRoute] = useState(fromHash);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState("");
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [approvals, setApprovals] = useState(initialApprovals);
   const [users, setUsers] = useState(initialUsers);
   const [properties, setProperties] = useState(initialProperties);
@@ -213,6 +217,18 @@ export default function App() {
     }
   }, [canAccess, routeRole, rawPage]);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
+  async function refreshUnreadNotifications() {
+    try {
+      const result = await notificationApi.unreadCount();
+      setUnreadNotifications(result.data?.count || 0);
+    } catch { /* Keep navigation usable if the API is unavailable. */ }
+  }
+  useEffect(() => {
+    if (!isAuthenticated) { setUnreadNotifications(0); return; }
+    refreshUnreadNotifications();
+    const timer = setInterval(refreshUnreadNotifications, 30000);
+    return () => clearInterval(timer);
+  }, [isAuthenticated, route]);
   function notify(message) {
     setToast(message);
     clearTimeout(toastTimer.current);
@@ -384,6 +400,13 @@ export default function App() {
             </span>
           </div>
           <div className="topbar-right">
+            <button type="button" className="icon-button" onClick={() => navigate(`${activeRole}/notifications`)}
+              aria-label={`Thông báo, ${unreadNotifications} chưa đọc`} title="Thông báo">
+              <Bell size={20} aria-hidden="true" />
+              {unreadNotifications > 0 && <span style={{ fontSize: 12, fontWeight: 700 }}>
+                {unreadNotifications > 99 ? '99+' : unreadNotifications}
+              </span>}
+            </button>
             {user?.role === "Landlord" && user?.landlordCode && (
               <span className="topbar-code-chip">
                 Mã chủ trọ: <strong>{user.landlordCode}</strong>
@@ -430,7 +453,9 @@ export default function App() {
           tabIndex="-1"
           className={`main-content${page === "properties" && propertySection === "rooms" && roomAction === "new" ? " main-content--room-batch" : ""}`}
         >
-          {activeRole === "tenant" && page === "billing" ? (
+          {page === "notifications" || page === "notices" ? (
+            <NotificationCenter role={user?.role} onReadChange={refreshUnreadNotifications} />
+          ) : activeRole === "tenant" && page === "billing" ? (
             <TenantBilling />
           ) : activeRole === "tenant" ? (
             <Tenant

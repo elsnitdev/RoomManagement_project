@@ -48,8 +48,11 @@ public sealed class MyNotificationsController : ControllerBase
                 n.Title,
                 n.Message,
                 n.ContractId,
+                n.InvoiceId,
+                n.RequestId,
                 n.PropertyId,
                 n.ActorUserId,
+                n.EmailStatus,
                 n.IsRead,
                 n.ReadAt,
                 n.CreatedAt
@@ -61,6 +64,16 @@ public sealed class MyNotificationsController : ControllerBase
             new PageMeta(validPage, validPageSize, total, (int)Math.Ceiling((double)total / validPageSize))));
     }
 
+    [HttpGet("unread-count")]
+    public async Task<IActionResult> UnreadCount(CancellationToken ct)
+    {
+        var userId = User.FindFirst("sub")?.Value;
+        if (string.IsNullOrEmpty(userId)) return Forbid();
+        var count = await _db.UserNotifications.AsNoTracking()
+            .CountAsync(n => n.UserId == userId && !n.IsRead, ct);
+        return Ok(new ApiResponse<object>(new { count }));
+    }
+
     [HttpPost("{id:guid}/read")]
     public async Task<IActionResult> MarkRead(Guid id, CancellationToken ct)
     {
@@ -69,6 +82,9 @@ public sealed class MyNotificationsController : ControllerBase
             return Forbid();
 
         var now = DateTime.UtcNow;
+        var requestId = await _db.UserNotifications.AsNoTracking()
+            .Where(n => n.Id == id && n.UserId == userId).Select(n => n.RequestId)
+            .SingleOrDefaultAsync(ct);
         var updated = await _db.UserNotifications
             .Where(n => n.Id == id && n.UserId == userId && !n.IsRead)
             .ExecuteUpdateAsync(s => s
@@ -81,6 +97,10 @@ public sealed class MyNotificationsController : ControllerBase
             if (!exists)
                 return NotFound();
         }
+        if (requestId is { } sourceId)
+            await _db.RequestRecipients.Where(r => r.RequestId == sourceId && r.ReceiverUserId == userId && !r.IsRead)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.IsRead, true)
+                    .SetProperty(r => r.ReadAt, now), ct);
 
         return Ok(new ApiResponse<object>(new { id, isRead = true }));
     }
@@ -98,6 +118,11 @@ public sealed class MyNotificationsController : ControllerBase
             .ExecuteUpdateAsync(s => s
                 .SetProperty(n => n.IsRead, true)
                 .SetProperty(n => n.ReadAt, now), ct);
+        var requestIds = _db.UserNotifications.AsNoTracking()
+            .Where(n => n.UserId == userId && n.RequestId != null).Select(n => n.RequestId);
+        await _db.RequestRecipients.Where(r => r.ReceiverUserId == userId && requestIds.Contains(r.RequestId) && !r.IsRead)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.IsRead, true)
+                .SetProperty(r => r.ReadAt, now), ct);
 
         return Ok(new ApiResponse<object>(new { readAll = true }));
     }

@@ -13,9 +13,18 @@ public sealed class UserNotificationConfiguration : IEntityTypeConfiguration<Use
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.UserId).HasColumnType("nvarchar(450)").IsRequired();
         builder.Property(e => e.Type).HasColumnType("nvarchar(60)").IsRequired();
-        builder.Property(e => e.Title).HasColumnType("nvarchar(200)").IsRequired();
-        builder.Property(e => e.Message).HasColumnType("nvarchar(1000)").IsRequired();
+        builder.Property(e => e.Title).HasColumnType("nvarchar(250)").IsRequired();
+        builder.Property(e => e.Message).HasColumnType("nvarchar(4000)").IsRequired();
         builder.Property(e => e.ContractId).HasColumnType("uniqueidentifier");
+        builder.Property(e => e.InvoiceId).HasColumnType("uniqueidentifier");
+        builder.Property(e => e.RequestId).HasColumnType("uniqueidentifier");
+        builder.Property(e => e.EventKey).HasColumnType("nvarchar(200)");
+        builder.Property(e => e.EmailStatus).HasColumnType("nvarchar(25)");
+        builder.Property(e => e.EmailAddress).HasColumnType("nvarchar(256)");
+        builder.Property(e => e.EmailAttempts).HasColumnType("int");
+        builder.Property(e => e.EmailNextAttemptAt).HasColumnType("datetime2(0)");
+        builder.Property(e => e.EmailSentAt).HasColumnType("datetime2(0)");
+        builder.Property(e => e.EmailError).HasColumnType("nvarchar(500)");
         builder.Property(e => e.PropertyId).HasColumnType("uniqueidentifier");
         builder.Property(e => e.ActorUserId).HasColumnType("nvarchar(450)");
         builder.Property(e => e.IsRead).HasColumnType("bit").IsRequired().HasDefaultValueSql(@"0", "DF_UserNotifications_IsRead");
@@ -24,5 +33,7 @@ public sealed class UserNotificationConfiguration : IEntityTypeConfiguration<Use
 
         builder.HasOne<AppUser>().WithMany().HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_UserNotifications_Users");
         builder.HasIndex(e => new { e.UserId, e.IsRead, e.CreatedAt }).HasDatabaseName("IX_UserNotifications_User_Read_CreatedAt");
+        builder.HasIndex(e => new { e.UserId, e.EventKey }).IsUnique()
+            .HasFilter("[EventKey] IS NOT NULL").HasDatabaseName("UX_UserNotifications_User_EventKey");
     }
 }

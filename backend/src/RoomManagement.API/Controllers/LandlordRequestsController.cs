@@ -10,7 +10,7 @@ using RoomManagement.Domain.Enums;
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRoles.Landlord)]
+[Authorize(Roles = UserRoles.LandlordOrManager)]
 public sealed class LandlordRequestsController : ControllerBase
 {
     private readonly IRequestService _service;
@@ -64,6 +64,7 @@ public sealed class LandlordRequestsController : ControllerBase
     }
 
     [HttpGet("api/properties/{propertyId:guid}/announcement-recipients")]
+    [Authorize(Roles = UserRoles.Landlord)]
     public async Task<IActionResult> GetAnnouncementRecipients(
         Guid propertyId,
         CancellationToken ct = default)
@@ -73,6 +74,7 @@ public sealed class LandlordRequestsController : ControllerBase
     }
 
     [HttpPost("api/properties/{propertyId:guid}/announcements")]
+    [Authorize(Roles = UserRoles.Landlord)]
     public async Task<IActionResult> CreateAnnouncement(
         Guid propertyId,
         [FromBody] CreateLandlordAnnouncementRequest request,
@@ -83,6 +85,7 @@ public sealed class LandlordRequestsController : ControllerBase
     }
 
     [HttpGet("api/properties/{propertyId:guid}/announcements")]
+    [Authorize(Roles = UserRoles.Landlord)]
     public async Task<IActionResult> ListAnnouncements(
         Guid propertyId,
         [FromQuery] int page = 1,

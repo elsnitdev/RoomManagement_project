@@ -8,6 +8,8 @@ namespace RoomManagement.Tests;
 
 internal sealed class TestRequestStore : IRequestStore
 {
+    public Task<IReadOnlyList<string>> GetActiveManagerIdsAsync(Guid propertyId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
     public ConcurrentDictionary<Guid, Property> Properties { get; } = new();
     public ConcurrentDictionary<string, List<TenantActiveStayInfo>> ActiveStaysByTenant { get; } = new(StringComparer.Ordinal);
     public ConcurrentDictionary<Guid, List<AnnouncementRecipientOptionDto>> EligibleRecipientsByProperty { get; } = new();

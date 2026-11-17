@@ -542,6 +542,10 @@ public sealed class ContractStore : IContractStore
       CreatedAt = now
     });
 
+    await NotifyContractTenantsAsync(trackedContract.Id, "ContractActivated",
+        "Hợp đồng đã được kích hoạt",
+        $"Hợp đồng {trackedContract.ContractCode} đã được phía chủ trọ đối ký và có hiệu lực.",
+        actorUserId, ct);
     await SaveAsync(ct);
     await transaction.CommitAsync(ct);
 
@@ -550,16 +554,12 @@ public sealed class ContractStore : IContractStore
     contract.OperatorConfirmedByUserId = trackedContract.OperatorConfirmedByUserId;
     contract.UpdatedAt = trackedContract.UpdatedAt;
 
-    await NotifyContractTenantsAsync(trackedContract.Id, "ContractActivated",
-        "Hợp đồng đã được kích hoạt",
-        $"Hợp đồng {trackedContract.ContractCode} đã được phía chủ trọ đối ký và có hiệu lực.",
-        actorUserId, ct);
   }
 
   //CloseSafelyAsync – Đóng hợp đồng an toàn, cập nhật trạng thái, ngày đóng và lý do.
   /// <inheritdoc />
   public async Task CloseSafelyAsync(Contract contract, ContractStatus expectedStatus,
-    ContractStatus newStatus, DateOnly closedOn, string? reason, CancellationToken ct)
+    ContractStatus newStatus, DateOnly closedOn, string? reason, CancellationToken ct, string? actorUserId = null)
   {
     await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
     await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {contract.RoomId}")
@@ -590,11 +590,14 @@ public sealed class ContractStore : IContractStore
     contract.ClosedOn = closedOn;
     contract.ClosureReason = reason;
     contract.UpdatedAt = DateTime.UtcNow;
+    if (expectedStatus != ContractStatus.Draft && newStatus == ContractStatus.Cancelled)
+      await NotifyContractTenantsAsync(contract.Id, "ContractCancelled", "Đề nghị hợp đồng đã bị hủy",
+          $"Đề nghị hợp đồng {contract.ContractCode} đã bị phía chủ trọ hủy.", actorUserId, ct);
     await SaveAsync(ct);
     await transaction.CommitAsync(ct);
   }
 
-  public async Task StartEarlyExitAsync(Contract contract, string reason, CancellationToken ct)
+  public async Task StartEarlyExitAsync(Contract contract, string reason, CancellationToken ct, string? actorUserId = null)
   {
     await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
     await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {contract.RoomId}")
@@ -604,11 +607,13 @@ public sealed class ContractStore : IContractStore
     contract.Status = ContractStatus.PendingMoveOut;
     contract.ClosureReason = reason;
     contract.UpdatedAt = DateTime.UtcNow;
+    await NotifyContractTenantsAsync(contract.Id, "ContractTerminated", "Thông báo kết thúc hợp đồng",
+        $"Hợp đồng {contract.ContractCode} đã được ghi nhận kết thúc/trả phòng. Lý do: {reason}.", actorUserId, ct);
     await SaveAsync(ct);
     await tx.CommitAsync(ct);
   }
 
-  public async Task HandoverAsync(Contract contract, DateOnly handoverOn, CancellationToken ct)
+  public async Task HandoverAsync(Contract contract, DateOnly handoverOn, CancellationToken ct, string? actorUserId = null)
   {
     await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
     await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {contract.RoomId}")
@@ -636,6 +641,8 @@ public sealed class ContractStore : IContractStore
     contract.HandoverOn = handoverOn;
     contract.Status = ContractStatus.PendingSettlement;
     contract.UpdatedAt = DateTime.UtcNow;
+    await NotifyContractTenantsAsync(contract.Id, "ContractMoveOut", "Xác nhận bàn giao trả phòng",
+        $"Hợp đồng {contract.ContractCode} đã hoàn tất bàn giao phòng ngày {handoverOn:yyyy-MM-dd}.", actorUserId, ct);
     await SaveAsync(ct);
     await tx.CommitAsync(ct);
   }
@@ -686,7 +693,7 @@ public sealed class ContractStore : IContractStore
           .ToListAsync(ct);
 
   public async Task CompleteSettlementAsync(Contract contract, string disposition, decimal refundAmount,
-      string? note, CancellationToken ct)
+      string? note, CancellationToken ct, string? actorUserId = null)
   {
     await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
     await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {contract.RoomId}")
@@ -728,6 +735,8 @@ public sealed class ContractStore : IContractStore
     contract.Status = ContractStatus.Terminated;
     contract.ClosedOn = VietnamDate.Today;
     contract.UpdatedAt = DateTime.UtcNow;
+    await NotifyContractTenantsAsync(contract.Id, "ContractSettled", "Hoàn tất tất toán hợp đồng",
+        $"Hợp đồng {contract.ContractCode} đã hoàn tất tất toán tiền cọc ({disposition}).", actorUserId, ct);
     await SaveAsync(ct);
     await tx.CommitAsync(ct);
   }
@@ -1200,23 +1209,15 @@ public sealed class ContractStore : IContractStore
       CreatedAt = now
     });
 
+    var termText = tracked.EndDate is { } endDate
+        ? $"từ {tracked.StartDate:dd/MM/yyyy} đến {endDate:dd/MM/yyyy}"
+        : $"từ {tracked.StartDate:dd/MM/yyyy} (không thời hạn)";
+    await NotificationFactory.AddForContractMembersAsync(_db, tracked.Id,
+        "ContractOfferSent", $"Đề nghị hợp đồng {tracked.ContractCode}",
+        $"Bạn nhận được đề nghị hợp đồng {tracked.ContractCode} (phiên bản {tracked.OfferVersion}) cho phòng {roomInfo.RoomNumber}. Thời hạn thuê: {termText}. Giá thuê: {tracked.MonthlyRent:N0} đ/tháng. Tiền cọc: {tracked.DepositAmount:N0} đ.",
+        $"contract-offer:{tracked.Id}:{tracked.OfferVersion}", null, actorUserId, ct);
     await SaveAsync(ct);
     await transaction.CommitAsync(ct);
-
-    _db.UserNotifications.Add(new UserNotification
-    {
-      Id = Guid.NewGuid(),
-      UserId = reps[0].UserId!,
-      Type = "ContractOfferSent",
-      Title = "Đề nghị hợp đồng mới",
-      Message = $"Bạn nhận được đề nghị hợp đồng {tracked.ContractCode} (phiên bản {tracked.OfferVersion}) cho phòng {roomInfo.RoomNumber}.",
-      ContractId = tracked.Id,
-      PropertyId = roomInfo.PropertyId,
-      ActorUserId = actorUserId,
-      IsRead = false,
-      CreatedAt = now
-    });
-    await _db.SaveChangesAsync(ct);
 
     return tracked;
   }
@@ -1421,7 +1422,7 @@ public sealed class ContractStore : IContractStore
 
     var userIds = await (from link in _db.ContractTenants.AsNoTracking()
                          join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
-                         where link.ContractId == contractId && profile.UserId != null
+                          where link.ContractId == contractId && profile.UserId != null
                          select profile.UserId!)
                          .Distinct()
                          .ToListAsync(ct);

@@ -2199,6 +2199,30 @@ namespace RoomManagement.Data.Migrations
                         .HasColumnType("datetime2(0)")
                         .HasDefaultValueSql("SYSUTCDATETIME()", "DF_UserNotifications_CreatedAt");
 
+                    b.Property<string>("EventKey")
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("EmailAddress")
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("EmailAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EmailError")
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("EmailNextAttemptAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<DateTime?>("EmailSentAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("EmailStatus")
+                        .HasColumnType("nvarchar(25)");
+
+                    b.Property<Guid?>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("IsRead")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -2206,7 +2230,7 @@ namespace RoomManagement.Data.Migrations
 
                     b.Property<string>("Message")
                         .IsRequired()
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<Guid?>("PropertyId")
                         .HasColumnType("uniqueidentifier");
@@ -2214,9 +2238,12 @@ namespace RoomManagement.Data.Migrations
                     b.Property<DateTime?>("ReadAt")
                         .HasColumnType("datetime2(0)");
 
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(250)");
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -2231,6 +2258,11 @@ namespace RoomManagement.Data.Migrations
 
                     b.HasIndex("UserId", "IsRead", "CreatedAt")
                         .HasDatabaseName("IX_UserNotifications_User_Read_CreatedAt");
+
+                    b.HasIndex("UserId", "EventKey")
+                        .IsUnique()
+                        .HasFilter("[EventKey] IS NOT NULL")
+                        .HasDatabaseName("UX_UserNotifications_User_EventKey");
 
                     b.ToTable("UserNotifications", "dbo");
                 });

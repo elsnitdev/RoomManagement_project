@@ -160,6 +160,22 @@ public sealed class PaymentStore : IPaymentStore
             NewVerifiedAmount = payment.VerifiedAmount, Reason = input.Reason,
             ReviewedByUserId = actor, ReviewedAt = now
         });
+        if (input.Status == PaymentStatus.Success)
+        {
+            var balance = await _db.InvoiceBalances.AsNoTracking()
+                .Where(x => x.InvoiceId == invoiceId).Select(x => x.RemainingAmount).SingleAsync(ct);
+            var roomNumber = await _db.Rooms.AsNoTracking()
+                .Where(x => x.Id == invoice.RoomId).Select(x => x.RoomNumber).SingleOrDefaultAsync(ct);
+            var remaining = Math.Max(0, balance - input.VerifiedAmount!.Value);
+            var roomText = string.IsNullOrWhiteSpace(roomNumber) ? string.Empty : $" (phòng {roomNumber})";
+            var remainingText = remaining == 0
+                ? "Hóa đơn đã được thanh toán đủ."
+                : $"Số dư còn lại: {remaining:N0} đ.";
+            await NotificationFactory.AddForContractMembersAsync(_db, invoice.ContractId,
+                "PaymentConfirmed", $"Đã xác nhận thanh toán {invoice.InvoiceCode}",
+                $"Đã xác nhận {input.VerifiedAmount:N0} đ cho hóa đơn {invoice.InvoiceCode}{roomText}. {remainingText}",
+                $"payment-confirmed:{payment.Id}", invoiceId, actor, ct);
+        }
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return await OwnerResults(invoiceId, paymentId).SingleAsync(ct);
@@ -220,6 +236,10 @@ public sealed class PaymentStore : IPaymentStore
             Reason = "Chủ trọ ghi nhận đã nhận tiền trực tiếp.",
             ReviewedByUserId = actor, ReviewedAt = now
         });
+        await NotificationFactory.AddForContractMembersAsync(_db, invoice.ContractId,
+            "PaymentConfirmed", "Đã xác nhận thanh toán",
+            $"Đã xác nhận {input.Amount:N0} đ cho hóa đơn. Số dư còn lại: {Math.Max(0, remaining - input.Amount):N0} đ.",
+            $"payment-confirmed:{payment.Id}", invoiceId, actor, ct);
         try
         {
             await _db.SaveChangesAsync(ct);

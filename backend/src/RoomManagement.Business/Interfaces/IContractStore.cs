@@ -48,13 +48,13 @@ public interface IContractStore
   Task ActivateSafelyAsync(Contract contract, CancellationToken ct);
   /// <summary>Đóng hợp đồng nếu trạng thái hiện tại khớp trạng thái dự kiến.</summary>
   Task CloseSafelyAsync(Contract contract, ContractStatus expectedStatus,
-      ContractStatus newStatus, DateOnly closedOn, string? reason, CancellationToken ct);
-  Task StartEarlyExitAsync(Contract contract, string reason, CancellationToken ct);
-  Task HandoverAsync(Contract contract, DateOnly handoverOn, CancellationToken ct);
+      ContractStatus newStatus, DateOnly closedOn, string? reason, CancellationToken ct, string? actorUserId = null);
+  Task StartEarlyExitAsync(Contract contract, string reason, CancellationToken ct, string? actorUserId = null);
+  Task HandoverAsync(Contract contract, DateOnly handoverOn, CancellationToken ct, string? actorUserId = null);
   Task<MeterReading> RecordContractReadingAsync(Contract contract, UtilityType type, short year, byte month,
       decimal previousValue, decimal currentValue, CancellationToken ct);
   Task<IReadOnlyList<MeterReading>> ListContractReadingsAsync(Guid contractId, CancellationToken ct);
-  Task CompleteSettlementAsync(Contract contract, string disposition, decimal refundAmount, string? note, CancellationToken ct);
+  Task CompleteSettlementAsync(Contract contract, string disposition, decimal refundAmount, string? note, CancellationToken ct, string? actorUserId = null);
   Task<ContractSettlement?> GetSettlementAsync(Guid contractId, CancellationToken ct);
   Task<ContractSettlement> SaveRefundEvidenceAsync(Guid contractId, Guid imageId, string blobName,
       string fileName, string contentType, long sizeBytes, string sha256, DateTime uploadedAt, CancellationToken ct);

@@ -8,6 +8,7 @@ public interface IRequestStore
 {
     Task<IReadOnlyList<TenantActiveStayInfo>> GetTenantActiveStaysAsync(string tenantUserId, CancellationToken ct = default);
     Task<Property?> GetOwnedPropertyAsync(Guid propertyId, string landlordUserId, CancellationToken ct = default);
+    Task<IReadOnlyList<string>> GetActiveManagerIdsAsync(Guid propertyId, CancellationToken ct = default);
     Task<Request> AddRequestWithRecipientsAsync(Request request, IReadOnlyList<RequestRecipient> recipients, CancellationToken ct = default);
     Task<(IReadOnlyList<TenantRequestItemDto> Items, long Total)> ListTenantRequestsAsync(
         string tenantUserId, RequestRecipientStatus? status, int skip, int take, CancellationToken ct = default);

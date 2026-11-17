@@ -160,6 +160,8 @@ public sealed class RequestServiceTests
 
     private sealed class FakeRequestStore : IRequestStore
     {
+        public Task<IReadOnlyList<string>> GetActiveManagerIdsAsync(Guid propertyId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
         public Dictionary<Guid, Property> Properties { get; } = new();
         public Dictionary<string, List<TenantActiveStayInfo>> ActiveStaysByTenant { get; } = new();
         public Dictionary<Guid, List<AnnouncementRecipientOptionDto>> EligibleRecipientsByProperty { get; } = new();

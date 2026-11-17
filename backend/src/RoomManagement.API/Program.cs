@@ -20,6 +20,27 @@ if (builder.Environment.IsDevelopment())
   builder.Logging.AddConsole();
   builder.Logging.AddDebug();
   builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+  var localEnvPath = Path.Combine(builder.Environment.ContentRootPath, ".env");
+  if (File.Exists(localEnvPath))
+  {
+    var sendGridSettings = new Dictionary<string, string?>();
+    foreach (var line in File.ReadLines(localEnvPath))
+    {
+      var trimmed = line.Trim();
+      if (trimmed.Length == 0 || trimmed.StartsWith('#')) continue;
+      var separator = trimmed.IndexOf('=');
+      if (separator < 0) continue;
+      var key = trimmed[..separator].Trim();
+      if (key is not ("SendGrid__ApiKey" or "SendGrid__FromEmail" or "SendGrid__FromName")) continue;
+      var value = trimmed[(separator + 1)..].Trim();
+      if (value.Length >= 2 && ((value[0] == '"' && value[^1] == '"') ||
+                                (value[0] == '\'' && value[^1] == '\'')))
+        value = value[1..^1];
+      if (!string.IsNullOrWhiteSpace(value))
+        sendGridSettings[key.Replace("__", ":")] = value;
+    }
+    builder.Configuration.AddInMemoryCollection(sendGridSettings);
+  }
   builder.Configuration.AddEnvironmentVariables();
 }
 
@@ -49,6 +70,8 @@ builder.Services.AddScoped<LandlordPaymentService>();
 builder.Services.AddScoped<PaymentEvidenceService>();
 builder.Services.AddScoped<SettlementRefundEvidenceService>();
 builder.Services.AddHostedService<ContractExpiryWorker>();
+builder.Services.AddHttpClient("NotificationEmail", client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHostedService<NotificationEmailWorker>();
 
 builder.Services.AddControllers(options =>
 {

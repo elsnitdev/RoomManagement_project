@@ -11,6 +11,15 @@ public sealed class UserNotification
     public string Title { get; set; } = null!;
     public string Message { get; set; } = null!;
     public Guid? ContractId { get; set; }
+    public Guid? InvoiceId { get; set; }
+    public Guid? RequestId { get; set; }
+    public string? EventKey { get; set; }
+    public string? EmailStatus { get; set; }
+    public string? EmailAddress { get; set; }
+    public int EmailAttempts { get; set; }
+    public DateTime? EmailNextAttemptAt { get; set; }
+    public DateTime? EmailSentAt { get; set; }
+    public string? EmailError { get; set; }
     public Guid? PropertyId { get; set; }
     public string? ActorUserId { get; set; }
     public bool IsRead { get; set; }
