@@ -9,7 +9,11 @@ public sealed record CreateContractInput(
     InitialDepositPaymentStatus DepositPaymentStatus = InitialDepositPaymentStatus.Unpaid,
     PaymentMethod? DepositPaymentMethod = null, DateTimeOffset? DepositPaidAt = null,
     ContractTenancyMode TenancyMode = ContractTenancyMode.CoTenancy,
-    IReadOnlyList<InitialRoomServiceInput>? RoomServices = null);
+    IReadOnlyList<InitialRoomServiceInput>? RoomServices = null,
+    IReadOnlyList<CreateContractMemberInput>? Members = null);
+
+public sealed record CreateContractMemberInput(string UserId, bool IsContactPerson,
+    ContractTenantRole Role = ContractTenantRole.ContractParty);
 
 public sealed record InitialRoomServiceInput(Guid ServiceId, int Quantity, decimal? CustomPrice);
 
@@ -19,7 +23,8 @@ public sealed record CreateContractResult(Contract Contract, Guid? DepositInvoic
 
 public sealed record ContractCreation(Contract Contract, Invoice? DepositInvoice,
     InvoiceItem? DepositItem, Payment? InitialPayment, PaymentReviewEvent? InitialPaymentReview,
-    IReadOnlyList<InitialRoomServiceInput>? RoomServices = null);
+    IReadOnlyList<InitialRoomServiceInput>? RoomServices = null,
+    IReadOnlyList<CreateContractMemberInput>? Members = null);
 
 public sealed record AddContractTenantInput(Guid TenantId, DateOnly JoinDate, bool IsContactPerson,
     ContractTenantRole Role = ContractTenantRole.ContractParty);
@@ -46,10 +51,16 @@ public sealed record ContractTenantInfo(Guid Id, Guid TenantId, string? UserId, 
     public ContractTenantRole Role { get; init; } = ContractTenantRole.ContractParty;
     public DateTime? ResidenceApprovedAt { get; init; }
     public string? ResidenceApprovedByUserId { get; init; }
+    public int? InvitationAcceptedOfferVersion { get; init; }
+    public DateTime? InvitationAcceptedAt { get; init; }
     public IReadOnlyList<ContractTenureSpan> TenureSpans { get; init; } = [];
 }
 public sealed record ContractMemberInfo(Guid Id, string FullName, DateOnly JoinDate,
-    DateOnly? LeaveDate, bool IsContactPerson, ContractTenantRole Role);
+    DateOnly? LeaveDate, bool IsContactPerson, ContractTenantRole Role)
+{
+    public int? InvitationAcceptedOfferVersion { get; init; }
+    public DateTime? InvitationAcceptedAt { get; init; }
+}
 public sealed record ContractDetail(Contract Contract, string RoomNumber, IReadOnlyList<ContractTenantInfo> Tenants,
     decimal OutstandingAmount, decimal DepositHeld, bool HasSettlement, bool HasDraftInvoices,
     IReadOnlyList<TenantRequest>? MoveOutNotices = null)

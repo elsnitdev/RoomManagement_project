@@ -97,6 +97,10 @@ public interface IContractStore
       ConfirmContractOfferInput input, CancellationToken ct)
       => throw new NotSupportedException();
 
+  Task<ContractTenant> AcceptInvitationAsync(Guid contractId, string userId,
+      int offerVersion, string termsHash, CancellationToken ct)
+      => throw new NotSupportedException();
+
   Task<Contract> RejectOfferByTenantAsync(Guid contractId, string tenantUserId,
       string reason, CancellationToken ct)
       => throw new NotSupportedException();

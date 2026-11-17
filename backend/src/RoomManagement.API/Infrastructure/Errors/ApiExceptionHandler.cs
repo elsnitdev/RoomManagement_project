@@ -59,6 +59,8 @@ public sealed class ApiExceptionHandler : IExceptionHandler
     };
     problem.Extensions["code"] = code;
     problem.Extensions["traceId"] = httpContext.TraceIdentifier;
+    if (exception is BusinessException { ConflictingContract: { } conflict })
+        problem.Extensions["conflictingContract"] = conflict;
 
     httpContext.Response.ContentType = "application/problem+json";
     await JsonSerializer.SerializeAsync(

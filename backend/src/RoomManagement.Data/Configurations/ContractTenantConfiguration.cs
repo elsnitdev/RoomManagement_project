@@ -21,6 +21,9 @@ public sealed class ContractTenantConfiguration : IEntityTypeConfiguration<Contr
         builder.Property(e => e.LeaveDate).HasColumnType("date");
         builder.Property(e => e.IsContactPerson).HasColumnType("bit").IsRequired().HasDefaultValue(false);
         builder.Property(e => e.OnlineRulesRequired).HasColumnType("bit").IsRequired().HasDefaultValue(false);
+        builder.Property(e => e.InvitationAcceptedOfferVersion).HasColumnType("int");
+        builder.Property(e => e.InvitationAcceptedAt).HasColumnType("datetime2(0)");
+        builder.Property(e => e.InvitationAcceptedByUserId).HasColumnType("nvarchar(450)");
         builder.Property(e => e.Role).HasConversion<string>().HasColumnType("nvarchar(32)").IsRequired().HasDefaultValueSql(@"N'ContractParty'");
         builder.Property(e => e.ResidenceApprovedAt).HasColumnType("datetime2(0)");
         builder.Property(e => e.ResidenceApprovedByUserId).HasColumnType("nvarchar(450)");

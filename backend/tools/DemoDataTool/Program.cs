@@ -160,7 +160,10 @@ if (command == "seed")
         {
             Id = property1Id, OwnerUserId = landlordId,
             Name = "Nhà trọ An Bình - Bình Thạnh",
-            Address = "123/45 Điện Biên Phủ, P.15, Q. Bình Thạnh, TP.HCM",
+            City = "Thành phố Hồ Chí Minh",
+            Ward = "Phường 15",
+            StreetAddress = "123/45 Điện Biên Phủ",
+            Address = "123/45 Điện Biên Phủ, Phường 15, Thành phố Hồ Chí Minh",
             BankName = "Vietcombank", BankAccountNumber = "1012345678", BankAccountHolder = "TRAN MINH HOANG",
             IsActive = true, CreatedAt = now
         },
@@ -168,7 +171,10 @@ if (command == "seed")
         {
             Id = property2Id, OwnerUserId = landlordId,
             Name = "Chung cư mini Thảo Điền - Thủ Đức",
-            Address = "88 Quốc Hương, P. Thảo Điền, TP. Thủ Đức, TP.HCM",
+            City = "Thành phố Hồ Chí Minh",
+            Ward = "Phường Thảo Điền",
+            StreetAddress = "88 Quốc Hương",
+            Address = "88 Quốc Hương, Phường Thảo Điền, Thành phố Hồ Chí Minh",
             BankName = "Techcombank", BankAccountNumber = "19033445566", BankAccountHolder = "TRAN MINH HOANG",
             IsActive = true, CreatedAt = now
         }

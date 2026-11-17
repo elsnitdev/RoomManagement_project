@@ -17,6 +17,7 @@ public sealed class RequestConfiguration : IEntityTypeConfiguration<Request>
         builder.HasKey(e => e.Id).HasName("PK_Requests");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.PropertyId).HasColumnType("uniqueidentifier").IsRequired();
+        builder.Property(e => e.ContractId).HasColumnType("uniqueidentifier");
         builder.Property(e => e.SenderUserId).HasColumnType("nvarchar(450)").HasMaxLength(450).IsRequired();
         builder.Property(e => e.RecipientType).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.Title).HasColumnType("nvarchar(250)").HasMaxLength(250).IsRequired();
@@ -30,6 +31,14 @@ public sealed class RequestConfiguration : IEntityTypeConfiguration<Request>
             .HasForeignKey(e => e.PropertyId)
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("FK_Requests_Properties");
+
+        builder.HasOne<Contract>()
+            .WithMany()
+            .HasForeignKey(e => e.ContractId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_Requests_Contracts");
+
+        builder.HasIndex(e => e.ContractId).HasDatabaseName("IX_Requests_ContractId");
 
         builder.HasOne<AppUser>()
             .WithMany()

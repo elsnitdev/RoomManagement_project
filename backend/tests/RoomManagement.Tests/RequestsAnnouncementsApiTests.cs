@@ -410,6 +410,43 @@ public sealed class RequestsAnnouncementsApiTests
         Assert.Equal("Khu trọ 2", createdData.GetProperty("propertyName").GetString());
     }
 
+    [Fact]
+    public async Task Same_property_multi_contract_tenant_must_select_contract_for_request()
+    {
+        await using var factory = new ApiFactory();
+        var landlord = factory.Store.AddUser(UserRoles.Landlord);
+        var tenant = factory.Store.AddUser(UserRoles.Tenant);
+        var propertyId = Guid.NewGuid();
+        var firstContractId = Guid.NewGuid();
+        var secondContractId = Guid.NewGuid();
+        factory.RequestStore.ActiveStaysByTenant[tenant.Id] =
+        [
+            new TenantActiveStayInfo(propertyId, "Khu trọ", landlord.Id, Guid.NewGuid(), "101", firstContractId),
+            new TenantActiveStayInfo(propertyId, "Khu trọ", landlord.Id, Guid.NewGuid(), "102", secondContractId)
+        ];
+
+        using var client = factory.CreateClient();
+        await SignInAsync(client, tenant);
+        var options = (await (await client.GetAsync("/api/me/requests/properties"))
+            .Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+        Assert.Equal(2, options.GetArrayLength());
+
+        var ambiguous = await client.PostAsJsonAsync("/api/me/requests", new
+        {
+            propertyId, title = "Sửa đèn", content = "Đèn bị hỏng"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, ambiguous.StatusCode);
+
+        var selected = await client.PostAsJsonAsync("/api/me/requests", new
+        {
+            propertyId, contractId = secondContractId, title = "Sửa đèn", content = "Đèn bị hỏng"
+        });
+        Assert.Equal(HttpStatusCode.Created, selected.StatusCode);
+        var data = (await selected.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+        Assert.Equal("102", data.GetProperty("roomNumber").GetString());
+        Assert.Equal(secondContractId, Assert.Single(factory.RequestStore.Requests.Values).ContractId);
+    }
+
     private static async Task SignInAsync(HttpClient client, AppUser user)
     {
         var response = await client.PostAsJsonAsync("/api/auth/login", new

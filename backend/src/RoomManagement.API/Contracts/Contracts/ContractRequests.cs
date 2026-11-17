@@ -18,11 +18,12 @@ public sealed record CreateContractRequest(
     PaymentMethod? DepositPaymentMethod = null,
     DateTimeOffset? DepositPaidAt = null,
     ContractTenancyMode TenancyMode = ContractTenancyMode.CoTenancy,
-    IReadOnlyList<InitialRoomServiceInput>? RoomServices = null)
+    IReadOnlyList<InitialRoomServiceInput>? RoomServices = null,
+    IReadOnlyList<CreateContractMemberInput>? Members = null)
 {
   public CreateContractInput ToInput() => new(RoomId, ContractCode, StartDate,
       EndDate, MonthlyRent, DepositAmount, PaymentDueDay, Note,
-      DepositPaymentStatus, DepositPaymentMethod, DepositPaidAt, TenancyMode, RoomServices);
+      DepositPaymentStatus, DepositPaymentMethod, DepositPaidAt, TenancyMode, RoomServices, Members);
 }
 
 public sealed record AddContractTenantRequest(
@@ -98,7 +99,7 @@ public sealed record UpdateContractOfferRequest(
 public sealed record ConfirmContractOfferRequest(
     [property: JsonRequired] int OfferVersion,
     [Required] string TermsHash,
-    [property: JsonRequired] Guid RulesVersionId,
+    Guid RulesVersionId = default,
     bool AcceptRules = true)
 {
     public ConfirmContractOfferInput ToInput() => new(OfferVersion, TermsHash, RulesVersionId, AcceptRules);
@@ -106,3 +107,7 @@ public sealed record ConfirmContractOfferRequest(
 
 public sealed record RejectContractOfferRequest(
     [StringLength(1000)] string? Reason);
+
+public sealed record AcceptContractInvitationRequest(
+    [property: JsonRequired] int OfferVersion,
+    [Required] string TermsHash);

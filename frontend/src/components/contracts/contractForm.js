@@ -21,20 +21,3 @@ export function toCreateContractRequest(form) {
     note: form.note.trim() || null,
   }
 }
-
-export function unavailableTenantIds(contracts, startDate, endDate, currentContract) {
-  const unavailable = new Set(
-    (currentContract?.tenants || []).filter(member => !member.leaveDate).map(member => member.tenantId),
-  )
-  if (!startDate) return unavailable
-  for (const contract of contracts) {
-    if (contract.status !== 'Active' || contract.id === currentContract?.id ||
-        contract.startDate > (endDate || '9999-12-31') ||
-        (contract.endDate && contract.endDate < startDate)) continue
-    for (const member of contract.tenants || []) {
-      if (member.joinDate <= (endDate || '9999-12-31') &&
-          (!member.leaveDate || member.leaveDate >= startDate)) unavailable.add(member.tenantId)
-    }
-  }
-  return unavailable
-}

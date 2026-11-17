@@ -56,6 +56,7 @@ builder.Services.AddScoped<ICurrentLandlord, AuthenticatedLandlord>();
 builder.Services.AddScoped<PropertyService>();
 builder.Services.AddScoped<RoomService>();
 builder.Services.AddScoped<RoomImageService>();
+builder.Services.AddScoped<ContractDocumentService>();
 builder.Services.AddHostedService<BlobCleanupWorker>();
 builder.Services.AddScoped<RoomBatchService>();
 builder.Services.AddScoped<ContractService>();

@@ -111,10 +111,12 @@ public sealed class RequestStore : IRequestStore
 
         var propertyIds = rows.Select(r => r.req.PropertyId).Distinct().ToArray();
         var roomMap = await GetUserRoomByPropertyAsync([tenantUserId], propertyIds, ct);
+        var contractRooms = await GetRoomByContractIdsAsync(rows.Select(r => r.req.ContractId), ct);
 
         var items = rows.Select(r =>
         {
-            var roomNumber = roomMap.GetValueOrDefault((tenantUserId, r.req.PropertyId)) ?? "—";
+            var roomNumber = r.req.ContractId.HasValue && contractRooms.TryGetValue(r.req.ContractId.Value, out var selectedRoom)
+                ? selectedRoom : roomMap.GetValueOrDefault((tenantUserId, r.req.PropertyId)) ?? "—";
             return new TenantRequestItemDto(
                 r.req.Id,
                 r.req.PropertyId,
@@ -146,7 +148,9 @@ public sealed class RequestStore : IRequestStore
             return null;
 
         var roomMap = await GetUserRoomByPropertyAsync([tenantUserId], [row.req.PropertyId], ct);
-        var roomNumber = roomMap.GetValueOrDefault((tenantUserId, row.req.PropertyId)) ?? "—";
+        var contractRooms = await GetRoomByContractIdsAsync([row.req.ContractId], ct);
+        var roomNumber = row.req.ContractId.HasValue && contractRooms.TryGetValue(row.req.ContractId.Value, out var selectedRoom)
+            ? selectedRoom : roomMap.GetValueOrDefault((tenantUserId, row.req.PropertyId)) ?? "—";
 
         return new TenantRequestItemDto(
             row.req.Id,
@@ -336,13 +340,15 @@ public sealed class RequestStore : IRequestStore
         var senderIds = rows.Select(r => r.req.SenderUserId).Distinct().ToArray();
         var propertyIds = rows.Select(r => r.req.PropertyId).Distinct().ToArray();
         var roomMap = await GetUserRoomByPropertyAsync(senderIds, propertyIds, ct);
+        var contractRooms = await GetRoomByContractIdsAsync(rows.Select(r => r.req.ContractId), ct);
         var profileMap = await _db.TenantProfiles.AsNoTracking()
             .Where(p => p.UserId != null && senderIds.Contains(p.UserId))
             .ToDictionaryAsync(p => p.UserId!, p => new { p.FullName, p.PhoneNumber }, ct);
 
         var items = rows.Select(r =>
         {
-            var roomName = roomMap.GetValueOrDefault((r.req.SenderUserId, r.req.PropertyId)) ?? "—";
+            var roomName = r.req.ContractId.HasValue && contractRooms.TryGetValue(r.req.ContractId.Value, out var selectedRoom)
+                ? selectedRoom : roomMap.GetValueOrDefault((r.req.SenderUserId, r.req.PropertyId)) ?? "—";
             profileMap.TryGetValue(r.req.SenderUserId, out var prof);
             var fullName = !string.IsNullOrWhiteSpace(prof?.FullName) ? prof.FullName : r.SenderFullName;
             var phone = !string.IsNullOrWhiteSpace(prof?.PhoneNumber) ? prof.PhoneNumber : r.SenderPhone;
@@ -445,7 +451,9 @@ public sealed class RequestStore : IRequestStore
         ).SingleAsync(ct);
 
         var roomMap = await GetUserRoomByPropertyAsync([row.req.SenderUserId], [row.req.PropertyId], ct);
-        var roomName = roomMap.GetValueOrDefault((row.req.SenderUserId, row.req.PropertyId)) ?? "—";
+        var contractRooms = await GetRoomByContractIdsAsync([row.req.ContractId], ct);
+        var roomName = row.req.ContractId.HasValue && contractRooms.TryGetValue(row.req.ContractId.Value, out var selectedRoom)
+            ? selectedRoom : roomMap.GetValueOrDefault((row.req.SenderUserId, row.req.PropertyId)) ?? "—";
         var prof = await _db.TenantProfiles.AsNoTracking()
             .Where(p => p.UserId == row.req.SenderUserId)
             .Select(p => new { p.FullName, p.PhoneNumber })
@@ -550,6 +558,18 @@ public sealed class RequestStore : IRequestStore
         }).ToList();
 
         return (items, total);
+    }
+
+    private async Task<Dictionary<Guid, string>> GetRoomByContractIdsAsync(
+        IEnumerable<Guid?> contractIds, CancellationToken ct)
+    {
+        var ids = contractIds.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
+        if (ids.Length == 0) return [];
+        return await (from contract in _db.Contracts.AsNoTracking()
+                      join room in _db.Rooms.AsNoTracking() on contract.RoomId equals room.Id
+                      where ids.Contains(contract.Id)
+                      select new { contract.Id, room.RoomNumber })
+            .ToDictionaryAsync(x => x.Id, x => x.RoomNumber, ct);
     }
 
     private async Task<Dictionary<(string UserId, Guid PropertyId), string>> GetUserRoomByPropertyAsync(

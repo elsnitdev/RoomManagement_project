@@ -2,7 +2,7 @@ using RoomManagement.Domain.Enums;
 
 namespace RoomManagement.Business.DTOs;
 
-public sealed record CreateTenantRequestInput(Guid? PropertyId, string Title, string Content);
+public sealed record CreateTenantRequestInput(Guid? PropertyId, string Title, string Content, Guid? ContractId = null);
 
 public sealed record TenantRequestFilter(int Page, int PageSize, RequestRecipientStatus? Status);
 
@@ -98,5 +98,7 @@ public sealed record TenantActiveStayInfo(
 public sealed record TenantRequestPropertyOptionDto(
     Guid PropertyId,
     string PropertyName,
-    string RoomNumber);
+    string RoomNumber,
+    Guid ContractId,
+    Guid RoomId);
 

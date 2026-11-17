@@ -6,6 +6,7 @@ public sealed class Request
 {
     public Guid Id { get; set; }
     public Guid PropertyId { get; set; }
+    public Guid? ContractId { get; set; }
     public string SenderUserId { get; set; } = null!;
     public RequestRecipientType RecipientType { get; set; }
     public string Title { get; set; } = null!;

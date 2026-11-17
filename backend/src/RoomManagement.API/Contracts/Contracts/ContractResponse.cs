@@ -11,23 +11,25 @@ public sealed record ContractResponse(
     ContractTenancyMode TenancyMode = ContractTenancyMode.CoTenancy,
     int OfferVersion = 0, string? OfferTermsHash = null, Guid? OfferRulesVersionId = null,
     DateTime? OfferSentAt = null, DateTime? TenantConfirmedAt = null, string? TenantConfirmedByUserId = null,
-    DateTime? OperatorConfirmedAt = null, string? OperatorConfirmedByUserId = null)
+    DateTime? OperatorConfirmedAt = null, string? OperatorConfirmedByUserId = null,
+    ContractWorkflow Workflow = ContractWorkflow.LegacyRules)
 {
   public static ContractResponse From(Contract c, Guid? depositInvoiceId = null) => new(c.Id, c.ContractCode, c.RoomId,
       c.StartDate, c.EndDate, c.MonthlyRent, c.DepositAmount,
       c.PaymentDueDay, c.Status, c.Note, depositInvoiceId, c.HandoverOn, c.TenancyMode,
       c.OfferVersion, c.OfferTermsHash, c.OfferRulesVersionId, c.OfferSentAt,
-      c.TenantConfirmedAt, c.TenantConfirmedByUserId, c.OperatorConfirmedAt, c.OperatorConfirmedByUserId);
+      c.TenantConfirmedAt, c.TenantConfirmedByUserId, c.OperatorConfirmedAt, c.OperatorConfirmedByUserId, c.Workflow);
 }
 
 public sealed record ContractTenantResponse(Guid Id, Guid ContractId, Guid TenantId, DateOnly JoinDate,
     DateOnly? LeaveDate, bool IsContactPerson, ContractTenantRole Role, DateTime? ResidenceApprovedAt,
-    string? ResidenceApprovedByUserId)
+    string? ResidenceApprovedByUserId, int? InvitationAcceptedOfferVersion = null,
+    DateTime? InvitationAcceptedAt = null)
 {
   public static ContractTenantResponse From(ContractTenant tenant) =>
       new(tenant.Id, tenant.ContractId, tenant.TenantId, tenant.JoinDate,
           tenant.LeaveDate, tenant.IsContactPerson, tenant.Role, tenant.ResidenceApprovedAt,
-          tenant.ResidenceApprovedByUserId);
+          tenant.ResidenceApprovedByUserId, tenant.InvitationAcceptedOfferVersion, tenant.InvitationAcceptedAt);
 }
 
 public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid RoomId, string RoomNumber,
@@ -40,7 +42,8 @@ public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid R
     int OfferVersion = 0, string? OfferTermsHash = null, string? OfferSnapshotJson = null,
     Guid? OfferRulesVersionId = null, DateTime? OfferSentAt = null,
     DateTime? TenantConfirmedAt = null, string? TenantConfirmedByUserId = null,
-    DateTime? OperatorConfirmedAt = null, string? OperatorConfirmedByUserId = null)
+    DateTime? OperatorConfirmedAt = null, string? OperatorConfirmedByUserId = null,
+    ContractWorkflow Workflow = ContractWorkflow.LegacyRules)
 {
     public IReadOnlyList<ContractMemberInfo> Members { get; init; } = [];
 
@@ -51,19 +54,28 @@ public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid R
             c.ClosedOn, c.ClosureReason, c.MonthlyRent, c.DepositAmount, c.PaymentDueDay,
             c.Status, c.Note, detail.Tenants, detail.OutstandingAmount, detail.DepositHeld, detail.HasSettlement,
             detail.HasDraftInvoices,
-            detail.Members.Count(t => t.LeaveDate == null ||
-                t.LeaveDate >= RoomManagement.Business.Services.VietnamDate.Today),
+            detail.Members.Count(t =>
+                (t.LeaveDate == null || t.LeaveDate >= RoomManagement.Business.Services.VietnamDate.Today) &&
+                (c.Workflow != ContractWorkflow.Invitation ||
+                 c.Status == ContractStatus.Active && c.StartDate <= RoomManagement.Business.Services.VietnamDate.Today &&
+                 t.JoinDate <= RoomManagement.Business.Services.VietnamDate.Today &&
+                 t.InvitationAcceptedOfferVersion == c.OfferVersion)),
             c.Status == ContractStatus.Active && c.StartDate <= RoomManagement.Business.Services.VietnamDate.Today &&
             (c.EndDate == null || c.EndDate >= RoomManagement.Business.Services.VietnamDate.Today)
-                ? detail.Tenants.Count(t => t.JoinDate <= RoomManagement.Business.Services.VietnamDate.Today &&
+                ? (c.Workflow == ContractWorkflow.Invitation
+                    ? detail.Members.Count(t => t.JoinDate <= RoomManagement.Business.Services.VietnamDate.Today &&
+                        (t.LeaveDate == null || t.LeaveDate >= RoomManagement.Business.Services.VietnamDate.Today) &&
+                        t.InvitationAcceptedOfferVersion == c.OfferVersion)
+                    : detail.Tenants.Count(t => t.JoinDate <= RoomManagement.Business.Services.VietnamDate.Today &&
                     (t.LeaveDate == null || t.LeaveDate >= RoomManagement.Business.Services.VietnamDate.Today) &&
                     (t.Role == ContractTenantRole.AuthorizedOccupant && t.ResidenceApprovedAt != null ||
                      t.HasConfirmedCommitment ||
-                     t.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence)) : 0,
+                     t.EvidenceStatus == CommitmentEvidenceStatus.LegacyPendingEvidence))) : 0,
             (detail.MoveOutNotices ?? []).Select(MoveOutNoticeResponse.From).ToList(), c.HandoverOn,
             c.TenancyMode,
             c.OfferVersion, c.OfferTermsHash, c.OfferSnapshotJson, c.OfferRulesVersionId, c.OfferSentAt,
-            c.TenantConfirmedAt, c.TenantConfirmedByUserId, c.OperatorConfirmedAt, c.OperatorConfirmedByUserId)
+            c.TenantConfirmedAt, c.TenantConfirmedByUserId, c.OperatorConfirmedAt, c.OperatorConfirmedByUserId,
+            c.Workflow)
         { Members = detail.Members };
     }
 }

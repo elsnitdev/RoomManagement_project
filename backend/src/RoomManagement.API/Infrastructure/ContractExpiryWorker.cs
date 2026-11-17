@@ -24,7 +24,20 @@ public sealed class ContractExpiryWorker : BackgroundService
             {
                 using var scope = _scopes.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<RoomManagementDbContext>();
+                var draftExpiry = scope.ServiceProvider.GetRequiredService<ContractDraftExpiryService>();
+                var (cancelled, needsReview) = await draftExpiry.CancelInactiveAsync(DateTime.UtcNow, stoppingToken);
+                if (cancelled > 0 || needsReview > 0)
+                    _logger.LogInformation("Đã tự hủy {Cancelled} bản nháp; {NeedsReview} bản nháp cần đối soát cọc.",
+                        cancelled, needsReview);
                 var today = VietnamDate.Today;
+                await db.Contracts.Where(c => c.Status == ContractStatus.PendingStart && c.StartDate <= today &&
+                    (c.EndDate == null || c.EndDate >= today) &&
+                    db.Rooms.Any(r => r.Id == c.RoomId && r.Status == RoomStatus.Available))
+                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, ContractStatus.Active)
+                        .SetProperty(c => c.UpdatedAt, DateTime.UtcNow), stoppingToken);
+                await db.Contracts.Where(c => c.Status == ContractStatus.PendingStart && c.EndDate != null && c.EndDate < today)
+                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, ContractStatus.Expired)
+                        .SetProperty(c => c.UpdatedAt, DateTime.UtcNow), stoppingToken);
                 await db.Contracts.Where(c => c.Status == ContractStatus.Active &&
                     c.EndDate != null && c.EndDate < today)
                     .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, ContractStatus.Expired)

@@ -13,6 +13,158 @@ namespace RoomManagement.Tests;
 public sealed class ContractDepositCreationTests
 {
     [SqlServerFact]
+    public async Task Sending_offer_reports_overlapping_contract_before_occupied_room_status()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId) = await SeedAsync(database);
+        var start = VietnamDate.Today;
+        var end = new DateOnly(start.Year, start.Month,
+            DateTime.DaysInMonth(start.Year, start.Month));
+        Guid draftId;
+        await using (var db = database.CreateContext())
+        {
+            draftId = (await Service(db, ownerId).CreateAsync(propertyId,
+                Input(roomId, "CT-NEW-DRAFT") with { StartDate = start, EndDate = end },
+                CancellationToken.None)).Contract.Id;
+            db.Contracts.Add(new Contract { Id = Guid.NewGuid(), RoomId = roomId,
+                ContractCode = "CT-EXISTING", StartDate = start,
+                EndDate = end, MonthlyRent = 3_000_000,
+                Status = ContractStatus.Active, CreatedAt = DateTime.UtcNow });
+            await db.Rooms.Where(r => r.Id == roomId)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, RoomStatus.Occupied));
+            await db.SaveChangesAsync();
+        }
+        await using (var db = database.CreateContext())
+        {
+            var room = await new RoomStore(db).GetResultAsync(propertyId, roomId, ownerId,
+                CancellationToken.None);
+            Assert.Equal(RoomStatus.Occupied, room!.Status);
+            var draft = await db.Contracts.SingleAsync(c => c.Id == draftId);
+            var error = await Assert.ThrowsAsync<BusinessException>(() =>
+                new ContractStore(db).SendOfferSafelyAsync(draft, ownerId, CancellationToken.None));
+            Assert.Equal("CONTRACT_PERIOD_OVERLAP", error.Code);
+            Assert.Equal("CT-EXISTING", error.ConflictingContract?.Code);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Creation_saves_members_atomically_even_when_tenant_has_another_active_contract()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId) = await SeedAsync(database);
+        var otherRoomId = Guid.NewGuid();
+        var existingContractId = Guid.NewGuid();
+        var profileId = Guid.NewGuid();
+        const string tenantUserId = "multi-contract-tenant";
+        await using (var db = database.CreateContext())
+        {
+            db.Users.Add(new AppUser { Id = tenantUserId, UserName = tenantUserId,
+                NormalizedUserName = tenantUserId.ToUpperInvariant(), PasswordHash = "test-hash",
+                Role = UserRoles.Tenant, IsActive = true, FullName = "Người thuê",
+                PhoneNumber = "0912345678", CreatedAt = DateTime.UtcNow });
+            db.Rooms.Add(new Room { Id = otherRoomId, PropertyId = propertyId, RoomNumber = "B202",
+                BasePrice = 3_000_000, MaxOccupants = 2, CreatedAt = DateTime.UtcNow });
+            db.TenantProfiles.Add(new TenantProfile { Id = profileId, UserId = tenantUserId,
+                FullName = "Người thuê", PhoneNumber = "0912345678",
+                CreatedByUserId = tenantUserId, CreatedAt = DateTime.UtcNow });
+            db.Contracts.Add(new Contract { Id = existingContractId, RoomId = otherRoomId,
+                ContractCode = "CT-OTHER-ROOM", StartDate = new DateOnly(2027, 1, 1),
+                EndDate = new DateOnly(2027, 1, 31), MonthlyRent = 3_000_000,
+                Status = ContractStatus.Active, CreatedAt = DateTime.UtcNow });
+            db.ContractTenants.Add(new ContractTenant { Id = Guid.NewGuid(),
+                ContractId = existingContractId, TenantId = profileId,
+                JoinDate = new DateOnly(2027, 1, 1), IsContactPerson = true,
+                CreatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = database.CreateContext())
+        {
+            var created = await Service(db, ownerId).CreateAsync(propertyId,
+                Input(roomId, "CT-SECOND-ROOM") with
+                {
+                    Members = [new CreateContractMemberInput(tenantUserId, true)]
+                }, CancellationToken.None);
+            Assert.Single(await db.ContractTenants.Where(t => t.ContractId == created.Contract.Id).ToListAsync());
+            var invalid = Input(roomId, "CT-NO-USER") with
+            {
+                Members = [new CreateContractMemberInput("missing-user", true)]
+            };
+            var error = await Assert.ThrowsAsync<BusinessException>(() =>
+                Service(db, ownerId).CreateAsync(propertyId, invalid, CancellationToken.None));
+            Assert.Equal("TENANT_NOT_FOUND", error.Code);
+        }
+        await using (var db = database.CreateContext())
+        {
+            Assert.False(await db.Contracts.AnyAsync(c => c.ContractCode == "CT-NO-USER"));
+            Assert.Single(await db.Invoices.ToListAsync());
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Draft_does_not_reserve_room_but_sent_offer_does()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId) = await SeedAsync(database);
+        Guid firstId;
+        await using (var db = database.CreateContext())
+        {
+            var service = Service(db, ownerId);
+            firstId = (await service.CreateAsync(propertyId, Input(roomId, "CT-FIRST"), CancellationToken.None)).Contract.Id;
+            await service.CreateAsync(propertyId, Input(roomId, "CT-SECOND"), CancellationToken.None);
+        }
+        await using (var db = database.CreateContext())
+        {
+            var candidate = new Contract { Id = Guid.NewGuid(), RoomId = roomId,
+                StartDate = new DateOnly(2027, 1, 15), EndDate = new DateOnly(2027, 2, 28) };
+            var store = new ContractStore(db);
+            Assert.False(await store.HasOverlappingContractAsync(candidate, CancellationToken.None));
+            await db.Contracts.Where(c => c.Id == firstId)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, ContractStatus.PendingTenantConfirmation));
+            Assert.True(await store.HasOverlappingContractAsync(candidate, CancellationToken.None));
+            candidate.StartDate = new DateOnly(2027, 2, 1);
+            Assert.False(await store.HasOverlappingContractAsync(candidate, CancellationToken.None));
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Inactive_drafts_cancel_after_five_days_except_paid_deposits()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId) = await SeedAsync(database);
+        var now = DateTime.UtcNow;
+        Guid unpaidId, paidId, recentlyUpdatedId;
+        await using (var db = database.CreateContext())
+        {
+            var service = Service(db, ownerId);
+            unpaidId = (await service.CreateAsync(propertyId, Input(roomId, "CT-OLD-UNPAID"), CancellationToken.None)).Contract.Id;
+            paidId = (await service.CreateAsync(propertyId, Input(roomId, "CT-OLD-PAID") with
+            {
+                DepositPaymentStatus = InitialDepositPaymentStatus.Paid,
+                DepositPaymentMethod = PaymentMethod.Cash,
+                DepositPaidAt = new DateTimeOffset(now.AddDays(-6), TimeSpan.Zero)
+            }, CancellationToken.None)).Contract.Id;
+            recentlyUpdatedId = (await service.CreateAsync(propertyId, Input(roomId, "CT-RECENT"), CancellationToken.None)).Contract.Id;
+        }
+        await using (var db = database.CreateContext())
+        {
+            await db.Contracts.Where(c => c.Id == unpaidId || c.Id == paidId || c.Id == recentlyUpdatedId)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.CreatedAt, now.AddDays(-6)));
+            await db.Contracts.Where(c => c.Id == recentlyUpdatedId)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.UpdatedAt, now.AddDays(-1)));
+            var result = await new ContractDraftExpiryService(db).CancelInactiveAsync(now, CancellationToken.None);
+            Assert.Equal(1, result.Cancelled);
+            Assert.Equal(1, result.NeedsReview);
+            Assert.Equal(ContractStatus.Cancelled, (await db.Contracts.SingleAsync(c => c.Id == unpaidId)).Status);
+            Assert.Equal(InvoiceStatus.Cancelled, (await db.Invoices.SingleAsync(i => i.ContractId == unpaidId)).Status);
+            Assert.Equal(ContractStatus.Draft, (await db.Contracts.SingleAsync(c => c.Id == paidId)).Status);
+            Assert.Equal(ContractStatus.Draft, (await db.Contracts.SingleAsync(c => c.Id == recentlyUpdatedId)).Status);
+            Assert.Single(await db.UserNotifications.Where(n => n.ContractId == paidId &&
+                n.Type == "ContractDraftNeedsReview").ToListAsync());
+        }
+    }
+
+    [SqlServerFact]
     public async Task Creating_contract_creates_issued_deposit_and_optional_verified_payment()
     {
         await using var database = await SqlServerDatabase.CreateAsync();

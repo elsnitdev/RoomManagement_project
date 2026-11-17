@@ -50,4 +50,14 @@ public sealed class MyContractsController : ControllerBase
         var updated = await _service.RejectOfferByTenantAsync(contractId, userId, request.Reason ?? string.Empty, ct);
         return Ok(new ApiResponse<ContractResponse>(ContractResponse.From(updated)));
     }
+
+    [HttpPost("{contractId:guid}/join")]
+    public async Task<IActionResult> AcceptInvitation(Guid contractId,
+        [FromBody] AcceptContractInvitationRequest request, CancellationToken ct)
+    {
+        var userId = User.FindFirst("sub")?.Value ?? "";
+        var link = await _service.AcceptInvitationAsync(contractId, userId,
+            request.OfferVersion, request.TermsHash, ct);
+        return Ok(new ApiResponse<ContractTenantResponse>(ContractTenantResponse.From(link)));
+    }
 }

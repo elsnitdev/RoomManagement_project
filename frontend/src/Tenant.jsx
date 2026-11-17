@@ -27,6 +27,7 @@ import {
 import { contractApi } from "./services/api/contractApi";
 import { requestApi } from "./services/api/requestApi";
 import { TenantRules } from "./components/contracts/ContractRules";
+import ContractDocuments from "./components/contracts/ContractDocuments";
 import "./components/contracts/contracts.css";
 import "./Tenant.css";
 
@@ -528,7 +529,7 @@ function BillingPage({ invoices, notify }) {
   );
 }
 
-function ContractsPage({ user, notify }) {
+function ContractsPage({ notify }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -543,6 +544,7 @@ function ContractsPage({ user, notify }) {
   const statusText = {
     PendingTenantConfirmation: "Chờ bạn xác nhận",
     PendingOperatorConfirmation: "Chờ chủ trọ đối ký",
+    PendingStart: "Chờ ngày bắt đầu",
     Active: "Đang hiệu lực",
     PendingMoveOut: "Chờ bàn giao",
     PendingSettlement: "Chờ thanh toán và tất toán",
@@ -566,10 +568,30 @@ function ContractsPage({ user, notify }) {
       });
     return () => controller.abort();
   }, [revision]);
+  async function acceptInvitation(contract, isRepresentative) {
+    setConfirmBusyId(contract.id);
+    setOfferError("");
+    try {
+      const body = { offerVersion: contract.offerVersion, termsHash: contract.offerTermsHash };
+      const result = isRepresentative
+        ? await contractApi.confirmOffer(contract.id, body)
+        : await contractApi.joinInvitation(contract.id, body);
+      notify?.(isRepresentative
+        ? result.status === "PendingStart"
+          ? `Đã xác nhận lời mời. Hợp đồng có hiệu lực từ ${formatDate(contract.startDate)}.`
+          : "Đã xác nhận lời mời. Hợp đồng đã có hiệu lực."
+        : "Đã xác nhận tham gia. Bạn sẽ được tính là thành viên phòng khi hợp đồng có hiệu lực.");
+      setRevision(value => value + 1);
+    } catch (cause) {
+      setOfferError(cause.message || "Không thể xác nhận lời mời.");
+    } finally {
+      setConfirmBusyId(null);
+    }
+  }
   return (
     <>
       <Header page="contracts" />
-      <TenantRules />
+      {contracts.some((contract) => contract.workflow !== "Invitation") && <TenantRules />}
       {loading ? (
         <section className="tn-card tn-contract-state" role="status">
           <FileText size={28} aria-hidden="true" />
@@ -613,7 +635,10 @@ function ContractsPage({ user, notify }) {
                   <span
                     className={`contract-status contract-status--${contract.status?.toLowerCase()}`}
                   >
-                    {statusText[contract.status] || contract.status}
+                    {contract.workflow === "Invitation" && contract.status === "PendingTenantConfirmation" &&
+                    contract.tenants?.some(tenant => !tenant.leaveDate && tenant.invitationAcceptedOfferVersion === contract.offerVersion)
+                      ? "Chờ người đại diện"
+                      : statusText[contract.status] || contract.status}
                   </span>
                 </div>
                 <div className="tn-contract-amounts">
@@ -652,8 +677,7 @@ function ContractsPage({ user, notify }) {
                 </dl>
                 <div className="tn-contract-people">
                   <h4>
-                    <UserRound size={17} aria-hidden="true" /> Thành viên hợp
-                    đồng{" "}
+                    <UserRound size={17} aria-hidden="true" /> {contract.workflow === "Invitation" ? "Người được mời" : "Thành viên hợp đồng"}{" "}
                     <span>
                       {(contract.members ?? contract.tenants ?? []).length}
                     </span>
@@ -680,11 +704,16 @@ function ContractsPage({ user, notify }) {
                               {tenant.isContactPerson ? " · Người liên hệ" : ""}
                             </small>
                             <small>
-                              Vào ở {formatDate(tenant.joinDate)}
+                              {contract.workflow === "Invitation" ? "Dự kiến vào ở" : "Vào ở"} {formatDate(tenant.joinDate)}
                               {tenant.leaveDate
                                 ? ` · Đã rời ${formatDate(tenant.leaveDate)}`
                                 : ""}
                             </small>
+                            {contract.workflow === "Invitation" && <small>
+                              {tenant.invitationAcceptedOfferVersion === contract.offerVersion
+                                ? "Đã xác nhận tham gia"
+                                : "Chưa xác nhận tham gia"}
+                            </small>}
                           </div>
                         </li>
                       ))}
@@ -693,6 +722,7 @@ function ContractsPage({ user, notify }) {
                     <p>Chưa có người thuê được ghi nhận.</p>
                   )}
                 </div>
+                {contract.workflow === "Invitation" && <p className="tn-contract-member-count">Thành viên phòng hiện tại: {contract.memberCount ?? 0}</p>}
                 {contract.note && (
                   <div className="tn-contract-note">
                     <strong>Ghi chú từ chủ trọ</strong>
@@ -705,12 +735,37 @@ function ContractsPage({ user, notify }) {
                     <p>{contract.closureReason}</p>
                   </div>
                 )}
-                {contract.status === "PendingTenantConfirmation" &&
+                {contract.workflow === "Invitation" && contract.status !== "Cancelled" && contract.status !== "Draft" && (
+                  <ContractDocuments contractId={contract.id} offerVersion={contract.offerVersion} />
+                )}
+                {contract.workflow === "Invitation" && (() => {
+                  const ownLink = contract.tenants?.find(tenant => !tenant.leaveDate);
+                  const isRepresentative = Boolean(ownLink?.isContactPerson);
+                  const accepted = ownLink?.invitationAcceptedOfferVersion === contract.offerVersion;
+                  const canConfirm = isRepresentative
+                    ? contract.status === "PendingTenantConfirmation"
+                    : ["PendingTenantConfirmation", "PendingStart", "Active"].includes(contract.status);
+                  return <div className="tn-offer-box">
+                    <strong>Lời mời tham gia hợp đồng · Phiên bản {contract.offerVersion}</strong>
+                    {accepted ? <p role="status">Bạn đã xác nhận tham gia{contract.status === "PendingStart" ? `. Hợp đồng có hiệu lực từ ${formatDate(contract.startDate)}.` : contract.status === "PendingTenantConfirmation" ? ". Đang chờ người đại diện xác nhận." : "."}</p>
+                      : canConfirm ? <>
+                        <p>{isRepresentative
+                          ? `Bạn là người đại diện. Sau khi bạn xác nhận, hợp đồng sẽ có hiệu lực từ ${formatDate(contract.startDate)}.`
+                          : "Xác nhận lời mời để được tính là thành viên phòng khi hợp đồng có hiệu lực."}</p>
+                        {offerError && <p className="form-error" role="alert">{offerError}</p>}
+                        <button type="button" className="tn-submit" disabled={confirmBusyId === contract.id} onClick={() => acceptInvitation(contract, isRepresentative)}>
+                          {confirmBusyId === contract.id ? "Đang xác nhận…" : "Xác nhận tham gia hợp đồng"}
+                        </button>
+                      </> : <p>Lời mời này không còn ở trạng thái chờ xác nhận.</p>}
+                  </div>;
+                })()}
+                {contract.workflow !== "Invitation" && contract.status === "PendingTenantConfirmation" &&
                   (() => {
                     const isRepresentative = contract.tenants?.some(
                       (t) =>
                         t.isContactPerson &&
-                        (!t.userId || t.userId === user?.id),
+                        t.role === "ContractParty" &&
+                        !t.leaveDate,
                     );
                     const agreed = Boolean(agreedMap[contract.id]);
                     const isBusy = confirmBusyId === contract.id;
@@ -847,8 +902,7 @@ function ContractsPage({ user, notify }) {
           <FileText size={29} aria-hidden="true" />
           <strong>Chưa có hợp đồng</strong>
           <p>
-            Khi chủ trọ kích hoạt hợp đồng gắn với tài khoản của bạn, thông tin
-            sẽ xuất hiện tại đây.
+            Khi chủ trọ mời bạn tham gia hợp đồng, thông tin sẽ xuất hiện tại đây.
           </p>
         </section>
       )}
@@ -1767,7 +1821,6 @@ export default function Tenant({
   );
   const room = myRooms[0];
   const property = properties.find((item) => item.id === room?.propertyId);
-  const myContracts = contracts.filter(mine);
   const myInvoices = [...invoices, ...invoiceHistory]
     .filter(mine)
     .sort(
@@ -1843,11 +1896,7 @@ export default function Tenant({
   if (page === "contracts")
     return (
       <div className="tn-page">
-        <ContractsPage
-          contracts={myContracts}
-          navigate={navigate}
-          notify={notify}
-        />
+        <ContractsPage notify={notify} />
       </div>
     );
   if (page === "requests")

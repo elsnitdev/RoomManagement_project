@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useApiQuery } from "../hooks/useApiQuery";
+import SearchableSelect from "../components/common/SearchableSelect";
+import vnAddressData from "../data/vn-addresses.json";
 import {
   listProperties,
   getProperty,
@@ -11,7 +13,9 @@ import {
 
 const emptyDraft = {
   name: "",
-  address: "",
+  city: "",
+  ward: "",
+  streetAddress: "",
   description: "",
   isActive: true,
 };
@@ -49,7 +53,9 @@ export default function PropertyPage({ notify }) {
       setEditing(property);
       setDraft({
         name: property.name,
-        address: property.address,
+        city: property.city || "",
+        ward: property.ward || "",
+        streetAddress: property.streetAddress || (!property.city ? property.address || "" : ""),
         description: property.description ?? "",
         isActive: property.isActive,
       });
@@ -59,16 +65,22 @@ export default function PropertyPage({ notify }) {
     }
   }
 
+  const provinces = vnAddressData.map((p) => p.name);
+  const currentProvinceData = vnAddressData.find((p) => p.name === draft.city);
+  const currentWards = currentProvinceData ? currentProvinceData.wards : [];
+
   async function save(event) {
     event.preventDefault();
 
     const payload = {
       name: draft.name.trim(),
-      address: draft.address.trim(),
+      city: draft.city.trim(),
+      ward: draft.ward.trim(),
+      streetAddress: draft.streetAddress.trim(),
       description: draft.description.trim() || null,
     };
-    if (!payload.name || !payload.address) {
-      setActionError("Tên và địa chỉ không được để trống.");
+    if (!payload.name || !payload.city || !payload.ward || !payload.streetAddress) {
+      setActionError("Tên khu trọ, Tỉnh/Thành phố, Phường/Xã và địa chỉ cụ thể không được để trống.");
       return;
     }
 
@@ -147,13 +159,33 @@ export default function PropertyPage({ notify }) {
             />
           </label>
 
+          <SearchableSelect
+            label="Tỉnh / Thành phố"
+            value={draft.city}
+            onChange={(c) => setDraft({ ...draft, city: c, ward: "" })}
+            options={provinces}
+            placeholder="-- Chọn Tỉnh / Thành phố --"
+            required
+          />
+
+          <SearchableSelect
+            label="Phường / Xã"
+            value={draft.ward}
+            onChange={(w) => setDraft({ ...draft, ward: w })}
+            options={currentWards}
+            placeholder="-- Chọn Phường / Xã --"
+            disabled={!draft.city}
+            required
+          />
+
           <label className="field">
-            <span>Địa chỉ</span>
+            <span>Địa chỉ cụ thể (Số nhà, tên đường)</span>
             <input
               required
-              maxLength={300}
-              value={draft.address}
-              onChange={(e) => setDraft({ ...draft, address: e.target.value })}
+              maxLength={200}
+              value={draft.streetAddress}
+              onChange={(e) => setDraft({ ...draft, streetAddress: e.target.value })}
+              placeholder="Số nhà, tên đường..."
             />
           </label>
 

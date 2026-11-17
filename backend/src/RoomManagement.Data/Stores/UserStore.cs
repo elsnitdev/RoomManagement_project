@@ -114,7 +114,9 @@ public sealed class UserStore : IUserStore
                 where profile.UserId == userId &&
                       contract.Status != ContractStatus.Draft &&
                       contract.Status != ContractStatus.Cancelled &&
-                      contract.Status != ContractStatus.PendingTenantConfirmation
+                      contract.Status != ContractStatus.PendingTenantConfirmation &&
+                      (contract.Workflow != ContractWorkflow.Invitation ||
+                       link.InvitationAcceptedOfferVersion == contract.OfferVersion)
                 select contract.Id).AnyAsync(cancellationToken);
     }
 

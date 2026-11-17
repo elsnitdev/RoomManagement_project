@@ -43,6 +43,33 @@ public sealed class RequestServiceTests
     }
 
     [Fact]
+    public async Task CreateTenantRequest_requires_contract_when_tenant_has_two_rooms_in_one_property()
+    {
+        var (service, store, propertyId) = CreateSut();
+        var first = store.ActiveStaysByTenant[Tenant1Id][0];
+        var second = first with { RoomId = Guid.NewGuid(), RoomNumber = "102", ContractId = Guid.NewGuid() };
+        store.ActiveStaysByTenant[Tenant1Id].Add(second);
+
+        var options = await service.GetTenantActivePropertiesAsync(Tenant1Id);
+        Assert.Equal(2, options.Count);
+        Assert.Contains(options, option => option.ContractId == second.ContractId && option.RoomNumber == "102");
+
+        var ambiguous = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.CreateTenantRequestAsync(Tenant1Id, new CreateTenantRequestInput(propertyId, "Sửa đèn", "Đèn hỏng")));
+        Assert.Equal("CONTRACT_REQUIRED", ambiguous.Code);
+
+        var created = await service.CreateTenantRequestAsync(Tenant1Id,
+            new CreateTenantRequestInput(propertyId, "Sửa đèn", "Đèn hỏng", second.ContractId));
+        Assert.Equal("102", created.RoomNumber);
+        Assert.Equal(second.ContractId, Assert.Single(store.Requests.Values).ContractId);
+
+        var wrongContract = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.CreateTenantRequestAsync(Tenant1Id,
+                new CreateTenantRequestInput(propertyId, "Sửa đèn", "Đèn hỏng", Guid.NewGuid())));
+        Assert.Equal("NO_ACTIVE_CONTRACT", wrongContract.Code);
+    }
+
+    [Fact]
     public async Task CreateTenantRequest_and_Landlord_View_and_UpdateStatus_works_end_to_end()
     {
         var (service, store, propertyId) = CreateSut();

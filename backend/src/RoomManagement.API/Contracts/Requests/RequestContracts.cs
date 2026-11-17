@@ -6,9 +6,10 @@ namespace RoomManagement.API.Contracts.Requests;
 public sealed record CreateTenantRequestRequest(
     Guid? PropertyId,
     string Title,
-    string Content)
+    string Content,
+    Guid? ContractId = null)
 {
-    public CreateTenantRequestInput ToInput() => new(PropertyId, Title, Content);
+    public CreateTenantRequestInput ToInput() => new(PropertyId, Title, Content, ContractId);
 }
 
 public sealed record UpdateLandlordRequestStatusRequest(RequestRecipientStatus Status);

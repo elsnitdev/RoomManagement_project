@@ -70,7 +70,7 @@ var serviceId = Guid.NewGuid();
 await using var tx = await db.Database.BeginTransactionAsync();
 db.Users.AddRange(admin, landlord, tenantA, tenantB);
 db.Properties.Add(new Property { Id = propertyId, OwnerUserId = landlord.Id,
-    Name = $"Invoice Demo {suffix}", Address = "Dữ liệu kiểm thử cục bộ", IsActive = true, CreatedAt = now });
+    Name = $"Invoice Demo {suffix}", City = "Thành phố Hồ Chí Minh", Ward = "Phường Bến Nghé", StreetAddress = "123 Lê Lợi", Address = "123 Lê Lợi, Phường Bến Nghé, Thành phố Hồ Chí Minh", IsActive = true, CreatedAt = now });
 db.Rooms.AddRange(
     new Room { Id = roomA, PropertyId = propertyId, RoomNumber = "INV-A", BasePrice = 3_000_000,
         MaxOccupants = 2, Status = RoomStatus.Occupied, CreatedAt = now },

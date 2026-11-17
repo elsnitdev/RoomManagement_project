@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using RoomManagement.Data;
 using RoomManagement.Domain;
@@ -19,7 +21,20 @@ public sealed class TenantContractLifecycleSqlServerTests
     {
         await using var db = await SqlServerDatabase.CreateAsync();
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
-            b.UseSetting("ConnectionStrings:DefaultConnection", db.ConnectionString));
+        {
+            b.UseEnvironment("Testing");
+            b.UseSetting("ConnectionStrings:RoomManagement", db.ConnectionString);
+            b.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:RoomManagement"] = db.ConnectionString,
+                    ["InitialAdmin:Password"] = "",
+                    ["Jwt:Issuer"] = "RoomManagement.Tests",
+                    ["Jwt:Audience"] = "RoomManagement.Tests.Client",
+                    ["Jwt:SigningKey"] = ApiFactory.SigningKey,
+                    ["Jwt:AccessTokenMinutes"] = "15"
+                }));
+        });
 
         using var client = factory.CreateClient();
 
@@ -84,8 +99,8 @@ public sealed class TenantContractLifecycleSqlServerTests
                 new Room { Id = roomAId, PropertyId = propAId, RoomNumber = "A101", MaxOccupants = 2, BasePrice = 3000000, Status = RoomStatus.Available, CreatedAt = DateTime.UtcNow },
                 new Room { Id = roomBId, PropertyId = propBId, RoomNumber = "B101", MaxOccupants = 2, BasePrice = 3500000, Status = RoomStatus.Available, CreatedAt = DateTime.UtcNow });
             ctx.ContractRulesVersions.AddRange(
-                new ContractRulesVersion { Id = Guid.NewGuid(), PropertyId = propAId, VersionNumber = 1, Content = "Nội quy A", IsActive = true, CreatedAt = DateTime.UtcNow },
-                new ContractRulesVersion { Id = Guid.NewGuid(), PropertyId = propBId, VersionNumber = 1, Content = "Nội quy B", IsActive = true, CreatedAt = DateTime.UtcNow });
+                new ContractRulesVersion { Id = Guid.NewGuid(), PropertyId = propAId, VersionNumber = 1, Content = "Nội quy A", IsActive = true, CreatedByUserId = landlordAId, CreatedAt = DateTime.UtcNow },
+                new ContractRulesVersion { Id = Guid.NewGuid(), PropertyId = propBId, VersionNumber = 1, Content = "Nội quy B", IsActive = true, CreatedByUserId = landlordBId, CreatedAt = DateTime.UtcNow });
 
             await ctx.SaveChangesAsync();
         }
@@ -127,19 +142,28 @@ public sealed class TenantContractLifecycleSqlServerTests
             roomId = roomAId,
             contractCode = "HD-A101",
             startDate = today.ToString("yyyy-MM-dd"),
+            endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).ToString("yyyy-MM-dd"),
             monthlyRent = 3000000,
             depositAmount = 3000000,
-            tenancyMode = ContractTenancyMode.CoTenancy
+            tenancyMode = "CoTenancy"
         });
-        Assert.Equal(HttpStatusCode.Created, createContract.StatusCode);
+        Assert.True(createContract.StatusCode == HttpStatusCode.Created,
+            $"Create legacy contract: {createContract.StatusCode} {await createContract.Content.ReadAsStringAsync()}");
         var contractId = (await createContract.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("id").GetGuid();
+        // This already-sent contract exercises the preserved legacy rules workflow.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var ctx = scope.ServiceProvider.GetRequiredService<RoomManagementDbContext>();
+            await ctx.Contracts.Where(x => x.Id == contractId)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.Workflow, ContractWorkflow.LegacyRules));
+        }
 
         var addTenant = await client.PostAsJsonAsync($"/api/properties/{propAId}/contracts/{contractId}/tenants/by-user", new
         {
             userId = tenantUserId,
             joinDate = today.ToString("yyyy-MM-dd"),
             isContactPerson = true,
-            role = ContractTenantRole.ContractParty
+            role = "ContractParty"
         });
         Assert.Equal(HttpStatusCode.Created, addTenant.StatusCode);
 
@@ -177,7 +201,38 @@ public sealed class TenantContractLifecycleSqlServerTests
         });
         Assert.Equal(HttpStatusCode.UnprocessableEntity, mutateIdentity.StatusCode);
 
-        // 6. Landlord A countersigns -> Active, and terminates -> Tenant receives notification
+        // 6. A newer rules version requires a new offer and tenant confirmation.
+        await SignInAsync(client, "landlordA", "Pass123!");
+        var changedRules = await client.PutAsJsonAsync($"/api/properties/{propAId}/rules", new
+        {
+            content = "Nội quy A phiên bản hai",
+            expectedVersionId = rulesVersionId
+        });
+        Assert.Equal(HttpStatusCode.OK, changedRules.StatusCode);
+        var newRulesVersionId = (await changedRules.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("data").GetProperty("versionId").GetGuid();
+        Assert.NotEqual(rulesVersionId, newRulesVersionId);
+
+        var staleActivate = await client.PostAsync($"/api/properties/{propAId}/contracts/{contractId}/activate", null);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, staleActivate.StatusCode);
+
+        var resentOffer = await client.PostAsync($"/api/properties/{propAId}/contracts/{contractId}/send-offer", null);
+        Assert.Equal(HttpStatusCode.OK, resentOffer.StatusCode);
+        var resentData = (await resentOffer.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+        Assert.Equal(offerVersion + 1, resentData.GetProperty("offerVersion").GetInt32());
+        Assert.Equal(newRulesVersionId, resentData.GetProperty("offerRulesVersionId").GetGuid());
+
+        await SignInAsync(client, "0987654321", "Password123!");
+        var reconfirm = await client.PostAsJsonAsync($"/api/me/contracts/{contractId}/confirm", new
+        {
+            offerVersion = resentData.GetProperty("offerVersion").GetInt32(),
+            termsHash = resentData.GetProperty("offerTermsHash").GetString(),
+            rulesVersionId = newRulesVersionId,
+            acceptRules = true
+        });
+        Assert.Equal(HttpStatusCode.OK, reconfirm.StatusCode);
+
+        // Landlord A countersigns -> Active, and terminates -> Tenant receives notification.
         await SignInAsync(client, "landlordA", "Pass123!");
         var activate = await client.PostAsync($"/api/properties/{propAId}/contracts/{contractId}/activate", null);
         Assert.Equal(HttpStatusCode.OK, activate.StatusCode);
@@ -190,8 +245,13 @@ public sealed class TenantContractLifecycleSqlServerTests
 
         // Tenant sees termination notification
         await SignInAsync(client, "0987654321", "Password123!");
-        var notifs = await client.GetFromJsonAsync<JsonElement>("/api/me/notifications");
-        Assert.True(notifs.GetProperty("meta").GetProperty("total").GetInt32() >= 2);
+        var notificationsResponse = await client.GetAsync("/api/me/notifications");
+        Assert.True(notificationsResponse.IsSuccessStatusCode,
+            $"Notifications: {notificationsResponse.StatusCode} {await notificationsResponse.Content.ReadAsStringAsync()}");
+        var notifs = await notificationsResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(notifs.TryGetProperty("meta", out var meta), $"Notifications: {notifs}");
+        Assert.True(meta.GetProperty("totalItems").GetInt32() >= 2,
+            $"Notifications: {notifs}");
     }
 
     private static async Task SignInAsync(HttpClient client, string login, string password)

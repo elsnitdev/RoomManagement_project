@@ -11,6 +11,9 @@ public sealed class ContractTenant
     public DateOnly? LeaveDate { get; set; }
     public bool IsContactPerson { get; set; }
     public bool OnlineRulesRequired { get; set; }
+    public int? InvitationAcceptedOfferVersion { get; set; }
+    public DateTime? InvitationAcceptedAt { get; set; }
+    public string? InvitationAcceptedByUserId { get; set; }
     public ContractTenantRole Role { get; set; } = ContractTenantRole.ContractParty;
     public DateTime? ResidenceApprovedAt { get; set; }
     public string? ResidenceApprovedByUserId { get; set; }

@@ -10,5 +10,10 @@ public sealed class ContractDocument
     public string StorageKey { get; set; } = null!;
     public string? FileType { get; set; }
     public ContractDocumentType DocumentType { get; set; }
+    public int? OfferVersion { get; set; }
+    public int? PageOrder { get; set; }
+    public long? SizeBytes { get; set; }
+    public string? Sha256 { get; set; }
+    public string? UploadedByUserId { get; set; }
     public DateTime UploadedAt { get; set; }
 }

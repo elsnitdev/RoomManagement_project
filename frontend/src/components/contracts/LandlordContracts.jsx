@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { billingApi } from "../../services/api/billingApi";
 import { contractApi } from "../../services/api/contractApi";
+import ContractDocuments from "./ContractDocuments";
+import { CONTRACT_DOCUMENT_ACCEPT, validateContractFiles } from "./contractDocumentFiles";
 import { LandlordRules } from "./ContractRules";
 import EarlyExitFlow, { SettlementRefundEvidencePanel } from "./EarlyExitFlow";
 import {
@@ -25,7 +27,7 @@ import {
   lookupTenantExact,
 } from "../../services/api/landlordTenantApi";
 import { listRoomRows } from "../../services/api/RoomRowApi";
-import { endOfMonth, unavailableTenantIds } from "./contractForm";
+import { endOfMonth } from "./contractForm";
 import "./contracts.css";
 import "./contractPages.css";
 
@@ -54,6 +56,7 @@ const statusText = {
   Draft: "Bản nháp",
   PendingTenantConfirmation: "Chờ người thuê xác nhận",
   PendingOperatorConfirmation: "Chờ chủ trọ đối ký",
+  PendingStart: "Chờ ngày bắt đầu",
   Active: "Đang hiệu lực",
   PendingMoveOut: "Chờ bàn giao",
   PendingSettlement: "Chờ tất toán",
@@ -65,6 +68,7 @@ const PENDING_STATUSES = [
   "Draft",
   "PendingTenantConfirmation",
   "PendingOperatorConfirmation",
+  "PendingStart",
 ];
 const daysUntil = (dateStr) => {
   if (!dateStr) return null;
@@ -79,7 +83,7 @@ const isExpiringSoon = (contract) => {
   return diff !== null && diff >= 0 && diff <= 30;
 };
 const isUpcoming = (contract) =>
-  contract?.status === "Active" && contract.startDate > today();
+  contract?.status === "PendingStart" || contract?.status === "Active" && contract.startDate > today();
 const needsSettlement = (contract) =>
   ["PendingSettlement", "Expired", "Terminated"].includes(contract?.status) &&
   (Number(contract.outstandingAmount) > 0 ||
@@ -394,11 +398,6 @@ export default function LandlordContracts({
   const [serviceCatalog, setServiceCatalog] = useState([]);
   const [roomServiceLoading, setRoomServiceLoading] = useState(false);
   const [serviceLoadError, setServiceLoadError] = useState("");
-  const [activeContracts, setActiveContracts] = useState([]);
-  const [tenantAvailabilityLoading, setTenantAvailabilityLoading] = useState(
-    mode !== "list",
-  );
-  const [tenantAvailabilityError, setTenantAvailabilityError] = useState(false);
   const [showAddTenant, setShowAddTenant] = useState(false);
   const [detail, setDetail] = useState(null);
   const [depositInvoice, setDepositInvoice] = useState(null);
@@ -406,6 +405,7 @@ export default function LandlordContracts({
   const [depositInvoiceError, setDepositInvoiceError] = useState(false);
   const [depositRevision, setDepositRevision] = useState(0);
   const [form, setForm] = useState(newForm);
+  const [contractFiles, setContractFiles] = useState([]);
   const [roomSearch, setRoomSearch] = useState("");
   const [roomRow, setRoomRow] = useState("");
   const [roomFloor, setRoomFloor] = useState("");
@@ -426,6 +426,7 @@ export default function LandlordContracts({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [conflictingContract, setConflictingContract] = useState(null);
 
   useEffect(() => {
     setPropertyId(routePropertyId || "");
@@ -497,29 +498,6 @@ export default function LandlordContracts({
       .finally(() => { if (!controller.signal.aborted) setRoomServiceLoading(false); });
     return () => controller.abort();
   }, [propertyId, form.roomId, form.startDate, mode]);
-  useEffect(() => {
-    if (mode === "list" || !properties.length) return;
-    const controller = new AbortController();
-    setTenantAvailabilityLoading(true);
-    setTenantAvailabilityError(false);
-    Promise.all(
-      properties.map((item) => contractApi.list(item.id, controller.signal)),
-    )
-      .then((results) => {
-        if (!controller.signal.aborted)
-          setActiveContracts(results.flatMap((result) => result.data || []));
-      })
-      .catch((cause) => {
-        if (!controller.signal.aborted) {
-          setTenantAvailabilityError(true);
-          console.warn("Could not check all contracts for availability:", cause);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setTenantAvailabilityLoading(false);
-      });
-    return () => controller.abort();
-  }, [mode, properties]);
   useEffect(() => {
     if (!propertyId || !contractId) {
       setDetail(null);
@@ -605,35 +583,17 @@ export default function LandlordContracts({
       ),
     [rooms, roomRow, roomFloor, roomSearch],
   );
+  const currentMembers = useMemo(
+    () => (detail?.tenants || []).filter((member) => !member.leaveDate),
+    [detail],
+  );
   const unavailableIds = useMemo(
-    () => {
-      let safeEnd = null;
-      if (mode === "new") {
-        if (form.endMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(form.endMonth)) {
-          try {
-            safeEnd = endOfMonth(form.endMonth);
-          } catch {
-            safeEnd = null;
-          }
-        }
-      } else {
-        safeEnd = detail?.endDate || null;
-      }
-      return unavailableTenantIds(
-        activeContracts,
-        mode === "new" ? form.startDate : extraJoinDate,
-        safeEnd,
-        mode === "new" ? null : detail,
-      );
-    },
-    [
-      activeContracts,
-      mode,
-      form.startDate,
-      form.endMonth,
-      extraJoinDate,
-      detail,
-    ],
+    () => new Set(currentMembers.map((member) => member.tenantId)),
+    [currentMembers],
+  );
+  const currentMemberUserIds = useMemo(
+    () => new Set(currentMembers.map((member) => member.userId).filter(Boolean)),
+    [currentMembers],
   );
   const allAvailableTenants = useMemo(() => {
     const map = new Map();
@@ -647,22 +607,20 @@ export default function LandlordContracts({
   }, [lookedUpTenants, tenants]);
   const matchingTenants = useMemo(
     () =>
-      !tenantAvailabilityLoading && !tenantAvailabilityError
-        ? allAvailableTenants.filter(
-            (item) =>
-              !unavailableIds.has(item.id) &&
-              (!tenantSearch.trim() ||
-                `${item.fullName} ${item.email || ""} ${item.phoneNumber || ""} ${item.citizenId || ""}`
-                  .toLocaleLowerCase("vi-VN")
-                  .includes(tenantSearch.trim().toLocaleLowerCase("vi-VN"))),
-          )
-        : [],
+      allAvailableTenants.filter(
+        (item) =>
+          !unavailableIds.has(item.id) &&
+          !currentMemberUserIds.has(item.userId) &&
+          (!tenantSearch.trim() ||
+            `${item.fullName} ${item.email || ""} ${item.phoneNumber || ""} ${item.citizenId || ""}`
+              .toLocaleLowerCase("vi-VN")
+              .includes(tenantSearch.trim().toLocaleLowerCase("vi-VN"))),
+      ),
     [
       allAvailableTenants,
       tenantSearch,
       unavailableIds,
-      tenantAvailabilityLoading,
-      tenantAvailabilityError,
+      currentMemberUserIds,
     ],
   );
   useEffect(() => {
@@ -860,15 +818,6 @@ export default function LandlordContracts({
           setLookupError("Người thuê này đã được chọn trong hợp đồng.");
           return;
         }
-        if (
-          unavailableIds.has(entry.id) ||
-          tenants.some(
-            (item) => item.userId === entry.userId && unavailableIds.has(item.id),
-          )
-        ) {
-          setLookupError("Người thuê này đã có hợp đồng trùng thời gian.");
-          return;
-        }
         if (chosenRoom && selectedMembers.length >= chosenRoom.maxOccupants) {
           setLookupError("Phòng đã đủ số người theo sức chứa.");
           return;
@@ -891,8 +840,9 @@ export default function LandlordContracts({
 
   const footerErrorRef = useRef(null);
 
-  const reportError = (message) => {
+  const reportError = (message, conflict = null) => {
     setError(message);
+    setConflictingContract(conflict);
     setTimeout(() => {
       footerErrorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 50);
@@ -900,12 +850,6 @@ export default function LandlordContracts({
 
   async function create(event) {
     event.preventDefault();
-    if (tenantAvailabilityLoading) {
-      reportError(
-        "Đang tải dữ liệu kiểm tra người thuê, vui lòng đợi giây lát.",
-      );
-      return;
-    }
     if (!chosenRoom) {
       reportError("Vui lòng chọn một phòng còn trống ở Bước 1 trước khi lưu.");
       return;
@@ -930,6 +874,15 @@ export default function LandlordContracts({
       reportError(`Số người được chọn (${selectedMembers.length}) vượt quá sức chứa tối đa của phòng (${chosenRoom.maxOccupants} người).`);
       return;
     }
+    if (selectedMembers.some((item) => !item.userId)) {
+      reportError("Mỗi người được mời cần có tài khoản để tự xác nhận tham gia hợp đồng.");
+      return;
+    }
+    const fileProblem = validateContractFiles(contractFiles);
+    if (fileProblem) {
+      reportError(fileProblem);
+      return;
+    }
     if (roomServiceLoading) {
       reportError("Đang tải danh mục dịch vụ của phòng, vui lòng đợi trong giây lát.");
       return;
@@ -944,6 +897,7 @@ export default function LandlordContracts({
     }
     setBusy(true);
     setError("");
+    setConflictingContract(null);
     try {
       // The API still requires ContractCode. Generate it without asking the landlord to enter it.
       const code =
@@ -966,31 +920,31 @@ export default function LandlordContracts({
         note: form.note.trim() || null,
         tenancyMode: form.tenancyMode,
         roomServices: form.roomServices.map((item) => ({ serviceId: item.serviceId, quantity: Number(item.quantity), customPrice: item.customPrice === "" ? null : Number(item.customPrice) })),
+        members: [chosenTenant, ...selectedAdditional].map((item, index) => ({
+          userId: item.userId,
+          isContactPerson: index === 0,
+          role: index === 0 || !familyMode ? "ContractParty" : "AuthorizedOccupant",
+        })),
       });
       try {
-        for (const [index, item] of [chosenTenant, ...selectedAdditional].entries()) {
-          if (item.isLookupAccount) {
-            await contractApi.addTenantByUser(propertyId, created.id, {
-              userId: item.userId,
-              joinDate: form.startDate,
-              isContactPerson: index === 0,
-              role: index === 0 || !familyMode ? "ContractParty" : "AuthorizedOccupant",
-            });
-          } else {
-            await contractApi.addTenant(propertyId, created.id, {
-              tenantId: item.id,
-              joinDate: form.startDate,
-              isContactPerson: index === 0,
-              role: index === 0 || !familyMode ? "ContractParty" : "AuthorizedOccupant",
-            });
-          }
-        }
+        const saved = await contractApi.detail(propertyId, created.id);
+        const savedUsers = new Set((saved.tenants || []).filter((item) => !item.leaveDate).map((item) => item.userId));
+        if (savedUsers.size !== selectedMembers.length ||
+            selectedMembers.some((item) => !savedUsers.has(item.userId)))
+          throw new Error("Danh sách người tham gia chưa được lưu đầy đủ. Vui lòng kiểm tra bản nháp trước khi gửi đề nghị.");
       } catch (cause) {
           notify?.(
-            `Đã tạo hợp đồng${created.depositInvoiceId ? " và hóa đơn cọc" : ""}, nhưng chưa thêm đủ người: ${errorText(cause)}`,
+            `Bản nháp ${created.contractCode || code} đã được tạo nhưng chưa xác minh được người tham gia: ${errorText(cause)}`,
           );
           routeTo(navigate, `/${propertyId}/${created.id}`);
           return;
+      }
+      try {
+        for (const file of contractFiles) await contractApi.uploadDocument(propertyId, created.id, file);
+      } catch (cause) {
+        notify?.(`Đã tạo bản nháp, nhưng chưa tải đủ tệp hợp đồng: ${errorText(cause)}. Bạn có thể tải tiếp trong chi tiết hợp đồng.`);
+        routeTo(navigate, `/${propertyId}/${created.id}`);
+        return;
       }
       notify?.(
         created.depositInvoiceId
@@ -1001,7 +955,12 @@ export default function LandlordContracts({
         navigate(`landlord/billing/${created.depositInvoiceId}`);
       else routeTo(navigate, `/${propertyId}/${created.id}`);
     } catch (cause) {
-      reportError(errorText(cause));
+      const conflict = cause?.details?.code === "CONTRACT_PERIOD_OVERLAP"
+        ? cause.details.conflictingContract
+        : null;
+      reportError(conflict
+        ? `Thời gian thuê trùng với hợp đồng ${conflict.code} (${displayDate(conflict.startDate)}–${displayDate(conflict.endDate)}).`
+        : errorText(cause), conflict);
     } finally {
       setBusy(false);
     }
@@ -1010,13 +969,20 @@ export default function LandlordContracts({
   async function run(action, message) {
     setBusy(true);
     setError("");
+    setConflictingContract(null);
     try {
       await action();
       setDetail(await contractApi.detail(propertyId, contractId));
       setDepositRevision((value) => value + 1);
       notify?.(message);
     } catch (cause) {
-      setError(errorText(cause));
+      const conflict = cause?.details?.code === "CONTRACT_PERIOD_OVERLAP"
+        ? cause.details.conflictingContract
+        : null;
+      setConflictingContract(conflict);
+      setError(conflict
+        ? `Thời gian thuê trùng với hợp đồng ${conflict.code} (${displayDate(conflict.startDate)}–${displayDate(conflict.endDate)}).`
+        : errorText(cause));
     } finally {
       setBusy(false);
     }
@@ -1043,6 +1009,11 @@ export default function LandlordContracts({
       {error && (
         <div className="contract-message contract-message--error" role="alert">
           {error}
+          {conflictingContract && (
+            <a href={`#/landlord/contracts/${propertyId}/${conflictingContract.id}`}>
+              Xem hợp đồng {conflictingContract.code}
+            </a>
+          )}
         </div>
       )}
       {loading && (
@@ -1097,7 +1068,7 @@ export default function LandlordContracts({
                 key: "pending",
                 label: "Chờ xử lý / Ký duyệt",
                 count: pendingCount,
-                sub: "Nháp, chờ khách & đối ký",
+                sub: "Nháp và các hợp đồng đang chờ xử lý",
                 tone: "blue",
               },
               {
@@ -1622,7 +1593,7 @@ export default function LandlordContracts({
                   <fieldset className="ct-mode-options">
                     <legend>Chế độ thuê</legend>
                     {[
-                      ["CoTenancy", "Đồng thuê", "Mỗi người đứng tên cần tài khoản và tự chấp thuận nội quy."],
+                      ["CoTenancy", "Đồng thuê", "Mỗi người được mời cần tài khoản và tự xác nhận tham gia."],
                       ["PrimaryTenantWithFamily", "Một người đứng tên, người thân cùng ở", "Người đứng tên chấp thuận; người thân được duyệt cư trú và không cần tài khoản."],
                     ].map(([value, label, help]) => (
                       <label key={value} className={`ct-mode-option ${form.tenancyMode === value ? "is-selected" : ""}`}>
@@ -1756,13 +1727,7 @@ export default function LandlordContracts({
                     )}
 
                     {/* Unified Candidate List */}
-                    {tenantAvailabilityLoading ? (
-                      <p className="ct-empty-text">Đang kiểm tra hợp đồng hiện có…</p>
-                    ) : tenantAvailabilityError ? (
-                      <p className="ct-empty-text">
-                        Đang lấy danh sách người thuê khả dụng…
-                      </p>
-                    ) : sortedTenantCandidates.length ? (
+                    {sortedTenantCandidates.length ? (
                       <ul className="ct-unified-tenant-list">
                         {sortedTenantCandidates.map((item) => {
                           const isRepresentative = form.tenantId === item.id;
@@ -1821,7 +1786,7 @@ export default function LandlordContracts({
                                     {isRepresentative && (
                                       <span
                                         className="ct-rep-badge"
-                                        title="Người chịu trách nhiệm đại diện ký kết và xác nhận nội quy"
+                                        title="Người đại diện xác nhận lời mời để hợp đồng có hiệu lực"
                                       >
                                         <CheckCircle2 size={12} /> Người đứng tên đại diện
                                       </span>
@@ -1973,6 +1938,20 @@ export default function LandlordContracts({
                     />
                   </label>
                 </section>
+                <section className="ct-card ct-documents">
+                  <h2>Ảnh hoặc PDF hợp đồng giấy (tùy chọn)</h2>
+                  <p className="ct-member-note">Chọn nhiều ảnh JPEG, PNG, WebP hoặc một PDF đã ký. Mỗi tệp tối đa 10 MiB. Bạn cũng có thể thêm tệp sau khi lưu bản nháp, trước khi gửi lời mời.</p>
+                  <label>Chọn tệp hợp đồng
+                    <input type="file" accept={CONTRACT_DOCUMENT_ACCEPT} multiple onChange={(event) => {
+                      const files = Array.from(event.target.files || []);
+                      setContractFiles(files);
+                      const problem = validateContractFiles(files);
+                      if (problem) setError(problem);
+                      else setError("");
+                    }} />
+                  </label>
+                  {contractFiles.length > 0 && <p role="status">Đã chọn {contractFiles.length} tệp: {contractFiles.map(file => file.name).join(", ")}</p>}
+                </section>
                 <div className="ct-form-footer" ref={footerErrorRef}>
                   {error && (
                     <div
@@ -1988,6 +1967,11 @@ export default function LandlordContracts({
                     >
                       <AlertCircle size={16} style={{ flexShrink: 0 }} />
                       <span>{error}</span>
+                      {conflictingContract && (
+                        <a href={`#/landlord/contracts/${propertyId}/${conflictingContract.id}`}>
+                          Xem hợp đồng {conflictingContract.code}
+                        </a>
+                      )}
                     </div>
                   )}
                   <span>Mã hợp đồng được hệ thống tạo tự động khi lưu.</span>
@@ -2280,26 +2264,29 @@ export default function LandlordContracts({
                     <Status contract={detail} />
                     {detail.tenantConfirmedAt && (
                       <p className="ct-member-note">
-                        Người thuê đại diện đã xác nhận hợp đồng &amp; nội quy lúc{" "}
+                        Người thuê đại diện đã xác nhận {detail.workflow === "Invitation" ? "lời mời" : "hợp đồng và nội quy"} lúc{" "}
                         {new Date(detail.tenantConfirmedAt).toLocaleString("vi-VN")}.
                       </p>
                     )}
                     <div className="ct-actions">
                       {detail.status === "Draft" && (
                         <>
+                          {detail.workflow === "Invitation" && detail.tenants?.some(person => !person.userId) && (
+                            <p className="ct-member-note" role="alert">Mỗi người được mời cần có tài khoản để tự xác nhận. Hãy liên kết tài khoản trước khi gửi.</p>
+                          )}
                           <button
                             type="button"
                             className="contract-button contract-button--primary"
-                            disabled={busy || !detail.tenants?.length}
+                            disabled={busy || !detail.tenants?.length || detail.workflow === "Invitation" && detail.tenants.some(person => !person.userId)}
                             onClick={() =>
                               run(
                                 () =>
                                   contractApi.sendOffer(propertyId, contractId),
-                                "Đã gửi đề nghị hợp đồng cho người thuê đại diện.",
+                                detail.workflow === "Invitation" ? "Đã gửi lời mời cho những người tham gia hợp đồng." : "Đã gửi đề nghị hợp đồng cho người thuê đại diện.",
                               )
                             }
                           >
-                            Gửi đề nghị cho người thuê
+                            {detail.workflow === "Invitation" ? "Gửi lời mời tham gia" : "Gửi đề nghị cho người thuê"}
                           </button>
                           <button
                             type="button"
@@ -2325,7 +2312,9 @@ export default function LandlordContracts({
                       {detail.status === "PendingTenantConfirmation" && (
                         <>
                           <p className="ct-member-note">
-                            Đang chờ người thuê đại diện xem và xác nhận đồng ý nội dung hợp đồng cùng nội quy khu trọ.
+                            {detail.workflow === "Invitation"
+                              ? "Đang chờ người thuê đại diện xác nhận lời mời. Những người khác có thể xác nhận riêng ngay bây giờ."
+                              : "Đang chờ người thuê đại diện xem và xác nhận đồng ý nội dung hợp đồng cùng nội quy khu trọ."}
                           </p>
                           <button
                             type="button"
@@ -2360,6 +2349,24 @@ export default function LandlordContracts({
                           </button>
                           <button
                             type="button"
+                            className="contract-button contract-button--secondary"
+                            disabled={busy}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  "Gửi lại đề nghị với nội quy hiện hành? Xác nhận trước đó của người thuê sẽ hết hiệu lực và họ cần xác nhận lại."
+                                )
+                              )
+                                run(
+                                  () => contractApi.sendOffer(propertyId, contractId),
+                                  "Đã gửi lại đề nghị để người thuê xác nhận phiên bản nội quy hiện hành."
+                                );
+                            }}
+                          >
+                            Gửi lại đề nghị cho người thuê
+                          </button>
+                          <button
+                            type="button"
                             className="contract-button contract-button--danger"
                             disabled={busy}
                             onClick={() => {
@@ -2372,6 +2379,17 @@ export default function LandlordContracts({
                           >
                             Hủy hợp đồng
                           </button>
+                        </>
+                      )}
+                      {detail.status === "PendingStart" && detail.workflow === "Invitation" && (
+                        <>
+                          <p className="ct-member-note" role="status">
+                            Người đại diện đã xác nhận. Hợp đồng tự có hiệu lực từ {displayDate(detail.startDate)}; những người khác chỉ được tính là thành viên sau khi tự xác nhận.
+                          </p>
+                          <button type="button" className="contract-button contract-button--danger" disabled={busy} onClick={() => {
+                            if (window.confirm("Hủy hợp đồng đang chờ ngày bắt đầu?"))
+                              run(() => contractApi.cancel(propertyId, contractId), "Đã hủy hợp đồng.");
+                          }}>Hủy hợp đồng</button>
                         </>
                       )}
                       {detail.status === "Active" && (
@@ -2401,12 +2419,11 @@ export default function LandlordContracts({
                     </div>
                   </aside>
                 </div>
-                <LandlordRules
-                  propertyId={propertyId}
-                  contractId={contractId}
-                  detail={detail}
-                  navigate={navigate}
-                />
+                {detail.workflow === "Invitation" ? (
+                  <ContractDocuments propertyId={propertyId} contractId={contractId} offerVersion={detail.offerVersion} owner canEdit={detail.status === "Draft"} />
+                ) : (
+                  <LandlordRules propertyId={propertyId} contractId={contractId} detail={detail} navigate={navigate} />
+                )}
                 {["PendingMoveOut", "PendingSettlement"].includes(
                   detail.status,
                 ) && (
@@ -2442,7 +2459,9 @@ export default function LandlordContracts({
                 )}
                 <section className="ct-card" id="contract-members">
                   <h2>Người tham gia hợp đồng ({detail.tenants?.length || 0})</h2>
-                  <p className="ct-member-note">{detailFamilyMode ? "Một người đứng tên; người thân chỉ được duyệt cư trú." : "Mỗi người đồng thuê đứng tên và tự chấp thuận nội quy."}</p>
+                  <p className="ct-member-note">{detail.workflow === "Invitation"
+                    ? "Người đại diện xác nhận để hợp đồng có hiệu lực. Mỗi người còn lại tự xác nhận trước khi được tính là thành viên phòng."
+                    : detailFamilyMode ? "Một người đứng tên; người thân chỉ được duyệt cư trú." : "Mỗi người đồng thuê đứng tên và tự chấp thuận nội quy."}</p>
                   <div className="ct-service-review" role="note">
                     <div className="ct-service-review__body">
                       <Info size={16} className="ct-service-review__icon" aria-hidden="true" />
@@ -2530,7 +2549,12 @@ export default function LandlordContracts({
                                 : "Người đứng tên"}
                             </span>
 
-                            {item.role === "AuthorizedOccupant" ? (
+                            {detail.workflow === "Invitation" ? (
+                              <span className={`ct-approval-badge ct-approval-badge--${item.invitationAcceptedOfferVersion === detail.offerVersion ? "accepted" : "pending"}`}>
+                                {item.invitationAcceptedOfferVersion === detail.offerVersion ? <Check size={12} aria-hidden="true" /> : <Clock size={12} aria-hidden="true" />}
+                                {item.invitationAcceptedOfferVersion === detail.offerVersion ? "Đã xác nhận tham gia" : "Chờ tự xác nhận"}
+                              </span>
+                            ) : item.role === "AuthorizedOccupant" ? (
                               <span
                                 className={`ct-approval-badge ct-approval-badge--${
                                   item.residenceApprovedAt
@@ -2591,7 +2615,7 @@ export default function LandlordContracts({
                                 (tenant) => !tenant.leaveDate
                               ).length > 1) && (
                               <div className="ct-tenant-actions">
-                                {!item.isContactPerson &&
+                                {detail.workflow !== "Invitation" && !item.isContactPerson &&
                                   item.role !== "AuthorizedOccupant" && (
                                     <button
                                       type="button"
@@ -2703,16 +2727,7 @@ export default function LandlordContracts({
                             ? "Người đứng tên đã được chọn. Người thêm vào sẽ là người thân được duyệt cư trú, không cần tài khoản."
                             : "Chọn người đứng tên trước. Người này cần tài khoản liên kết."}</p>}
                           <div className="ct-tenant-list">
-                            {tenantAvailabilityLoading ? (
-                              <p className="ct-empty-text">
-                                Đang kiểm tra hợp đồng của người thuê…
-                              </p>
-                            ) : tenantAvailabilityError ? (
-                              <p className="ct-empty-text">
-                                Không thể kiểm tra hợp đồng hiện có. Vui lòng
-                                tải lại trang.
-                              </p>
-                            ) : !tenantSearch.trim() ? (
+                            {!tenantSearch.trim() ? (
                               <p className="ct-empty-text">
                                 Nhập thông tin để tìm người ở cùng.
                               </p>
@@ -2744,8 +2759,7 @@ export default function LandlordContracts({
                               ))
                             ) : (
                               <p className="ct-empty-text">
-                                Không tìm thấy người thuê chưa có hợp đồng trùng
-                                thời gian.
+                                Không tìm thấy người thuê phù hợp.
                               </p>
                             )}
                           </div>
@@ -2766,8 +2780,6 @@ export default function LandlordContracts({
                               type="button"
                               disabled={
                                 busy ||
-                                tenantAvailabilityLoading ||
-                                tenantAvailabilityError ||
                                 !extraTenantId ||
                                 unavailableIds.has(extraTenantId)
                               }

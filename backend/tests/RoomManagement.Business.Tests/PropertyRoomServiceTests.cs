@@ -19,10 +19,33 @@ public sealed class PropertyRoomServiceTests
     {
         var properties = new FakeProperties();
         var service = new PropertyService(new Current(), new ActiveLandlord(), properties);
-        var result = await service.CreateAsync(new CreatePropertyInput("  Khu A  ", "  Địa chỉ  ", null), Ct);
+        var result = await service.CreateAsync(new CreatePropertyInput("  Khu A  ", "  Thành phố Hồ Chí Minh  ", "  Phường Bến Nghé  ", "  123 Lê Lợi  ", null), Ct);
         Assert.Equal(OwnerId, result.OwnerUserId);
         Assert.Equal("Khu A", result.Name);
+        Assert.Equal("Thành phố Hồ Chí Minh", result.City);
+        Assert.Equal("Phường Bến Nghé", result.Ward);
+        Assert.Equal("123 Lê Lợi", result.StreetAddress);
+        Assert.Equal("123 Lê Lợi, Phường Bến Nghé, Thành phố Hồ Chí Minh", result.Address);
         Assert.Same(result, properties.Added);
+    }
+
+    [Fact]
+    public async Task CreateProperty_ValidatesStructuredAddress()
+    {
+        var properties = new FakeProperties();
+        var service = new PropertyService(new Current(), new ActiveLandlord(), properties);
+
+        var errMissingCity = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.CreateAsync(new CreatePropertyInput("Khu A", "", "Phường Bến Nghé", "123 Lê Lợi", null), Ct));
+        Assert.Equal("VALIDATION_ERROR", errMissingCity.Code);
+
+        var errMissingWard = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.CreateAsync(new CreatePropertyInput("Khu A", "Thành phố Hồ Chí Minh", "", "123 Lê Lợi", null), Ct));
+        Assert.Equal("VALIDATION_ERROR", errMissingWard.Code);
+
+        var errMissingStreet = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.CreateAsync(new CreatePropertyInput("Khu A", "Thành phố Hồ Chí Minh", "Phường Bến Nghé", "  ", null), Ct));
+        Assert.Equal("VALIDATION_ERROR", errMissingStreet.Code);
     }
 
     [Fact]

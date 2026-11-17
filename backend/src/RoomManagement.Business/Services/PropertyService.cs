@@ -23,14 +23,17 @@ public sealed class PropertyService
         var context = await OperatorAccessGuard.RequireLandlordAsync(_currentLandlord, _landlordStore, ct);
         var ownerId = context.OwnerLandlordUserId;
         PropertyRoomValidation.Required(input.Name, 150, "Tên khu trọ");
-        PropertyRoomValidation.Required(input.Address, 300, "Địa chỉ");
         PropertyRoomValidation.Optional(input.Description, 1000, "Mô tả");
+        var (city, ward, streetAddress, fullAddress) = NormalizeAddress(input.City, input.Ward, input.StreetAddress);
         var property = new Property
         {
             Id = Guid.NewGuid(),
             OwnerUserId = ownerId,
             Name = input.Name.Trim(),
-            Address = input.Address.Trim(),
+            City = city,
+            Ward = ward,
+            StreetAddress = streetAddress,
+            Address = fullAddress,
             Description = input.Description?.Trim(),
             IsActive = true,
             CreatedAt = DateTime.UtcNow
@@ -63,15 +66,38 @@ public sealed class PropertyService
         var property = await GetAsync(propertyId, ct);
         RowVersionGuard.Verify(input.RowVersion, property.RowVersion);
         PropertyRoomValidation.Required(input.Name, 150, "Tên khu trọ");
-        PropertyRoomValidation.Required(input.Address, 300, "Địa chỉ");
         PropertyRoomValidation.Optional(input.Description, 1000, "Mô tả");
+        var (city, ward, streetAddress, fullAddress) = NormalizeAddress(input.City, input.Ward, input.StreetAddress);
         property.Name = input.Name.Trim();
-        property.Address = input.Address.Trim();
+        property.City = city;
+        property.Ward = ward;
+        property.StreetAddress = streetAddress;
+        property.Address = fullAddress;
         property.Description = input.Description?.Trim();
         property.IsActive = input.IsActive;
         property.UpdatedAt = DateTime.UtcNow;
         await _propertyStore.SaveAsync(ct);
         return property;
+    }
+
+    private static (string City, string Ward, string StreetAddress, string FullAddress) NormalizeAddress(
+        string city, string ward, string streetAddress)
+    {
+        var c = city?.Trim() ?? string.Empty;
+        var w = ward?.Trim() ?? string.Empty;
+        var s = streetAddress?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(c) && string.IsNullOrWhiteSpace(w))
+        {
+            PropertyRoomValidation.Required(s, 300, "Địa chỉ");
+            return (string.Empty, string.Empty, s, s);
+        }
+
+        PropertyRoomValidation.Required(c, 100, "Tỉnh/Thành phố");
+        PropertyRoomValidation.Required(w, 100, "Phường/Xã");
+        PropertyRoomValidation.Required(s, 200, "Địa chỉ cụ thể");
+        var full = $"{s}, {w}, {c}";
+        return (c, w, s, full);
     }
 
     public async Task<Property> UpdatePaymentAccountAsync(Guid propertyId, string? bankName,

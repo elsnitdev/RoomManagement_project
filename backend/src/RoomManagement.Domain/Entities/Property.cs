@@ -5,6 +5,9 @@ public sealed class Property
     public Guid Id { get; set; }
     public string OwnerUserId { get; set; } = null!;
     public string Name { get; set; } = null!;
+    public string City { get; set; } = string.Empty;
+    public string Ward { get; set; } = string.Empty;
+    public string StreetAddress { get; set; } = string.Empty;
     public string Address { get; set; } = null!;
     public string? Description { get; set; }
     public string? BankName { get; set; }

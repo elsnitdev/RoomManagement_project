@@ -11,6 +11,57 @@ namespace RoomManagement.Tests;
 public sealed class ContractHouseholdStoreTests
 {
     [SqlServerFact]
+    public async Task One_tenant_can_join_multiple_concurrent_contracts_in_same_and_different_properties()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        const string owner = "multi-contract-owner";
+        var firstPropertyId = Guid.NewGuid();
+        var secondPropertyId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var today = RoomManagement.Business.Services.VietnamDate.Today;
+        var contracts = new[]
+        {
+            (PropertyId: firstPropertyId, RoomId: Guid.NewGuid(), ContractId: Guid.NewGuid(), Code: "MULTI-1"),
+            (PropertyId: firstPropertyId, RoomId: Guid.NewGuid(), ContractId: Guid.NewGuid(), Code: "MULTI-2"),
+            (PropertyId: secondPropertyId, RoomId: Guid.NewGuid(), ContractId: Guid.NewGuid(), Code: "MULTI-3")
+        };
+
+        await using var context = database.CreateContext();
+        context.Users.Add(new AppUser { Id = owner, UserName = owner,
+            NormalizedUserName = owner.ToUpperInvariant(), PasswordHash = "test-hash",
+            Role = UserRoles.Landlord, IsActive = true, CreatedAt = DateTime.UtcNow });
+        context.Properties.AddRange(
+            new Property { Id = firstPropertyId, OwnerUserId = owner, Name = "Khu A",
+                Address = "Địa chỉ A", IsActive = true, CreatedAt = DateTime.UtcNow },
+            new Property { Id = secondPropertyId, OwnerUserId = owner, Name = "Khu B",
+                Address = "Địa chỉ B", IsActive = true, CreatedAt = DateTime.UtcNow });
+        context.TenantProfiles.Add(new TenantProfile { Id = tenantId, CreatedByUserId = owner,
+            FullName = "Người thuê nhiều phòng", PhoneNumber = "0901234567", CreatedAt = DateTime.UtcNow });
+        foreach (var item in contracts)
+        {
+            context.Rooms.Add(new Room { Id = item.RoomId, PropertyId = item.PropertyId,
+                RoomNumber = item.Code, MaxOccupants = 1, BasePrice = 1_000_000,
+                Status = RoomStatus.Available, CreatedAt = DateTime.UtcNow });
+            context.Contracts.Add(new Contract { Id = item.ContractId, RoomId = item.RoomId,
+                ContractCode = item.Code, StartDate = today, EndDate = today.AddMonths(1),
+                Status = ContractStatus.Draft, MonthlyRent = 1_000_000,
+                CreatedAt = DateTime.UtcNow });
+        }
+        await context.SaveChangesAsync();
+
+        var store = new ContractStore(context);
+        foreach (var item in contracts)
+        {
+            var contract = await context.Contracts.SingleAsync(c => c.Id == item.ContractId);
+            await store.AddProfileAsync(contract, tenantId, owner, today, true, default);
+            contract.Status = ContractStatus.Active;
+            await context.SaveChangesAsync();
+        }
+
+        Assert.Equal(3, await context.ContractTenants.CountAsync(link => link.TenantId == tenantId));
+    }
+
+    [SqlServerFact]
     public async Task Legacy_member_remains_visible_without_being_reported_as_signed()
     {
         await using var database = await SqlServerDatabase.CreateAsync();

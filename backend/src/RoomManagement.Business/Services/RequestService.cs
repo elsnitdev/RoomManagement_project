@@ -60,11 +60,8 @@ public sealed class RequestService : IRequestService
 
         var stays = await _store.GetTenantActiveStaysAsync(tenantUserId, ct);
         return stays
-            .GroupBy(s => s.PropertyId)
-            .Select(g => new TenantRequestPropertyOptionDto(
-                g.Key,
-                g.First().PropertyName,
-                g.First().RoomNumber))
+            .Select(s => new TenantRequestPropertyOptionDto(
+                s.PropertyId, s.PropertyName, s.RoomNumber, s.ContractId, s.RoomId))
             .ToList();
     }
 
@@ -80,17 +77,25 @@ public sealed class RequestService : IRequestService
             throw BusinessException.Unprocessable("Bạn cần có hợp đồng đang hoạt động để gửi yêu cầu.", "NO_ACTIVE_CONTRACT");
 
         TenantActiveStayInfo targetStay;
-        if (input.PropertyId.HasValue && input.PropertyId.Value != Guid.Empty)
+        if (input.ContractId.HasValue && input.ContractId.Value != Guid.Empty)
         {
-            targetStay = activeStays.FirstOrDefault(s => s.PropertyId == input.PropertyId.Value)
-                ?? throw BusinessException.Unprocessable("Bạn cần có hợp đồng đang hoạt động tại khu trọ này để gửi yêu cầu.", "NO_ACTIVE_CONTRACT");
+            targetStay = activeStays.FirstOrDefault(s => s.ContractId == input.ContractId.Value &&
+                (!input.PropertyId.HasValue || input.PropertyId.Value == Guid.Empty || s.PropertyId == input.PropertyId.Value))
+                ?? throw BusinessException.Unprocessable("Bạn cần chọn hợp đồng đang hoạt động của mình để gửi yêu cầu.", "NO_ACTIVE_CONTRACT");
         }
         else
         {
-            var distinctProps = activeStays.Select(s => s.PropertyId).Distinct().ToList();
-            if (distinctProps.Count > 1)
+            var matchingStays = input.PropertyId.HasValue && input.PropertyId.Value != Guid.Empty
+                ? activeStays.Where(s => s.PropertyId == input.PropertyId.Value).ToList()
+                : activeStays.ToList();
+            if (matchingStays.Count == 0)
+                throw BusinessException.Unprocessable("Bạn cần có hợp đồng đang hoạt động tại khu trọ này để gửi yêu cầu.", "NO_ACTIVE_CONTRACT");
+            if ((!input.PropertyId.HasValue || input.PropertyId.Value == Guid.Empty) &&
+                matchingStays.Select(s => s.PropertyId).Distinct().Take(2).Count() > 1)
                 throw BusinessException.BadRequest("Vui lòng chọn khu trọ bạn muốn gửi yêu cầu.", "PROPERTY_REQUIRED");
-            targetStay = activeStays[0];
+            if (matchingStays.Count > 1)
+                throw BusinessException.BadRequest("Vui lòng chọn hợp đồng/phòng bạn muốn gửi yêu cầu.", "CONTRACT_REQUIRED");
+            targetStay = matchingStays[0];
         }
 
         var now = DateTime.UtcNow;
@@ -98,6 +103,7 @@ public sealed class RequestService : IRequestService
         {
             Id = Guid.NewGuid(),
             PropertyId = targetStay.PropertyId,
+            ContractId = targetStay.ContractId,
             SenderUserId = tenantUserId,
             RecipientType = RequestRecipientType.Owner,
             Title = title,

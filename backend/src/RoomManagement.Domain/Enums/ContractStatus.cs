@@ -10,5 +10,6 @@ public enum ContractStatus
     PendingMoveOut,
     PendingSettlement,
     PendingTenantConfirmation,
-    PendingOperatorConfirmation
+    PendingOperatorConfirmation,
+    PendingStart
 }

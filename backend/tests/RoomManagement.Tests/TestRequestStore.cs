@@ -53,7 +53,9 @@ internal sealed class TestRequestStore : IRequestStore
                 var rec = Recipients.Values.First(x => x.RequestId == req.Id);
                 Properties.TryGetValue(req.PropertyId, out var prop);
                 var stay = ActiveStaysByTenant.GetValueOrDefault(tenantUserId)?
-                    .FirstOrDefault(s => s.PropertyId == req.PropertyId);
+                    .FirstOrDefault(s => s.ContractId == req.ContractId) ??
+                    ActiveStaysByTenant.GetValueOrDefault(tenantUserId)?
+                        .FirstOrDefault(s => s.PropertyId == req.PropertyId);
                 return new TenantRequestItemDto(
                     req.Id,
                     req.PropertyId,

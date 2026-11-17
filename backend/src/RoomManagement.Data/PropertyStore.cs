@@ -39,7 +39,7 @@ public sealed class PropertyStore : IPropertyStore
         a.PropertyId == p.Id && a.ManagerUserId == actorUserId && a.RevokedAt == null));
     }
     if (!string.IsNullOrWhiteSpace(search))
-      query = query.Where(p => p.Name.Contains(search) || p.Address.Contains(search));
+      query = query.Where(p => p.Name.Contains(search) || p.Address.Contains(search) || p.City.Contains(search) || p.Ward.Contains(search) || p.StreetAddress.Contains(search));
     if (isActive.HasValue)
       query = query.Where(p => p.IsActive == isActive.Value);
     var total = await query.LongCountAsync(ct);

@@ -34,6 +34,7 @@ import { PropertyRules } from "./components/contracts/ContractRules";
 import TenantBilling from "./components/billing/TenantBilling";
 import AdminServices from "./components/billing/AdminServices";
 import NotificationCenter from "./components/NotificationCenter";
+import NotificationBellDropdown from "./components/NotificationBellDropdown";
 import { notificationApi } from "./services/api/notificationApi";
 import {
   initialApprovals,
@@ -400,13 +401,12 @@ export default function App() {
             </span>
           </div>
           <div className="topbar-right">
-            <button type="button" className="icon-button" onClick={() => navigate(`${activeRole}/notifications`)}
-              aria-label={`Thông báo, ${unreadNotifications} chưa đọc`} title="Thông báo">
-              <Bell size={20} aria-hidden="true" />
-              {unreadNotifications > 0 && <span style={{ fontSize: 12, fontWeight: 700 }}>
-                {unreadNotifications > 99 ? '99+' : unreadNotifications}
-              </span>}
-            </button>
+            <NotificationBellDropdown
+              unreadCount={unreadNotifications}
+              activeRole={activeRole}
+              onNavigate={navigate}
+              onReadChange={refreshUnreadNotifications}
+            />
             {user?.role === "Landlord" && user?.landlordCode && (
               <span className="topbar-code-chip">
                 Mã chủ trọ: <strong>{user.landlordCode}</strong>

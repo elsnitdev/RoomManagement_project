@@ -77,6 +77,7 @@ public sealed class ContractService
       PaymentDueDay = input.PaymentDueDay,
       Note = input.Note?.Trim(),
       Status = ContractStatus.Draft,
+      Workflow = ContractWorkflow.Invitation,
       TenancyMode = input.TenancyMode,
       CreatedAt = now
     };
@@ -124,7 +125,7 @@ public sealed class ContractService
       }
     }
     await _store.CreateWithDepositAsync(propertyId, owner,
-        new ContractCreation(contract, invoice, item, payment, review, input.RoomServices), ct);
+        new ContractCreation(contract, invoice, item, payment, review, input.RoomServices, input.Members), ct);
     return new CreateContractResult(contract, invoice?.Id);
   }
 
@@ -174,7 +175,7 @@ public sealed class ContractService
   {
     var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
-    if (contract.Status is not (ContractStatus.Draft or ContractStatus.PendingTenantConfirmation or ContractStatus.PendingOperatorConfirmation))
+    if (contract.Status is not (ContractStatus.Draft or ContractStatus.PendingTenantConfirmation or ContractStatus.PendingOperatorConfirmation or ContractStatus.PendingStart))
       throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_CANNOT_CANCEL", "Chỉ có thể hủy hợp đồng trước khi kích hoạt.");
     var expectedStatus = contract.Status;
     await _store.CloseSafelyAsync(contract, expectedStatus, ContractStatus.Cancelled,
@@ -319,6 +320,9 @@ public sealed class ContractService
       Guid linkId, CancellationToken ct)
   {
     var contract = await GetAsync(propertyId, contractId, ct);
+    if (contract.Workflow == ContractWorkflow.Invitation && contract.Status != ContractStatus.Draft)
+      throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_CANNOT_CHANGE_CONTACT",
+          "Không thể đổi người đại diện sau khi gửi lời mời.");
     if (contract.Status is not (ContractStatus.Draft or ContractStatus.Active))
       throw new BusinessException(BusinessErrorType.InvalidOperation,
           "CONTRACT_CANNOT_CHANGE_CONTACT", "Không thể đổi người liên hệ của hợp đồng này.");
@@ -366,9 +370,17 @@ public sealed class ContractService
       ConfirmContractOfferInput input, CancellationToken ct)
   {
     if (string.IsNullOrWhiteSpace(tenantUserId) || input.OfferVersion < 1 ||
-        string.IsNullOrWhiteSpace(input.TermsHash) || input.RulesVersionId == Guid.Empty)
+        string.IsNullOrWhiteSpace(input.TermsHash))
       throw new BusinessException(BusinessErrorType.Validation, "CONFIRMATION_INVALID", "Thông tin xác nhận đề nghị không hợp lệ.");
     return _store.ConfirmOfferByTenantAsync(contractId, tenantUserId, input, ct);
+  }
+
+  public Task<ContractTenant> AcceptInvitationAsync(Guid contractId, string userId,
+      int offerVersion, string termsHash, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(userId) || offerVersion < 1 || string.IsNullOrWhiteSpace(termsHash))
+      throw new BusinessException(BusinessErrorType.Validation, "INVITATION_INVALID", "Thông tin lời mời không hợp lệ.");
+    return _store.AcceptInvitationAsync(contractId, userId, offerVersion, termsHash, ct);
   }
 
   public Task<Contract> RejectOfferByTenantAsync(Guid contractId, string tenantUserId,
@@ -384,6 +396,9 @@ public sealed class ContractService
     await _store.ExpireDueAsync(VietnamDate.Today, ct);
     var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
+    if (contract.Workflow == ContractWorkflow.Invitation)
+      throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_AUTO_ACTIVATION",
+          "Hợp đồng theo luồng lời mời tự có hiệu lực sau khi người đại diện xác nhận.");
     var room = await _store.GetRoomAsync(contract.RoomId, ct);
     if (contract.Status != ContractStatus.PendingOperatorConfirmation ||
         contract.EndDate is { } end && end < VietnamDate.Today ||

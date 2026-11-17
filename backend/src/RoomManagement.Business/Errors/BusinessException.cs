@@ -2,16 +2,19 @@ namespace RoomManagement.Business.Errors;
 
 public sealed class BusinessException : Exception
 {
-    public BusinessException(BusinessErrorType type, string code, string message, Exception? innerException = null)
+    public BusinessException(BusinessErrorType type, string code, string message, Exception? innerException = null,
+        ContractConflictInfo? conflictingContract = null)
         : base(message, innerException)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
         Type = type;
         Code = code;
+        ConflictingContract = conflictingContract;
     }
 
     public BusinessErrorType Type { get; }
     public string Code { get; }
+    public ContractConflictInfo? ConflictingContract { get; }
 
     public static BusinessException BadRequest(string message, string code = "BAD_REQUEST") =>
         new(BusinessErrorType.Validation, code, message);
@@ -28,3 +31,5 @@ public sealed class BusinessException : Exception
     public static BusinessException Unprocessable(string message, string code = "INVALID_OPERATION") =>
         new(BusinessErrorType.InvalidOperation, code, message);
 }
+
+public sealed record ContractConflictInfo(Guid Id, string Code, DateOnly StartDate, DateOnly? EndDate);

@@ -362,6 +362,12 @@ namespace RoomManagement.Data.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2(0)");
 
+                    b.Property<string>("Workflow")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(24)")
+                        .HasDefaultValueSql("N'LegacyRules'", "DF_Contracts_Workflow");
+
                     b.HasKey("Id")
                         .HasName("PK_Contracts");
 
@@ -387,9 +393,11 @@ namespace RoomManagement.Data.Migrations
 
                             t.HasCheckConstraint("CK_Contracts_DueDay", "(PaymentDueDay IS NULL OR PaymentDueDay BETWEEN 1 AND 31)");
 
-                            t.HasCheckConstraint("CK_Contracts_Status", "(Status IN (N'Draft', N'PendingTenantConfirmation', N'PendingOperatorConfirmation', N'Active', N'Expired', N'Terminated', N'Cancelled', N'PendingMoveOut', N'PendingSettlement'))");
+                            t.HasCheckConstraint("CK_Contracts_Status", "(Status IN (N'Draft', N'PendingTenantConfirmation', N'PendingOperatorConfirmation', N'PendingStart', N'Active', N'Expired', N'Terminated', N'Cancelled', N'PendingMoveOut', N'PendingSettlement'))");
 
                             t.HasCheckConstraint("CK_Contracts_TenancyMode", "(TenancyMode IN (N'CoTenancy', N'PrimaryTenantWithFamily'))");
+
+                            t.HasCheckConstraint("CK_Contracts_Workflow", "(Workflow IN (N'LegacyRules', N'Invitation'))");
                         });
                 });
 
@@ -412,6 +420,18 @@ namespace RoomManagement.Data.Migrations
                     b.Property<string>("FileType")
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<int?>("OfferVersion")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PageOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Sha256")
+                        .HasColumnType("char(64)");
+
+                    b.Property<long?>("SizeBytes")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("StorageKey")
                         .IsRequired()
                         .HasColumnType("nvarchar(500)");
@@ -421,11 +441,17 @@ namespace RoomManagement.Data.Migrations
                         .HasColumnType("datetime2(0)")
                         .HasDefaultValueSql("SYSUTCDATETIME()", "DF_ContractDocuments_UploadedAt");
 
+                    b.Property<string>("UploadedByUserId")
+                        .HasColumnType("nvarchar(450)");
+
                     b.HasKey("Id")
                         .HasName("PK_ContractDocuments");
 
                     b.HasIndex("ContractId")
                         .HasDatabaseName("IX_ContractDocuments_ContractId");
+
+                    b.HasIndex("ContractId", "OfferVersion", "PageOrder")
+                        .HasDatabaseName("IX_ContractDocuments_OfferPages");
 
                     b.ToTable("ContractDocuments", "dbo", t =>
                         {
@@ -708,6 +734,15 @@ namespace RoomManagement.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2(0)")
                         .HasDefaultValueSql("SYSUTCDATETIME()", "DF_ContractTenants_CreatedAt");
+
+                    b.Property<DateTime?>("InvitationAcceptedAt")
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("InvitationAcceptedByUserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int?>("InvitationAcceptedOfferVersion")
+                        .HasColumnType("int");
 
                     b.Property<bool>("IsContactPerson")
                         .ValueGeneratedOnAdd()
@@ -1378,6 +1413,12 @@ namespace RoomManagement.Data.Migrations
                     b.Property<string>("BankName")
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<string>("City")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(100)")
+                        .HasDefaultValueSql("N''");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2(0)")
@@ -1405,8 +1446,20 @@ namespace RoomManagement.Data.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<string>("StreetAddress")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(200)")
+                        .HasDefaultValueSql("N''");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("Ward")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(100)")
+                        .HasDefaultValueSql("N''");
 
                     b.HasKey("Id")
                         .HasName("PK_Properties");
@@ -1534,6 +1587,9 @@ namespace RoomManagement.Data.Migrations
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.Request", b =>
                 {
+                    b.Property<Guid?>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
@@ -1570,6 +1626,9 @@ namespace RoomManagement.Data.Migrations
 
                     b.HasKey("Id")
                         .HasName("PK_Requests");
+
+                    b.HasIndex("ContractId")
+                        .HasDatabaseName("IX_Requests_ContractId");
 
                     b.HasIndex("PropertyId", "Type", "CreatedAt")
                         .HasDatabaseName("IX_Requests_PropertyId_Type_CreatedAt");
@@ -2199,9 +2258,6 @@ namespace RoomManagement.Data.Migrations
                         .HasColumnType("datetime2(0)")
                         .HasDefaultValueSql("SYSUTCDATETIME()", "DF_UserNotifications_CreatedAt");
 
-                    b.Property<string>("EventKey")
-                        .HasColumnType("nvarchar(200)");
-
                     b.Property<string>("EmailAddress")
                         .HasColumnType("nvarchar(256)");
 
@@ -2219,6 +2275,9 @@ namespace RoomManagement.Data.Migrations
 
                     b.Property<string>("EmailStatus")
                         .HasColumnType("nvarchar(25)");
+
+                    b.Property<string>("EventKey")
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<Guid?>("InvoiceId")
                         .HasColumnType("uniqueidentifier");
@@ -2256,13 +2315,13 @@ namespace RoomManagement.Data.Migrations
                     b.HasKey("Id")
                         .HasName("PK_UserNotifications");
 
-                    b.HasIndex("UserId", "IsRead", "CreatedAt")
-                        .HasDatabaseName("IX_UserNotifications_User_Read_CreatedAt");
-
                     b.HasIndex("UserId", "EventKey")
                         .IsUnique()
-                        .HasFilter("[EventKey] IS NOT NULL")
-                        .HasDatabaseName("UX_UserNotifications_User_EventKey");
+                        .HasDatabaseName("UX_UserNotifications_User_EventKey")
+                        .HasFilter("[EventKey] IS NOT NULL");
+
+                    b.HasIndex("UserId", "IsRead", "CreatedAt")
+                        .HasDatabaseName("IX_UserNotifications_User_Read_CreatedAt");
 
                     b.ToTable("UserNotifications", "dbo");
                 });
@@ -2659,6 +2718,12 @@ namespace RoomManagement.Data.Migrations
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.Request", b =>
                 {
+                    b.HasOne("RoomManagement.Domain.Entities.Contract", null)
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_Requests_Contracts");
+
                     b.HasOne("RoomManagement.Domain.Entities.Property", null)
                         .WithMany()
                         .HasForeignKey("PropertyId")

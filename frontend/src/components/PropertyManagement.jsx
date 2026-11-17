@@ -32,6 +32,8 @@ import {
 } from "./property/ManagementUi";
 import { billingApi } from "../services/api/billingApi";
 import { PropertyRules } from "./contracts/ContractRules";
+import SearchableSelect from "./common/SearchableSelect";
+import vnAddressData from "../data/vn-addresses.json";
 import {
   createProperty,
   deleteProperty,
@@ -45,39 +47,75 @@ import "../styles/property-management.css";
 
 const propertyDraft = {
   name: "",
-  address: "",
+  city: "",
+  ward: "",
+  streetAddress: "",
   description: "",
   isActive: true,
 };
-function PropertyForm({ initial, onClose, onSaved }) {
+
+function PropertyForm({ initial, onClose, onSaved, embedded = false }) {
   const [draft, setDraft] = useState(
     initial
       ? {
-          name: initial.name,
-          address: initial.address,
+          name: initial.name || "",
+          city: initial.city || "",
+          ward: initial.ward || "",
+          streetAddress: initial.streetAddress || (!initial.city ? initial.address || "" : ""),
           description: initial.description || "",
-          isActive: initial.isActive,
+          isActive: initial.isActive ?? true,
         }
       : propertyDraft,
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const editing = Boolean(initial);
+  const isLegacyAddress = editing && (!initial.city || !initial.ward) && initial.address;
+
+  const provinces = vnAddressData.map((p) => p.name);
+  const currentProvinceData = vnAddressData.find((p) => p.name === draft.city);
+  const currentWards = currentProvinceData ? currentProvinceData.wards : [];
+
+  const previewAddress = [
+    draft.streetAddress.trim(),
+    draft.ward.trim(),
+    draft.city.trim(),
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   async function submit(event) {
     event.preventDefault();
     const name = draft.name.trim();
-    const address = draft.address.trim();
-    if (!name || !address) {
-      setError("Vui lòng nhập tên và địa chỉ khu trọ.");
+    const city = draft.city.trim();
+    const ward = draft.ward.trim();
+    const streetAddress = draft.streetAddress.trim();
+
+    if (!name) {
+      setError("Vui lòng nhập tên khu trọ.");
       return;
     }
+    if (!city) {
+      setError("Vui lòng chọn Tỉnh / Thành phố.");
+      return;
+    }
+    if (!ward) {
+      setError("Vui lòng chọn Phường / Xã.");
+      return;
+    }
+    if (!streetAddress) {
+      setError("Vui lòng nhập địa chỉ cụ thể (số nhà, tên đường).");
+      return;
+    }
+
     setBusy(true);
     setError("");
     try {
       const payload = {
         name,
-        address,
+        city,
+        ward,
+        streetAddress,
         description: draft.description.trim() || null,
       };
       const result = editing
@@ -95,27 +133,39 @@ function PropertyForm({ initial, onClose, onSaved }) {
     }
   }
 
-  return (
-    <section
-      className="pm-form-card content-card"
-      aria-labelledby="property-form-title"
-    >
-      <div className="pm-section-heading">
-        <div>
-          <span className="pm-eyebrow">THÔNG TIN KHU TRỌ</span>
-          <h2 id="property-form-title">
-            {editing ? "Chỉnh sửa khu trọ" : "Tạo khu trọ mới"}
-          </h2>
+  const formContent = (
+    <>
+      {!embedded && (
+        <div className="pm-section-heading">
+          <div>
+            <span className="pm-eyebrow">THÔNG TIN KHU TRỌ</span>
+            <h2 id="property-form-title">
+              {editing ? "Chỉnh sửa khu trọ" : "Tạo khu trọ mới"}
+            </h2>
+          </div>
+          <IconButton
+            label="Đóng biểu mẫu khu trọ"
+            icon={X}
+            onClick={onClose}
+            disabled={busy}
+          />
         </div>
-        <IconButton
-          label="Đóng biểu mẫu khu trọ"
-          icon={X}
-          onClick={onClose}
-          disabled={busy}
-        />
-      </div>
+      )}
+
+      {isLegacyAddress && (
+        <div className="pm-legacy-notice" role="status">
+          <AlertTriangle size={18} aria-hidden="true" />
+          <div>
+            <strong>Khu trọ đang sử dụng địa chỉ dạng văn bản cũ</strong>
+            <p>
+              Địa chỉ cũ: <em>&ldquo;{initial.address}&rdquo;</em>. Vui lòng chọn lại Tỉnh / Thành phố và Phường / Xã chuẩn hóa theo quy định mới để hoàn tất cập nhật.
+            </p>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={submit} className="pm-form-grid">
-        <label className="field">
+        <label className="field pm-span">
           <span>Tên khu trọ *</span>
           <input
             autoFocus
@@ -128,18 +178,62 @@ function PropertyForm({ initial, onClose, onSaved }) {
             placeholder="Ví dụ: Khu trọ An Bình"
           />
         </label>
-        <label className="field">
-          <span>Địa chỉ *</span>
+
+        <SearchableSelect
+          label="Tỉnh / Thành phố *"
+          value={draft.city}
+          onChange={(newCity) => {
+            setDraft({
+              ...draft,
+              city: newCity,
+              ward: "", // Reset phường xã khi đổi tỉnh thành
+            });
+          }}
+          options={provinces}
+          placeholder="-- Chọn Tỉnh / Thành phố --"
+          searchPlaceholder="Tìm kiếm Tỉnh / Thành phố..."
+          required
+        />
+
+        <SearchableSelect
+          label="Phường / Xã / Đặc khu *"
+          value={draft.ward}
+          onChange={(newWard) => {
+            setDraft({ ...draft, ward: newWard });
+          }}
+          options={currentWards}
+          placeholder={
+            draft.city
+              ? "-- Chọn Phường / Xã --"
+              : "-- Hãy chọn Tỉnh / Thành phố trước --"
+          }
+          searchPlaceholder="Tìm kiếm Phường / Xã..."
+          disabled={!draft.city}
+          required
+        />
+
+        <label className="field pm-span">
+          <span>Địa chỉ cụ thể (Số nhà, tên đường) *</span>
           <input
             required
-            maxLength={300}
-            value={draft.address}
+            maxLength={200}
+            value={draft.streetAddress}
             onChange={(event) =>
-              setDraft({ ...draft, address: event.target.value })
+              setDraft({ ...draft, streetAddress: event.target.value })
             }
-            placeholder="Số nhà, đường, phường/xã..."
+            placeholder="Ví dụ: Số 123/45 Đường Trần Hưng Đạo, Ngõ 4"
           />
         </label>
+
+        {previewAddress && (
+          <div className="pm-address-preview pm-span">
+            <span className="pm-address-preview-label">
+              <MapPin size={15} aria-hidden="true" /> Địa chỉ hiển thị đầy đủ:
+            </span>
+            <strong className="pm-address-preview-text">{previewAddress}</strong>
+          </div>
+        )}
+
         <label className="field pm-span">
           <span>Mô tả</span>
           <textarea
@@ -152,6 +246,7 @@ function PropertyForm({ initial, onClose, onSaved }) {
             placeholder="Thông tin thêm về khu trọ"
           />
         </label>
+
         {editing && (
           <label className="pm-check pm-span">
             <input
@@ -164,11 +259,13 @@ function PropertyForm({ initial, onClose, onSaved }) {
             <span>Khu trọ đang hoạt động</span>
           </label>
         )}
+
         {error && (
           <p className="form-error pm-span" role="alert">
             {error}
           </p>
         )}
+
         <div className="pm-form-actions pm-span">
           <IconButton
             label="Hủy chỉnh sửa khu trọ"
@@ -191,6 +288,19 @@ function PropertyForm({ initial, onClose, onSaved }) {
           />
         </div>
       </form>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="pm-form-embedded">{formContent}</div>;
+  }
+
+  return (
+    <section
+      className="pm-form-card content-card"
+      aria-labelledby="property-form-title"
+    >
+      {formContent}
     </section>
   );
 }
@@ -325,7 +435,10 @@ function PropertyList({ navigate, notify }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [creating, setCreating] = useState(false);
+  const [editingProperty, setEditingProperty] = useState(null);
   const [rulesModalProperty, setRulesModalProperty] = useState(null);
+  const editCloseRef = useRef(null);
+  const editOpenerRef = useRef(null);
   const rulesCloseRef = useRef(null);
   const rulesOpenerRef = useRef(null);
   const query = useApiQuery(
@@ -341,6 +454,35 @@ function PropertyList({ navigate, notify }) {
   );
   const properties = query.data?.data || [];
   const meta = query.data?.meta;
+
+  function openEditModal(property, openerEl) {
+    editOpenerRef.current = openerEl || null;
+    setEditingProperty(property);
+  }
+
+  function closeEditModal() {
+    setEditingProperty(null);
+    const opener = editOpenerRef.current;
+    editOpenerRef.current = null;
+    if (opener && typeof opener.focus === "function") {
+      requestAnimationFrame(() => opener.focus());
+    }
+  }
+
+  useEffect(() => {
+    if (!editingProperty) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    editCloseRef.current?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") closeEditModal();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [editingProperty]);
 
   function openRulesModal(property, openerEl) {
     rulesOpenerRef.current = openerEl || null;
@@ -550,6 +692,16 @@ function PropertyList({ navigate, notify }) {
                       type="button"
                       className="pm-card-btn pm-card-btn--secondary"
                       onClick={(event) =>
+                        openEditModal(property, event.currentTarget)
+                      }
+                    >
+                      <Pencil size={15} aria-hidden="true" />
+                      Chỉnh sửa
+                    </button>
+                    <button
+                      type="button"
+                      className="pm-card-btn pm-card-btn--secondary"
+                      onClick={(event) =>
                         openRulesModal(property, event.currentTarget)
                       }
                     >
@@ -574,6 +726,53 @@ function PropertyList({ navigate, notify }) {
         )}
         <Pagination page={page} meta={meta} onChange={setPage} />
       </section>
+
+      {editingProperty && (
+        <div
+          className="pm-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeEditModal();
+          }}
+        >
+          <div
+            className="pm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pm-edit-modal-title"
+          >
+            <header className="pm-modal__header">
+              <div>
+                <span className="pm-eyebrow">THÔNG TIN KHU TRỌ</span>
+                <h2 id="pm-edit-modal-title">
+                  Chỉnh sửa khu trọ — {editingProperty.name}
+                </h2>
+              </div>
+              <button
+                ref={editCloseRef}
+                type="button"
+                className="pm-modal__close"
+                aria-label="Đóng cửa sổ chỉnh sửa khu trọ"
+                onClick={closeEditModal}
+              >
+                <X size={19} aria-hidden="true" />
+              </button>
+            </header>
+            <div className="pm-modal__body">
+              <PropertyForm
+                key={`${editingProperty.id}:${editingProperty.rowVersion}`}
+                initial={editingProperty}
+                embedded
+                onClose={closeEditModal}
+                onSaved={() => {
+                  setEditingProperty(null);
+                  query.reload();
+                  notify("Đã cập nhật khu trọ.");
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {rulesModalProperty && (
         <div
@@ -1074,6 +1273,7 @@ function PropertyDetail({ propertyId, navigate, notify }) {
             )}
             {editingProperty && (
               <PropertyForm
+                key={property.rowVersion}
                 initial={property}
                 onClose={() => setEditingProperty(false)}
                 onSaved={() => {
@@ -1112,6 +1312,18 @@ function PropertyDetail({ propertyId, navigate, notify }) {
                       <span className="pm-eyebrow">TỔNG QUAN</span>
                       <h2 id="pm-info-title">Thông tin khu trọ</h2>
                     </div>
+                    <button
+                      type="button"
+                      className="pm-secondary-action"
+                      onClick={() => {
+                        setEditingProperty(true);
+                        setActionError("");
+                      }}
+                      disabled={busy}
+                    >
+                      <Pencil size={15} aria-hidden="true" />
+                      Chỉnh sửa
+                    </button>
                   </div>
                   <div className="pm-detail-field">
                     <span className="pm-detail-field-icon">

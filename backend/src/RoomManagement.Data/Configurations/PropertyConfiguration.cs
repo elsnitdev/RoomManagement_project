@@ -13,6 +13,9 @@ public sealed class PropertyConfiguration : IEntityTypeConfiguration<Property>
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.OwnerUserId).HasColumnType("nvarchar(450)").IsRequired();
         builder.Property(e => e.Name).HasColumnType("nvarchar(150)").IsRequired();
+        builder.Property(e => e.City).HasColumnType("nvarchar(100)").IsRequired().HasDefaultValueSql(@"N''");
+        builder.Property(e => e.Ward).HasColumnType("nvarchar(100)").IsRequired().HasDefaultValueSql(@"N''");
+        builder.Property(e => e.StreetAddress).HasColumnType("nvarchar(200)").IsRequired().HasDefaultValueSql(@"N''");
         builder.Property(e => e.Address).HasColumnType("nvarchar(300)").IsRequired();
         builder.Property(e => e.Description).HasColumnType("nvarchar(1000)");
         builder.Property(e => e.BankName).HasColumnType("nvarchar(150)");

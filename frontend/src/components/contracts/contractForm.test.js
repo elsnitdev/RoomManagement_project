@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { endOfMonth, toCreateContractRequest, unavailableTenantIds } from './contractForm.js'
+import { endOfMonth, toCreateContractRequest } from './contractForm.js'
 
 test('endOfMonth handles short, leap, and year-end months', () => {
   assert.equal(endOfMonth('2026-02'), '2026-02-28')
@@ -8,23 +8,6 @@ test('endOfMonth handles short, leap, and year-end months', () => {
   assert.equal(endOfMonth('2026-11'), '2026-11-30')
   assert.equal(endOfMonth('2026-12'), '2026-12-31')
   assert.throws(() => endOfMonth('2026-13'), RangeError)
-})
-
-test('tenant picker excludes current members and overlapping active contracts', () => {
-  const contracts = [
-    { id: 'active', status: 'Active', startDate: '2026-01-01', endDate: '2026-12-31', tenants: [
-      { tenantId: 'occupied', joinDate: '2026-01-01', leaveDate: null },
-      { tenantId: 'left', joinDate: '2026-01-01', leaveDate: '2026-02-01' },
-    ] },
-    { id: 'draft', status: 'Draft', startDate: '2026-01-01', endDate: '2026-12-31', tenants: [
-      { tenantId: 'draft-only', joinDate: '2026-01-01', leaveDate: null },
-    ] },
-  ]
-  const ids = unavailableTenantIds(contracts, '2026-11-07', '2027-01-01', {
-    id: 'current', tenants: [{ tenantId: 'already-here', leaveDate: null }],
-  })
-  assert.deepEqual([...ids].sort(), ['already-here', 'occupied'])
-  assert.equal(unavailableTenantIds(contracts, '2027-01-01', '2027-12-31').has('occupied'), false)
 })
 
 test('contract request sends the last day of the selected month', () => {

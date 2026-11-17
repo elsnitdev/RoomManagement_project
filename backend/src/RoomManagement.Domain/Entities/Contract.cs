@@ -13,6 +13,7 @@ public sealed class Contract
     public decimal DepositAmount { get; set; }
     public byte? PaymentDueDay { get; set; }
     public ContractStatus Status { get; set; } = ContractStatus.Draft;
+    public ContractWorkflow Workflow { get; set; } = ContractWorkflow.LegacyRules;
     public ContractTenancyMode TenancyMode { get; set; } = ContractTenancyMode.CoTenancy;
     public string? Note { get; set; }
     public DateOnly? ClosedOn { get; set; }
