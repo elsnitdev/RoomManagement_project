@@ -18,47 +18,83 @@ import {
   UserRound,
   Wrench,
 } from "lucide-react";
-import { initialUsers } from "./mockData";
-import {
-  tenantMockInvoiceItems,
-  tenantMockNotices,
-  tenantMockProfiles,
-} from "./tenantMockData";
+import { billingApi } from "./services/api/billingApi";
 import { contractApi } from "./services/api/contractApi";
 import { requestApi } from "./services/api/requestApi";
+import { getMyProfile, updateMyProfile } from "./services/api/userApi";
 import { TenantRules } from "./components/contracts/ContractRules";
+import { formatVnd } from "./ui";
 import "./components/contracts/contracts.css";
 import "./Tenant.css";
 
-const money = (value) =>
-  new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-    maximumFractionDigits: 0,
-  }).format(Number(value) || 0);
-const balanceOf = (invoice) =>
-  Math.max(0, Number(invoice.amount || 0) - Number(invoice.paid || 0));
-const dateOf = (value) => {
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value || "");
-  return match
-    ? new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]))
-    : null;
+const money = (value) => formatVnd(value);
+const formatDateOnly = (value) => {
+  if (!value) return "Chưa cập nhật";
+  const str = String(value).split("T")[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [y, m, d] = str.split("-");
+    return `${d}/${m}/${y}`;
+  }
+  return str;
 };
-const invoiceStatus = (invoice) => {
-  if (balanceOf(invoice) === 0)
+const contractStatusMeta = (status) => {
+  switch (status) {
+    case "Active":
+      return { label: "Đang ở", tone: "success" };
+    case "PendingMoveOut":
+      return { label: "Chờ bàn giao", tone: "warning" };
+    case "PendingSettlement":
+      return { label: "Chờ tất toán", tone: "warning" };
+    case "PendingTenantConfirmation":
+      return { label: "Chờ bạn xác nhận", tone: "warning" };
+    case "PendingOperatorConfirmation":
+      return { label: "Chờ chủ trọ đối ký", tone: "neutral" };
+    case "Expired":
+      return { label: "Đã hết hạn", tone: "neutral" };
+    case "Terminated":
+      return { label: "Đã kết thúc", tone: "danger" };
+    default:
+      return { label: status || "Chưa rõ", tone: "neutral" };
+  }
+};
+const liveInvoiceStatus = (invoice) => {
+  const remaining = Number(invoice?.remainingAmount ?? invoice?.amountDue ?? 0);
+  if (invoice?.status === "Paid" || remaining <= 0) {
     return { label: "Đã thanh toán", tone: "success" };
-  const due = dateOf(invoice.due);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (due && due < today) return { label: "Quá hạn", tone: "danger" };
-  return Number(invoice.paid || 0) > 0
+  }
+  const dueStr = invoice?.dueDate ? String(invoice.dueDate).split("T")[0] : "";
+  if (dueStr) {
+    const due = new Date(`${dueStr}T23:59:59`);
+    if (due < new Date()) {
+      return { label: "Quá hạn", tone: "danger" };
+    }
+  }
+  return Number(invoice?.totalPaid || 0) > 0
     ? { label: "Thanh toán một phần", tone: "warning" }
-    : { label: "Chưa thanh toán", tone: "neutral" };
+    : { label: "Chưa thanh toán", tone: "warning" };
 };
-const requestLabels = {
-  new: "Đã gửi",
-  progress: "Đang xử lý",
-  done: "Đã hoàn tất",
+const invoicePeriodLabel = (invoice) => {
+  if (invoice?.type === "Deposit") return "Tiền đặt cọc";
+  if (invoice?.billingMonth && invoice?.billingYear) {
+    return `Kỳ ${String(invoice.billingMonth).padStart(2, "0")}/${invoice.billingYear}`;
+  }
+  return "Hóa đơn phát sinh";
+};
+const serviceTypeLabel = (type) => {
+  switch (type) {
+    case "Electricity":
+      return "Điện";
+    case "Water":
+      return "Nước";
+    case "Internet":
+      return "Internet";
+    case "Trash":
+      return "Rác";
+    case "Parking":
+      return "Gửi xe";
+    default:
+      return "Dịch vụ khác";
+  }
 };
 async function copyCode(code, notify) {
   try {
@@ -155,11 +191,13 @@ function Field({ label, value }) {
 
 function Overview({
   name,
-  room,
-  property,
-  currentInvoice,
-  openRequests,
-  notices,
+  contracts = [],
+  unpaidInvoices = [],
+  loading,
+  error,
+  onRetry,
+  openRequestsCount = 0,
+  unreadNoticesCount = 0,
   navigate,
 }) {
   return (
@@ -169,74 +207,224 @@ function Overview({
         <section className="tn-card tn-home-card">
           <div className="tn-card-kicker">
             <Home size={16} aria-hidden="true" /> CHỖ Ở HIỆN TẠI
+            {contracts.length > 0 && (
+              <StateTag label={`${contracts.length} hợp đồng`} tone="neutral" />
+            )}
           </div>
-          {room ? (
+          {loading ? (
+            <div className="tn-loading">
+              <div className="tn-skeleton tn-skeleton--title" />
+              <div className="tn-skeleton tn-skeleton--line" />
+              <div className="tn-skeleton tn-skeleton--line" />
+            </div>
+          ) : error ? (
+            <div className="tn-error-box" role="alert">
+              <AlertCircle size={18} aria-hidden="true" />
+              <div>
+                <strong>Không thể tải thông tin chỗ ở</strong>
+                <p>{error}</p>
+              </div>
+              <button
+                type="button"
+                className="tn-action tn-action--secondary"
+                onClick={onRetry}
+              >
+                Thử lại
+              </button>
+            </div>
+          ) : contracts.length > 0 ? (
             <>
-              <div className="tn-home-identity">
-                <strong>Phòng {room.number}</strong>
-                <StateTag label="Đang ở" tone="success" />
+              <div className="tn-home-contract-list">
+                {contracts.map((c) => {
+                  const status = contractStatusMeta(c.status);
+                  const roomLabel = c.roomNumber
+                    ? `Phòng ${c.roomNumber}`
+                    : c.roomName || "Phòng chưa cập nhật";
+                  return (
+                    <article key={c.id} className="tn-home-contract-item">
+                      <div className="tn-home-identity">
+                        <div>
+                          <strong>{roomLabel}</strong>
+                          {c.roomName &&
+                            c.roomNumber &&
+                            c.roomName !== c.roomNumber && (
+                              <span className="tn-home-room-sub">
+                                {" "}
+                                · {c.roomName}
+                              </span>
+                            )}
+                        </div>
+                        <StateTag label={status.label} tone={status.tone} />
+                      </div>
+                      <p className="tn-home-property">
+                        <Building2 size={14} aria-hidden="true" />{" "}
+                        {c.propertyName || "Khu trọ chưa cập nhật"}
+                      </p>
+                      <p className="tn-home-address">
+                        <MapPin size={15} aria-hidden="true" />
+                        {c.propertyAddress || "Địa chỉ chưa cập nhật"}
+                      </p>
+                      <div className="tn-home-facts">
+                        <span>
+                          Mã HĐ <strong>{c.contractCode}</strong>
+                        </span>
+                        <span>
+                          Tiền thuê{" "}
+                          <strong>{money(c.monthlyRent)}/tháng</strong>
+                        </span>
+                        <span>
+                          Tiền cọc <strong>{money(c.depositAmount)}</strong>
+                        </span>
+                        <span>
+                          Diện tích{" "}
+                          <strong>
+                            {c.area ? `${c.area} m²` : "Chưa cập nhật"}
+                          </strong>
+                        </span>
+                        <span>
+                          Tầng{" "}
+                          <strong>
+                            {c.floor === 0
+                              ? "Tầng trệt"
+                              : c.floor != null
+                                ? `Tầng ${c.floor}`
+                                : "Chưa cập nhật"}
+                          </strong>
+                        </span>
+                        <span>
+                          Thời hạn{" "}
+                          <strong>
+                            {formatDateOnly(c.startDate)} –{" "}
+                            {c.endDate
+                              ? formatDateOnly(c.endDate)
+                              : "Không kỳ hạn"}
+                          </strong>
+                        </span>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-              <p className="tn-home-property">
-                {property?.name || "Khu trọ chưa cập nhật"}
-              </p>
-              <p className="tn-home-address">
-                <MapPin size={15} aria-hidden="true" />
-                {property?.address || "Địa chỉ chưa cập nhật"}
-              </p>
-              <div className="tn-home-facts">
-                <span>
-                  Tiền thuê <strong>{money(room.price)}/tháng</strong>
-                </span>
-                <span>
-                  Diện tích{" "}
-                  <strong>
-                    {room.area ? `${room.area} m²` : "Chưa cập nhật"}
-                  </strong>
-                </span>
+              <div className="tn-home-actions">
+                <LinkButton onClick={() => navigate("tenant/room")}>
+                  Xem chi tiết chỗ ở
+                </LinkButton>
+                <LinkButton
+                  secondary
+                  onClick={() => navigate("tenant/contracts")}
+                >
+                  Xem hợp đồng
+                </LinkButton>
               </div>
-              <LinkButton onClick={() => navigate("tenant/room")}>
-                Xem chỗ ở
-              </LinkButton>
             </>
           ) : (
             <Empty
               icon={Home}
               title="Chưa có thông tin chỗ ở"
-              description="Tài khoản này chưa được liên kết với phòng trong dữ liệu hiện tại."
+              description="Tài khoản này chưa được liên kết với hợp đồng phòng đang hiệu lực."
             />
           )}
         </section>
+
         <section className="tn-card tn-attention-card">
           <div className="tn-card-kicker">
             <Bell size={16} aria-hidden="true" /> VIỆC CẦN CHÚ Ý
+            {unpaidInvoices.length > 0 && (
+              <StateTag
+                label={`${unpaidInvoices.length} chưa thanh toán`}
+                tone="warning"
+              />
+            )}
           </div>
-          {currentInvoice && balanceOf(currentInvoice) > 0 ? (
-            <div className="tn-attention-item">
-              <span>Hóa đơn kỳ {currentInvoice.month}</span>
-              <strong>{money(balanceOf(currentInvoice))}</strong>
-              <small>Hạn thanh toán {currentInvoice.due}</small>
+          {loading ? (
+            <div className="tn-loading">
+              <div className="tn-skeleton tn-skeleton--title" />
+              <div className="tn-skeleton tn-skeleton--line" />
+            </div>
+          ) : error ? (
+            <div className="tn-error-box" role="alert">
+              <AlertCircle size={18} aria-hidden="true" />
+              <div>
+                <strong>Không thể tải danh sách hóa đơn</strong>
+                <p>{error}</p>
+              </div>
+            </div>
+          ) : unpaidInvoices.length > 0 ? (
+            <div className="tn-unpaid-list">
+              {unpaidInvoices.map((inv) => {
+                const status = liveInvoiceStatus(inv);
+                const remaining = Number(
+                  inv.remainingAmount ?? inv.amountDue ?? 0,
+                );
+                const effective = Number(
+                  inv.effectiveAmount ?? inv.effectiveTotal ?? 0,
+                );
+                const paid = Number(inv.totalPaid ?? 0);
+                return (
+                  <div
+                    key={inv.id}
+                    className="tn-unpaid-item"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`tenant/billing/${inv.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        navigate(`tenant/billing/${inv.id}`);
+                      }
+                    }}
+                  >
+                    <div className="tn-unpaid-head">
+                      <div>
+                        <span className="tn-unpaid-period">
+                          {invoicePeriodLabel(inv)} · <b>{inv.code}</b>
+                        </span>
+                        <small className="tn-unpaid-room">
+                          {inv.roomNumber
+                            ? `Phòng ${inv.roomNumber}`
+                            : "Phòng thuê"}
+                          {inv.propertyName ? ` · ${inv.propertyName}` : ""}
+                        </small>
+                      </div>
+                      <StateTag label={status.label} tone={status.tone} />
+                    </div>
+                    <div className="tn-unpaid-amounts">
+                      <div>
+                        <span>Còn phải thu</span>
+                        <strong className="tn-unpaid-remaining">
+                          {money(remaining)}
+                        </strong>
+                      </div>
+                      <div className="tn-unpaid-meta">
+                        <span>Tổng HĐ: {money(effective)}</span>
+                        {paid > 0 && <span>Đã trả: {money(paid)}</span>}
+                        <span>Hạn TT: {formatDateOnly(inv.dueDate)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="tn-attention-item tn-attention-item--clear">
-              {currentInvoice ? (
-                <CheckCircle2 size={18} aria-hidden="true" />
-              ) : (
-                <ReceiptText size={18} aria-hidden="true" />
-              )}
-              <span>
-                {currentInvoice
-                  ? "Không có hóa đơn còn phải thu."
-                  : "Mở mục Hóa đơn để xem số dư mới nhất."}
-              </span>
+              <CheckCircle2 size={18} aria-hidden="true" />
+              <span>Không có hóa đơn còn phải thu.</span>
             </div>
           )}
           <div className="tn-attention-bottom">
-            <span>{openRequests} yêu cầu đang theo dõi</span>
-            <span>{notices.length} thông tin cần chú ý</span>
+            <span>{openRequestsCount} yêu cầu đang theo dõi</span>
+            <span>{unreadNoticesCount} thông báo chưa đọc</span>
           </div>
-          <LinkButton secondary onClick={() => navigate("tenant/notices")}>
-            Xem thông báo
-          </LinkButton>
+          <div className="tn-home-actions">
+            {unpaidInvoices.length > 0 && (
+              <LinkButton onClick={() => navigate("tenant/billing")}>
+                Thanh toán hóa đơn
+              </LinkButton>
+            )}
+            <LinkButton secondary onClick={() => navigate("tenant/notices")}>
+              Xem thông báo
+            </LinkButton>
+          </div>
         </section>
       </div>
       <section className="tn-quick-section">
@@ -272,258 +460,288 @@ function Overview({
   );
 }
 
-function RoomPage({ room, property, navigate }) {
+function RoomPage({
+  contracts = [],
+  unpaidInvoices = [],
+  loading,
+  error,
+  onRetry,
+  navigate,
+}) {
   return (
     <>
       <Header page="room" />
-      {room ? (
-        <div className="tn-room-grid">
-          <section className="tn-card tn-room-main">
-            <div className="tn-room-photo">
-              <img src="/room-studio.jpg" alt="Ảnh minh họa phòng trọ" />
-              <span>Ảnh minh họa</span>
+      {loading ? (
+        <section className="tn-card">
+          <div className="tn-loading">
+            <div className="tn-skeleton tn-skeleton--title" />
+            <div className="tn-skeleton tn-skeleton--line" />
+            <div className="tn-skeleton tn-skeleton--line" />
+          </div>
+        </section>
+      ) : error ? (
+        <section className="tn-card">
+          <div className="tn-error-box" role="alert">
+            <AlertCircle size={18} aria-hidden="true" />
+            <div>
+              <strong>Không thể tải danh sách phòng</strong>
+              <p>{error}</p>
             </div>
-            <div className="tn-room-content">
-              <div className="tn-section-head">
-                <div>
-                  <span>PHÒNG ĐANG Ở</span>
-                  <h2>Phòng {room.number}</h2>
-                </div>
-                <StateTag label="Đang ở" tone="success" />
+            <button
+              type="button"
+              className="tn-action tn-action--secondary"
+              onClick={onRetry}
+            >
+              Thử lại
+            </button>
+          </div>
+        </section>
+      ) : contracts.length > 0 ? (
+        <div className="tn-room-list">
+          {contracts.map((c) => {
+            const status = contractStatusMeta(c.status);
+            const members = c.members?.length ? c.members : c.tenants || [];
+            const contractInvoices = unpaidInvoices.filter(
+              (inv) =>
+                inv.contractId === c.id ||
+                (inv.roomId && c.roomId && inv.roomId === c.roomId),
+            );
+            return (
+              <div key={c.id} className="tn-room-grid">
+                <section className="tn-card tn-room-main">
+                  <div className="tn-room-photo">
+                    <img src="/room-studio.jpg" alt="Ảnh minh họa phòng trọ" />
+                    <span>Hợp đồng {c.contractCode}</span>
+                  </div>
+                  <div className="tn-room-content">
+                    <div className="tn-section-head">
+                      <div>
+                        <span>CHỖ Ở THEO HỢP ĐỒNG · {c.contractCode}</span>
+                        <h2>
+                          Phòng {c.roomNumber || c.roomName || "Chưa cập nhật"}
+                          {c.roomName &&
+                            c.roomNumber &&
+                            c.roomName !== c.roomNumber &&
+                            ` (${c.roomName})`}
+                        </h2>
+                      </div>
+                      <StateTag label={status.label} tone={status.tone} />
+                    </div>
+                    <p className="tn-room-address">
+                      <Building2 size={16} aria-hidden="true" />
+                      {c.propertyName || "Khu trọ chưa cập nhật"}
+                    </p>
+                    <p className="tn-room-address">
+                      <MapPin size={16} aria-hidden="true" />
+                      {c.propertyAddress || "Địa chỉ chưa cập nhật"}
+                    </p>
+                    <dl className="tn-facts">
+                      <Field label="Mã hợp đồng" value={c.contractCode} />
+                      <Field label="Trạng thái hợp đồng" value={status.label} />
+                      <Field
+                        label="Tầng"
+                        value={
+                          c.floor === 0
+                            ? "Tầng trệt"
+                            : c.floor != null
+                              ? `Tầng ${c.floor}`
+                              : ""
+                        }
+                      />
+                      <Field
+                        label="Diện tích"
+                        value={c.area ? `${c.area} m²` : ""}
+                      />
+                      <Field
+                        label="Giá thuê/tháng"
+                        value={money(c.monthlyRent)}
+                      />
+                      <Field
+                        label="Tiền đặt cọc"
+                        value={money(c.depositAmount)}
+                      />
+                      <Field
+                        label="Thời hạn hợp đồng"
+                        value={`${formatDateOnly(c.startDate)} – ${
+                          c.endDate
+                            ? formatDateOnly(c.endDate)
+                            : "Không thời hạn"
+                        }`}
+                      />
+                      <Field
+                        label="Ngày đến hạn TT hàng tháng"
+                        value={
+                          c.paymentDueDay
+                            ? `Ngày ${c.paymentDueDay} hàng tháng`
+                            : ""
+                        }
+                      />
+                      <Field
+                        label="Số người ở"
+                        value={
+                          c.maxOccupants
+                            ? `${members.length}/${c.maxOccupants} người`
+                            : `${members.length} người`
+                        }
+                      />
+                    </dl>
+
+                    {c.roomServices?.length > 0 && (
+                      <div className="tn-room-services">
+                        <h3>Dịch vụ áp dụng tại phòng</h3>
+                        <div className="tn-room-service-grid">
+                          {c.roomServices.map((srv) => (
+                            <div
+                              key={srv.id || srv.serviceId}
+                              className="tn-room-service-chip"
+                            >
+                              <div>
+                                <strong>{srv.name || srv.serviceName}</strong>
+                                <small>
+                                  {srv.quantity != null
+                                    ? `Số lượng: ${srv.quantity}`
+                                    : serviceTypeLabel(srv.serviceType)}
+                                  {srv.startDate
+                                    ? ` · Từ ${formatDateOnly(srv.startDate)}`
+                                    : ""}
+                                </small>
+                              </div>
+                              <span>
+                                {money(srv.unitPrice)}
+                                {srv.unit ? `/${srv.unit}` : ""}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {c.roomDescription && (
+                      <p className="tn-room-description">{c.roomDescription}</p>
+                    )}
+                    {c.note && (
+                      <p className="tn-room-description">
+                        <strong>Ghi chú hợp đồng:</strong> {c.note}
+                      </p>
+                    )}
+                  </div>
+                </section>
+                <aside className="tn-card tn-room-side">
+                  <div className="tn-card-kicker">
+                    <UserRound size={16} aria-hidden="true" /> NGƯỜI ĐANG Ở (
+                    {members.length})
+                  </div>
+                  {members.length > 0 ? (
+                    <ul className="tn-occupants">
+                      {members.map((m) => {
+                        const isContractParty =
+                          m.role === "ContractParty" || m.role === "Primary";
+                        const joinDate = m.joinDate || m.joinedAt;
+                        const leaveDate = m.leaveDate || m.leftAt;
+                        return (
+                          <li
+                            key={m.id || m.userId || m.fullName}
+                            className="tn-occupant-item"
+                          >
+                            <div className="tn-occupant-top">
+                              <strong>
+                                {m.fullName || m.email || m.userId}
+                              </strong>
+                              <StateTag
+                                label={
+                                  isContractParty
+                                    ? "Đứng tên HĐ"
+                                    : "Người ở cùng"
+                                }
+                                tone={isContractParty ? "success" : "neutral"}
+                              />
+                            </div>
+                            <small>
+                              {m.isContactPerson
+                                ? "Người liên hệ chính · "
+                                : ""}
+                              Từ {formatDateOnly(joinDate)}
+                              {leaveDate
+                                ? ` đến ${formatDateOnly(leaveDate)}`
+                                : ""}
+                            </small>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <p>Chưa có danh sách người ở.</p>
+                  )}
+
+                  {contractInvoices.length > 0 && (
+                    <div className="tn-room-unpaid">
+                      <div className="tn-card-kicker">
+                        <ReceiptText size={15} aria-hidden="true" /> HÓA ĐƠN CẦN
+                        THANH TOÁN ({contractInvoices.length})
+                      </div>
+                      <ul className="tn-room-unpaid-list">
+                        {contractInvoices.map((inv) => {
+                          const remaining = Number(
+                            inv.remainingAmount ?? inv.amountDue ?? 0,
+                          );
+                          return (
+                            <li key={inv.id}>
+                              <div>
+                                <strong>
+                                  {invoicePeriodLabel(inv)} ({inv.code})
+                                </strong>
+                                <small>
+                                  Còn nợ {money(remaining)} · Hạn{" "}
+                                  {formatDateOnly(inv.dueDate)}
+                                </small>
+                              </div>
+                              <button
+                                type="button"
+                                className="tn-inline-action"
+                                onClick={() =>
+                                  navigate(`tenant/billing/${inv.id}`)
+                                }
+                              >
+                                Thanh toán
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="tn-room-actions">
+                    <LinkButton
+                      secondary
+                      onClick={() => navigate("tenant/contracts")}
+                    >
+                      Xem hợp đồng
+                    </LinkButton>
+                    <LinkButton
+                      secondary
+                      onClick={() => navigate("tenant/billing")}
+                    >
+                      Xem hóa đơn
+                    </LinkButton>
+                    <LinkButton onClick={() => navigate("tenant/requests")}>
+                      Gửi yêu cầu
+                    </LinkButton>
+                  </div>
+                </aside>
               </div>
-              <p className="tn-room-address">
-                <Building2 size={16} aria-hidden="true" />
-                {property?.name || "Khu trọ chưa cập nhật"}
-              </p>
-              <p className="tn-room-address">
-                <MapPin size={16} aria-hidden="true" />
-                {property?.address || "Địa chỉ chưa cập nhật"}
-              </p>
-              <dl className="tn-facts">
-                <Field
-                  label="Tầng"
-                  value={
-                    room.floor === 0
-                      ? "Tầng trệt"
-                      : room.floor != null
-                        ? `Tầng ${room.floor}`
-                        : ""
-                  }
-                />
-                <Field
-                  label="Diện tích"
-                  value={room.area ? `${room.area} m²` : ""}
-                />
-                <Field label="Giá thuê/tháng" value={money(room.price)} />
-                <Field label="Kỳ thanh toán tiếp theo" value={room.due} />
-              </dl>
-              {room.description && (
-                <p className="tn-room-description">{room.description}</p>
-              )}
-            </div>
-          </section>
-          <aside className="tn-card tn-room-side">
-            <div className="tn-card-kicker">
-              <UserRound size={16} aria-hidden="true" /> NGƯỜI ĐANG Ở
-            </div>
-            {room.occupants?.length ? (
-              <ul className="tn-occupants">
-                {room.occupants.map((person) => (
-                  <li key={person}>{person}</li>
-                ))}
-              </ul>
-            ) : (
-              <p>{room.tenant || "Chưa có danh sách người ở."}</p>
-            )}
-            <div className="tn-room-actions">
-              <LinkButton
-                secondary
-                onClick={() => navigate("tenant/contracts")}
-              >
-                Xem hợp đồng
-              </LinkButton>
-              <LinkButton secondary onClick={() => navigate("tenant/billing")}>
-                Xem hóa đơn
-              </LinkButton>
-              <LinkButton onClick={() => navigate("tenant/requests")}>
-                Gửi yêu cầu
-              </LinkButton>
-            </div>
-          </aside>
+            );
+          })}
         </div>
       ) : (
         <section className="tn-card">
           <Empty
             icon={Home}
             title="Chưa có phòng được liên kết"
-            description="Thông tin chỗ ở sẽ xuất hiện khi tài khoản được liên kết với phòng."
+            description="Thông tin chỗ ở sẽ xuất hiện khi tài khoản được liên kết với hợp đồng phòng."
           />
         </section>
       )}
-    </>
-  );
-}
-
-function BillingPage({ invoices, notify }) {
-  const [selectedId, setSelectedId] = useState(null);
-  const [filter, setFilter] = useState("all");
-  const filtered = invoices.filter(
-    (invoice) =>
-      filter === "all" ||
-      (filter === "open" ? balanceOf(invoice) > 0 : balanceOf(invoice) === 0),
-  );
-  const selected =
-    filtered.find((item) => item.id === selectedId) || filtered[0];
-  const items = selected?.items?.length
-    ? selected.items
-    : tenantMockInvoiceItems[selected?.id] || [];
-  const filters = [
-    { id: "all", label: "Tất cả", count: invoices.length },
-    {
-      id: "open",
-      label: "Còn phải thu",
-      count: invoices.filter((item) => balanceOf(item) > 0).length,
-    },
-    {
-      id: "paid",
-      label: "Đã thanh toán",
-      count: invoices.filter((item) => balanceOf(item) === 0).length,
-    },
-  ];
-  return (
-    <>
-      <Header page="billing" />
-      <div className="tn-billing-layout">
-        <section className="tn-card tn-billing-list">
-          <div className="tn-section-head">
-            <div>
-              <span>CÁC KỲ HÓA ĐƠN</span>
-              <h2>Danh sách hóa đơn</h2>
-            </div>
-            <small>{invoices.length} kỳ</small>
-          </div>
-          <div className="tn-filter-bar" role="group" aria-label="Lọc hóa đơn">
-            {filters.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={filter === item.id ? "is-active" : ""}
-                onClick={() => {
-                  setFilter(item.id);
-                  setSelectedId(null);
-                }}
-                aria-pressed={filter === item.id}
-              >
-                {item.label}
-                <span>{item.count}</span>
-              </button>
-            ))}
-          </div>
-          {filtered.length ? (
-            <>
-              <div className="tn-bill-head" aria-hidden="true">
-                <span>Kỳ / Mã</span>
-                <span>Hạn thu</span>
-                <span>Tổng tiền</span>
-                <span>Còn thu</span>
-              </div>
-              <ul className="tn-bills">
-                {filtered.map((invoice) => {
-                  const status = invoiceStatus(invoice);
-                  return (
-                    <li key={invoice.id}>
-                      <button
-                        type="button"
-                        className={
-                          selected?.id === invoice.id ? "is-selected" : ""
-                        }
-                        onClick={() => setSelectedId(invoice.id)}
-                        aria-pressed={selected?.id === invoice.id}
-                      >
-                        <span>
-                          <strong>Kỳ {invoice.month}</strong>
-                          <small>{invoice.id}</small>
-                        </span>
-                        <span>{invoice.due}</span>
-                        <span>{money(invoice.amount)}</span>
-                        <span>
-                          <strong>{money(balanceOf(invoice))}</strong>
-                          <StateTag {...status} />
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          ) : (
-            <Empty
-              icon={ReceiptText}
-              title="Không có hóa đơn phù hợp"
-              description="Chọn trạng thái khác để xem các kỳ hóa đơn."
-            />
-          )}
-        </section>
-        <aside className="tn-card tn-bill-detail">
-          <div className="tn-section-head">
-            <div>
-              <span>CHI TIẾT HÓA ĐƠN</span>
-              <h2>{selected?.id || "Chưa có hóa đơn"}</h2>
-            </div>
-            {selected && <StateTag {...invoiceStatus(selected)} />}
-          </div>
-          {selected ? (
-            <>
-              <div className="tn-bill-period">
-                Phòng {selected.room} · Kỳ {selected.month}
-              </div>
-              <dl className="tn-bill-totals">
-                <Field label="Tổng hóa đơn" value={money(selected.amount)} />
-                <Field label="Đã ghi nhận" value={money(selected.paid)} />
-                <Field
-                  label="Còn phải thu"
-                  value={money(balanceOf(selected))}
-                />
-                <Field label="Hạn thanh toán" value={selected.due} />
-              </dl>
-              {items.length > 0 && (
-                <div className="tn-bill-items">
-                  <h3>Các khoản thu</h3>
-                  {items.map((item) => (
-                    <div key={item.id}>
-                      <span>{item.description}</span>
-                      <strong>{money(item.amount)}</strong>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {selected.adjustments?.length > 0 && (
-                <div className="tn-bill-adjustments">
-                  <h3>Điều chỉnh</h3>
-                  {selected.adjustments.map((item) => (
-                    <p key={item.id}>
-                      {item.reason} · {item.direction === "add" ? "+" : "−"}
-                      {money(item.amount)}
-                    </p>
-                  ))}
-                </div>
-              )}
-              <button
-                type="button"
-                className="tn-inline-action"
-                onClick={() => copyCode(selected.id, notify)}
-              >
-                <Copy size={14} aria-hidden="true" /> Sao chép mã hóa đơn
-              </button>
-              <p className="tn-small-note">
-                Số liệu đang dùng dữ liệu mẫu, chưa kết nối lịch sử giao dịch.
-              </p>
-            </>
-          ) : (
-            <p className="tn-small-note">Chọn một hóa đơn để xem thông tin.</p>
-          )}
-        </aside>
-      </div>
     </>
   );
 }
@@ -1695,28 +1913,12 @@ export default function Tenant({
   updateUser,
   navigate,
   notify,
-  rooms = [],
-  properties = [],
-  contracts = [],
-  invoices = [],
-  invoiceHistory = [],
-  requests = [],
-  setRequests,
 }) {
-  const [readIds, setReadIds] = useState([]);
-  useEffect(() => setReadIds([]), [user?.id]);
-  const mockTenant = initialUsers.find(
-    (item) =>
-      item.role === "Người thuê" &&
-      item.email?.toLocaleLowerCase("vi-VN") ===
-        user?.email?.toLocaleLowerCase("vi-VN"),
-  );
-  const tenantName = mockTenant?.name || "";
   const displayName = (
     user?.fullName ||
     user?.name ||
-    mockTenant?.name ||
     user?.userName ||
+    user?.email ||
     ""
   ).trim();
   const [profile, setProfile] = useState(() => ({
@@ -1729,6 +1931,7 @@ export default function Tenant({
       : "",
     address: user?.address || "",
   }));
+
   useEffect(
     () =>
       setProfile({
@@ -1751,103 +1954,141 @@ export default function Tenant({
       displayName,
     ],
   );
-  const mine = (item) =>
-    tenantName &&
-    item?.tenant?.trim().toLocaleLowerCase("vi-VN") ===
-      tenantName.toLocaleLowerCase("vi-VN");
-  const myRooms = rooms.filter(
-    (room) =>
-      mine(room) ||
-      (tenantName &&
-        room.occupants?.some(
-          (name) =>
-            name.trim().toLocaleLowerCase("vi-VN") ===
-            tenantName.toLocaleLowerCase("vi-VN"),
-        )),
+
+  const [contracts, setContracts] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    if (page !== "overview" && page !== "room") return undefined;
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+
+    Promise.all([
+      contractApi.mine(controller.signal),
+      billingApi.allMyInvoices(controller.signal).catch(() => []),
+      requestApi
+        .getMyRequests({ page: 1, pageSize: 50, signal: controller.signal })
+        .catch(() => ({ items: [] })),
+      requestApi
+        .getMyAnnouncements({
+          page: 1,
+          pageSize: 50,
+          signal: controller.signal,
+        })
+        .catch(() => ({ items: [] })),
+    ])
+      .then(([contractsRes, invoicesRes, requestsRes, announcementsRes]) => {
+        setContracts(Array.isArray(contractsRes) ? contractsRes : []);
+        setInvoices(Array.isArray(invoicesRes) ? invoicesRes : []);
+        setRequests(
+          Array.isArray(requestsRes?.items)
+            ? requestsRes.items
+            : Array.isArray(requestsRes)
+              ? requestsRes
+              : [],
+        );
+        setAnnouncements(
+          Array.isArray(announcementsRes?.items)
+            ? announcementsRes.items
+            : Array.isArray(announcementsRes)
+              ? announcementsRes
+              : [],
+        );
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (err?.name !== "AbortError") {
+          setError(err?.message || "Không tải được dữ liệu chỗ ở từ máy chủ.");
+          setLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [page, user?.id, revision]);
+
+  const activeStatuses = useMemo(
+    () =>
+      new Set([
+        "Active",
+        "PendingMoveOut",
+        "PendingSettlement",
+        "PendingTenantConfirmation",
+        "PendingOperatorConfirmation",
+      ]),
+    [],
   );
-  const room = myRooms[0];
-  const property = properties.find((item) => item.id === room?.propertyId);
-  const myContracts = contracts.filter(mine);
-  const myInvoices = [...invoices, ...invoiceHistory]
-    .filter(mine)
-    .sort(
-      (a, b) =>
-        (dateOf(b.due)?.getTime() || 0) - (dateOf(a.due)?.getTime() || 0),
-    );
-  const myRequests = requests.filter(mine);
-  const currentInvoice = myInvoices[0];
-  const notices = useMemo(() => {
-    const result = tenantMockNotices
-      .filter(
-        (notice) =>
-          mockTenant &&
-          notice.audienceEmail.toLowerCase() === mockTenant.email.toLowerCase(),
-      )
-      .map((notice) => ({
-        ...notice,
-        icon: Bell,
-        meta: `${notice.category} · ${notice.date}`,
-        label: notice.important ? "Quan trọng" : "Thông tin",
-        tone: notice.important ? "warning" : "neutral",
-      }));
-    myInvoices
-      .filter((invoice) => balanceOf(invoice) > 0)
-      .forEach((invoice) =>
-        result.push({
-          id: invoice.id,
-          icon: ReceiptText,
-          title: `Hóa đơn kỳ ${invoice.month} còn phải thu`,
-          description: `${money(balanceOf(invoice))} · hạn thanh toán ${invoice.due}.`,
-          meta: `Phòng ${invoice.room} · ${invoice.id}`,
-          label: invoiceStatus(invoice).label,
-          tone: invoiceStatus(invoice).tone,
-          target: "billing",
-        }),
-      );
-    myRequests
-      .filter((request) => request.status === "progress")
-      .forEach((request) =>
-        result.push({
-          id: request.id,
-          icon: Wrench,
-          title: `Yêu cầu đang được xử lý: ${request.title}`,
-          description: "Theo dõi tiến độ xử lý trong mục Yêu cầu.",
-          meta: `${request.id} · ${request.date}`,
-          label: "Đang xử lý",
-          tone: "warning",
-          target: "requests",
-        }),
-      );
-    return result;
-  }, [mockTenant, myInvoices, myRequests]);
-  const unreadNotices = notices.filter(
-    (notice) => !readIds.includes(notice.id),
+
+  const displayContracts = useMemo(() => {
+    const active = contracts.filter((c) => activeStatuses.has(c.status));
+    return active.length > 0 ? active : contracts;
+  }, [contracts, activeStatuses]);
+
+  const contractById = useMemo(() => {
+    const map = new Map();
+    contracts.forEach((c) => map.set(c.id, c));
+    return map;
+  }, [contracts]);
+
+  const unpaidInvoices = useMemo(() => {
+    return invoices
+      .filter((inv) => {
+        const remaining = Number(inv?.remainingAmount ?? inv?.amountDue ?? 0);
+        return inv?.status === "Issued" && remaining > 0;
+      })
+      .map((inv) => {
+        const matched = contractById.get(inv.contractId);
+        return {
+          ...inv,
+          roomNumber: inv.roomNumber || matched?.roomNumber || "",
+          propertyName: inv.propertyName || matched?.propertyName || "",
+          contractCode: inv.contractCode || matched?.contractCode || "",
+        };
+      })
+      .sort((a, b) => {
+        const da = a.dueDate ? new Date(`${a.dueDate}T00:00:00`).getTime() : 0;
+        const db = b.dueDate ? new Date(`${b.dueDate}T00:00:00`).getTime() : 0;
+        return da - db;
+      });
+  }, [invoices, contractById]);
+
+  const openRequestsCount = useMemo(
+    () =>
+      requests.filter(
+        (r) => r.status === "Open" || r.status === "InProgress",
+      ).length,
+    [requests],
   );
-  const markRead = (id) =>
-    setReadIds((current) =>
-      current.includes(id) ? current : [...current, id],
-    );
+
+  const unreadNoticesCount = useMemo(
+    () => announcements.filter((a) => !a.isRead).length,
+    [announcements],
+  );
+
+  const handleRetry = () => setRevision((v) => v + 1);
 
   if (page === "room")
     return (
       <div className="tn-page">
-        <RoomPage room={room} property={property} navigate={navigate} />
-      </div>
-    );
-  if (page === "billing")
-    return (
-      <div className="tn-page">
-        <BillingPage invoices={myInvoices} notify={notify} />
+        <RoomPage
+          contracts={displayContracts}
+          unpaidInvoices={unpaidInvoices}
+          loading={loading}
+          error={error}
+          onRetry={handleRetry}
+          navigate={navigate}
+        />
       </div>
     );
   if (page === "contracts")
     return (
       <div className="tn-page">
-        <ContractsPage
-          contracts={myContracts}
-          navigate={navigate}
-          notify={notify}
-        />
+        <ContractsPage user={user} navigate={navigate} notify={notify} />
       </div>
     );
   if (page === "requests")
@@ -1869,6 +2110,7 @@ export default function Tenant({
           user={user}
           profile={profile}
           onSave={setProfile}
+          updateUser={updateUser}
           notify={notify}
         />
       </div>
@@ -1877,13 +2119,13 @@ export default function Tenant({
     <div className="tn-page">
       <Overview
         name={profile.fullName || displayName}
-        room={room}
-        property={property}
-        currentInvoice={currentInvoice}
-        openRequests={
-          myRequests.filter((request) => request.status !== "done").length
-        }
-        notices={unreadNotices}
+        contracts={displayContracts}
+        unpaidInvoices={unpaidInvoices}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        openRequestsCount={openRequestsCount}
+        unreadNoticesCount={unreadNoticesCount}
         navigate={navigate}
       />
     </div>

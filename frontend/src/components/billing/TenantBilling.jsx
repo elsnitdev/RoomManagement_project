@@ -30,11 +30,11 @@ const paymentStatus = {
   Cancelled: "Đã hủy",
 };
 
-export default function TenantBilling() {
+export default function TenantBilling({ initialInvoiceId = "" }) {
   const [page, setPage] = useState(1);
   const [invoices, setInvoices] = useState([]);
   const [meta, setMeta] = useState(null);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(initialInvoiceId || "");
   const [detail, setDetail] = useState(null);
   const [payments, setPayments] = useState([]);
   const [account, setAccount] = useState(null);
@@ -54,6 +54,12 @@ export default function TenantBilling() {
   const [accountRevision, setAccountRevision] = useState(0);
 
   useEffect(() => {
+    if (initialInvoiceId) {
+      setSelectedId(initialInvoiceId);
+    }
+  }, [initialInvoiceId]);
+
+  useEffect(() => {
     const controller = new AbortController();
     setListLoading(true);
     setListError("");
@@ -65,9 +71,9 @@ export default function TenantBilling() {
         setInvoices(rows);
         setMeta(response.meta);
         setSelectedId((current) =>
-          rows.some((item) => item.id === current)
+          (current && (rows.some((item) => item.id === current) || current === initialInvoiceId))
             ? current
-            : rows[0]?.id || "",
+            : initialInvoiceId || rows[0]?.id || "",
         );
       })
       .catch((cause) => {

@@ -431,7 +431,7 @@ export default function App() {
           className={`main-content${page === "properties" && propertySection === "rooms" && roomAction === "new" ? " main-content--room-batch" : ""}`}
         >
           {activeRole === "tenant" && page === "billing" ? (
-            <TenantBilling />
+            <TenantBilling initialInvoiceId={roomId} />
           ) : activeRole === "tenant" ? (
             <Tenant
               page={page}
@@ -439,13 +439,6 @@ export default function App() {
               updateUser={updateUser}
               navigate={navigate}
               notify={notify}
-              rooms={rooms}
-              properties={properties}
-              contracts={contracts}
-              invoices={[]}
-              invoiceHistory={[]}
-              requests={requests}
-              setRequests={setRequests}
             />
           ) : page === "profile" ? (
             <Profile role={activeRole} notify={notify} />

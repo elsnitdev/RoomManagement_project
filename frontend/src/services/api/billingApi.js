@@ -62,6 +62,7 @@ export const billingApi = {
   issue: (invoiceId) => apiRequest(`/api/invoices/${id(invoiceId)}/issue`, { method: 'POST' }).then(data),
   cancel: (invoiceId) => apiRequest(`/api/invoices/${id(invoiceId)}/cancel`, { method: 'POST' }).then(data),
   myInvoices: (page = 1, signal) => apiRequest(`/api/me/invoices?${params({ page, pageSize: 20 })}`, { signal }),
+  allMyInvoices: (signal) => allPages('/api/me/invoices', signal),
   myInvoice: (invoiceId, signal) => apiRequest(`/api/me/invoices/${id(invoiceId)}`, { signal }).then(data),
   myPaymentAccount: (invoiceId, signal) => apiRequest(`/api/me/invoices/${id(invoiceId)}/payment-account`, { signal }).then(data),
   myPayments: (invoiceId, signal) => apiRequest(`/api/me/invoices/${id(invoiceId)}/payments`, { signal }).then(data),

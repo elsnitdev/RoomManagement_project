@@ -1174,3 +1174,252 @@
   gap: 0.6rem;
   align-items: center;
 }
+
+.tn-home-contract-list {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  margin: 18px 0 18px;
+}
+
+.tn-home-contract-item {
+  padding: 16px;
+  border: 1px solid var(--tn-line);
+  border-radius: 9px;
+  background: #fbfdff;
+}
+
+.tn-home-contract-item .tn-home-identity {
+  margin-top: 0;
+  justify-content: space-between;
+}
+
+.tn-home-room-sub {
+  font-size: 13px;
+  color: var(--tn-muted);
+  font-weight: 500;
+}
+
+.tn-home-property {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tn-home-contract-item .tn-home-facts {
+  margin: 14px 0 0;
+  padding-top: 12px;
+}
+
+.tn-home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: auto;
+  width: 100%;
+}
+
+.tn-unpaid-list {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin: 18px 0 14px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.tn-unpaid-item {
+  display: grid;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1px solid #f2dcb3;
+  border-left: 3px solid #d69a45;
+  border-radius: 8px;
+  background: #fffaf2;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.tn-unpaid-item:hover {
+  border-color: #d69a45;
+  background: #fff5e4;
+  transform: translateY(-1px);
+}
+
+.tn-unpaid-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tn-unpaid-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tn-unpaid-period {
+  font-size: 12px;
+  color: #6b4b1e;
+}
+
+.tn-unpaid-room {
+  font-size: 11px;
+  color: #8a6d43;
+}
+
+.tn-unpaid-amounts {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #edd6ae;
+}
+
+.tn-unpaid-amounts > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.tn-unpaid-amounts > div:first-child > span {
+  font-size: 10px;
+  color: #8e6c3a;
+}
+
+.tn-unpaid-remaining {
+  font-size: 16px;
+  color: #7b481c;
+  letter-spacing: -0.02em;
+}
+
+.tn-unpaid-meta {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+  font-size: 10.5px;
+  color: #7c623d;
+}
+
+.tn-room-list {
+  display: grid;
+  gap: 24px;
+}
+
+.tn-room-services {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--tn-line);
+}
+
+.tn-room-services h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #2c415c;
+}
+
+.tn-room-service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.tn-room-service-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--tn-line);
+  border-radius: 8px;
+  background: #f9fbff;
+}
+
+.tn-room-service-chip > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tn-room-service-chip strong {
+  font-size: 12px;
+  color: #243851;
+}
+
+.tn-room-service-chip small {
+  font-size: 10.5px;
+  color: var(--tn-muted);
+}
+
+.tn-room-service-chip > span {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1f4f91;
+  white-space: nowrap;
+}
+
+.tn-occupant-item {
+  display: grid;
+  gap: 4px;
+}
+
+.tn-occupant-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tn-occupant-item small {
+  font-size: 11px;
+  color: var(--tn-muted);
+}
+
+.tn-room-unpaid {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin: 18px 0 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--tn-line);
+}
+
+.tn-room-unpaid-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.tn-room-unpaid-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #f2dcb3;
+  border-radius: 8px;
+  background: #fffaf2;
+}
+
+.tn-room-unpaid-list li > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tn-room-unpaid-list li strong {
+  font-size: 11.5px;
+  color: #6b4b1e;
+}
+
+.tn-room-unpaid-list li small {
+  font-size: 10.5px;
+  color: #8a6d43;
+}
