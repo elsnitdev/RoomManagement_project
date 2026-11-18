@@ -42,6 +42,15 @@ public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid R
     DateTime? TenantConfirmedAt = null, string? TenantConfirmedByUserId = null,
     DateTime? OperatorConfirmedAt = null, string? OperatorConfirmedByUserId = null)
 {
+    public Guid PropertyId { get; init; }
+    public string? PropertyName { get; init; }
+    public string? PropertyAddress { get; init; }
+    public string? RoomName { get; init; }
+    public int? Floor { get; init; }
+    public decimal? Area { get; init; }
+    public int? MaxOccupants { get; init; }
+    public string? RoomDescription { get; init; }
+    public IReadOnlyList<ContractRoomServiceInfo> RoomServices { get; init; } = [];
     public IReadOnlyList<ContractMemberInfo> Members { get; init; } = [];
 
     public static ContractDetailResponse From(ContractDetail detail)
@@ -64,7 +73,18 @@ public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid R
             c.TenancyMode,
             c.OfferVersion, c.OfferTermsHash, c.OfferSnapshotJson, c.OfferRulesVersionId, c.OfferSentAt,
             c.TenantConfirmedAt, c.TenantConfirmedByUserId, c.OperatorConfirmedAt, c.OperatorConfirmedByUserId)
-        { Members = detail.Members };
+        {
+            PropertyId = detail.PropertyId,
+            PropertyName = detail.PropertyName,
+            PropertyAddress = detail.PropertyAddress,
+            RoomName = detail.RoomName,
+            Floor = detail.Floor,
+            Area = detail.Area,
+            MaxOccupants = detail.MaxOccupants,
+            RoomDescription = detail.RoomDescription,
+            RoomServices = detail.RoomServices,
+            Members = detail.Members
+        };
     }
 }
 

@@ -107,7 +107,23 @@ public sealed class ContractStore : IContractStore
   /// <summary>Ghép hợp đồng với phòng, người thuê, công nợ và tiền cọc.</summary>
   private async Task<ContractDetail> DetailAsync(Contract contract, CancellationToken ct, string? tenantUserId = null)
   {
-    var roomNumber = await _db.Rooms.Where(r => r.Id == contract.RoomId).Select(r => r.RoomNumber).SingleAsync(ct);
+    var roomScope = await (
+        from r in _db.Rooms.AsNoTracking()
+        join p in _db.Properties.AsNoTracking() on r.PropertyId equals p.Id
+        where r.Id == contract.RoomId
+        select new
+        {
+          r.RoomNumber,
+          r.RoomName,
+          r.Floor,
+          r.Area,
+          r.MaxOccupants,
+          r.Description,
+          PropertyId = p.Id,
+          PropertyName = p.Name,
+          PropertyAddress = p.Address
+        }).SingleAsync(ct);
+    var roomNumber = roomScope.RoomNumber;
 
     var members = await (from link in _db.ContractTenants.AsNoTracking()
                          join profile in _db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
@@ -130,19 +146,20 @@ public sealed class ContractStore : IContractStore
         .Where(x => linkIds.Contains(x.ContractTenantId) && x.SupersededAt == null &&
             x.CommitmentType == CommitmentType.RoomRulesAgreement)
         .ToDictionaryAsync(x => x.ContractTenantId, ct);
-    var propertyId = await _db.Rooms.AsNoTracking().Where(x => x.Id == contract.RoomId).Select(x => x.PropertyId).SingleAsync(ct);
+    var propertyId = roomScope.PropertyId;
     var latestRulesId = await _db.ContractRulesVersions.AsNoTracking().Where(x => x.PropertyId == propertyId && x.IsActive)
         .OrderByDescending(x => x.VersionNumber).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
     var onlineAcceptances = await _db.ContractRulesAcceptances.AsNoTracking()
         .Where(x => linkIds.Contains(x.ContractTenantId)).ToListAsync(ct);
     var onlineRequired = await _db.ContractTenants.AsNoTracking().Where(x => linkIds.Contains(x.Id) && x.OnlineRulesRequired)
         .Select(x => x.Id).ToListAsync(ct);
+    var today = RoomManagement.Business.Services.VietnamDate.Today;
     var tenants = new List<ContractTenantInfo>();
     foreach (var tenant in tenantRows)
     {
       currentCommitments.TryGetValue(tenant.Id, out var commitment);
       var periods = await ListTenurePeriodsAsync(tenant.TenantId, contract.RoomId,
-          RoomManagement.Business.Services.VietnamDate.Today, ct);
+          today, ct);
       tenants.Add(tenant with
       {
         CurrentCommitmentId = commitment?.Id,
@@ -163,6 +180,21 @@ public sealed class ContractStore : IContractStore
             (tenantUserId == null || visibleTenantIds.Contains(x.RequestedByTenantId)))
         .OrderByDescending(x => x.RequestedAt).ThenBy(x => x.Id).ToListAsync(ct);
 
+    var roomServices = await (
+        from rs in _db.RoomServices.AsNoTracking()
+        join s in _db.Services.AsNoTracking() on rs.ServiceId equals s.Id
+        where rs.RoomId == contract.RoomId && (rs.EndDate == null || rs.EndDate >= today)
+        orderby s.Name, rs.StartDate
+        select new ContractRoomServiceInfo(
+            rs.Id,
+            rs.ServiceId,
+            s.Name,
+            s.Unit,
+            rs.CustomPrice ?? s.DefaultPrice ?? 0m,
+            rs.Quantity,
+            rs.StartDate,
+            rs.EndDate)).ToListAsync(ct);
+
     var outstanding = await _db.InvoiceBalances.Where(x => x.ContractId == contract.Id &&
             x.Status == "Issued" && x.RemainingAmount > 0)
         .SumAsync(x => (decimal?)x.RemainingAmount, ct) ?? 0;
@@ -174,7 +206,19 @@ public sealed class ContractStore : IContractStore
     var drafts = await _db.Invoices.AnyAsync(x => x.ContractId == contract.Id && x.Status == InvoiceStatus.Draft, ct);
 
     return new ContractDetail(contract, roomNumber, tenants, outstanding, deposit, settled, drafts,
-        moveOutNotices) { Members = members };
+        moveOutNotices)
+    {
+      PropertyId = roomScope.PropertyId,
+      PropertyName = roomScope.PropertyName,
+      PropertyAddress = roomScope.PropertyAddress,
+      RoomName = roomScope.RoomName,
+      Floor = roomScope.Floor,
+      Area = roomScope.Area,
+      MaxOccupants = roomScope.MaxOccupants,
+      RoomDescription = roomScope.Description,
+      RoomServices = roomServices,
+      Members = members
+    };
   }
 
   //GetDetailOwnedAsync – Lấy chi tiết hợp đồng thuộc quyền sở hữu của chủ trọ.

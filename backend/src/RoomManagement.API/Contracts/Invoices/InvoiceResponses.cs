@@ -31,7 +31,20 @@ public sealed record InvoiceSummaryResponse(Guid Id, string Code, Guid ContractI
     decimal BaseTotal, decimal EffectiveTotal, decimal TotalPaid, decimal TotalRefunded,
     decimal TotalDepositApplied, decimal RemainingAmount, decimal AmountDue, decimal CreditToRefund)
 {
-    public static InvoiceSummaryResponse From(InvoiceSummaryResult x) => From(x.Invoice, x.Balance);
+    public decimal EffectiveAmount => EffectiveTotal;
+    public string? RoomNumber { get; init; }
+    public Guid? PropertyId { get; init; }
+    public string? PropertyName { get; init; }
+    public string? ContractCode { get; init; }
+
+    public static InvoiceSummaryResponse From(InvoiceSummaryResult x) =>
+        From(x.Invoice, x.Balance) with
+        {
+            RoomNumber = x.RoomNumber,
+            PropertyId = x.PropertyId,
+            PropertyName = x.PropertyName,
+            ContractCode = x.ContractCode
+        };
 
     public static InvoiceSummaryResponse From(Invoice invoice, InvoiceBalanceResult balance)
     {

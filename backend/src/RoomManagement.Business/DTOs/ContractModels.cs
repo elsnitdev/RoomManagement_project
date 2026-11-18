@@ -50,10 +50,21 @@ public sealed record ContractTenantInfo(Guid Id, Guid TenantId, string? UserId, 
 }
 public sealed record ContractMemberInfo(Guid Id, string FullName, DateOnly JoinDate,
     DateOnly? LeaveDate, bool IsContactPerson, ContractTenantRole Role);
+public sealed record ContractRoomServiceInfo(Guid Id, Guid ServiceId, string Name, string? Unit,
+    decimal UnitPrice, int Quantity, DateOnly StartDate, DateOnly? EndDate);
 public sealed record ContractDetail(Contract Contract, string RoomNumber, IReadOnlyList<ContractTenantInfo> Tenants,
     decimal OutstandingAmount, decimal DepositHeld, bool HasSettlement, bool HasDraftInvoices,
     IReadOnlyList<TenantRequest>? MoveOutNotices = null)
 {
+    public Guid PropertyId { get; init; }
+    public string? PropertyName { get; init; }
+    public string? PropertyAddress { get; init; }
+    public string? RoomName { get; init; }
+    public int? Floor { get; init; }
+    public decimal? Area { get; init; }
+    public int? MaxOccupants { get; init; }
+    public string? RoomDescription { get; init; }
+    public IReadOnlyList<ContractRoomServiceInfo> RoomServices { get; init; } = [];
     public IReadOnlyList<ContractMemberInfo> Members { get; init; } = [];
 }
 

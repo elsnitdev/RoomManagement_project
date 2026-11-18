@@ -135,10 +135,27 @@ public sealed class InvoiceStore : IInvoiceStore
         var total = await query.LongCountAsync(ct);
         var rows = await (from invoice in query
                           join balance in _db.InvoiceBalances.AsNoTracking() on invoice.Id equals balance.InvoiceId
+                          join room in _db.Rooms.AsNoTracking() on invoice.RoomId equals room.Id
+                          join property in _db.Properties.AsNoTracking() on room.PropertyId equals property.Id
+                          join contract in _db.Contracts.AsNoTracking() on invoice.ContractId equals contract.Id
                           orderby invoice.IssueDate descending, invoice.Id descending
-                          select new { Invoice = invoice, Balance = balance })
+                          select new
+                          {
+                              Invoice = invoice,
+                              Balance = balance,
+                              room.RoomNumber,
+                              PropertyId = property.Id,
+                              PropertyName = property.Name,
+                              contract.ContractCode
+                          })
             .Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize).ToListAsync(ct);
-        return (rows.Select(x => new InvoiceSummaryResult(x.Invoice, Balance(x.Balance))).ToList(), total);
+        return (rows.Select(x => new InvoiceSummaryResult(x.Invoice, Balance(x.Balance))
+        {
+            RoomNumber = x.RoomNumber,
+            PropertyId = x.PropertyId,
+            PropertyName = x.PropertyName,
+            ContractCode = x.ContractCode
+        }).ToList(), total);
     }
 
     /// <inheritdoc />
