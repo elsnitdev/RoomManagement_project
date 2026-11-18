@@ -33,6 +33,7 @@ dist/
 .env
 .env.local
 .azurite/
+$azuriteData$azuriteData/
 backend/src/RoomManagement.API/appsettings.Local.json
 backend/tools/DemoDataTool/.demo-password
 backend/artifacts/LocalLoginUsers.sql
