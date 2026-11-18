@@ -9,7 +9,6 @@ import {
   X,
 } from "lucide-react";
 import { billingApi } from "../../services/api/billingApi";
-import BillingInputs from "./BillingInputs";
 import BillingPriorityBoard from "./BillingPriorityBoard";
 import OneOffInvoiceForm from "./OneOffInvoiceForm";
 import {
@@ -22,18 +21,12 @@ import InvoicePaymentHistory from "./InvoicePaymentHistory";
 import InvoiceActionDialog from "./InvoiceActionDialog";
 import OverpaymentRefund from "./OverpaymentRefund";
 import { paymentAppliedToInvoice } from "./invoiceDisplay";
+import { previousBillingMonth } from "./billingPeriod";
 import "../../styles/billing-live.css";
 
 const money = (value) =>
   new Intl.NumberFormat("vi-VN").format(Number(value || 0)) + " ₫";
 const errorOf = (error) => error?.message || "Không thể hoàn tất thao tác.";
-const previousBillingMonth = () => {
-  const vietnamToday = new Date(Date.now() + 7 * 3600_000)
-    .toISOString()
-    .slice(0, 7);
-  const [year, month] = vietnamToday.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
-};
 const monthLabel = (invoice) =>
   invoice.billingMonth
     ? `${invoice.billingMonth}/${invoice.billingYear}`
@@ -80,9 +73,9 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
   const [roomId, setRoomId] = useState(initialRoomId || "");
   const [listStatus, setListStatus] = useState("Unpaid");
   const [listPeriod, setListPeriod] = useState("");
-  const [contracts, setContracts] = useState([]);
-  const [tab, setTab] = useState("invoices");
+  const [contractLookup, setContractLookup] = useState(null);
   const [month, setMonth] = useState(previousBillingMonth);
+  const [lookupError, setLookupError] = useState("");
   const [worklist, setWorklist] = useState([]);
   const [worklistError, setWorklistError] = useState("");
   const [worklistLoading, setWorklistLoading] = useState(false);
@@ -124,6 +117,11 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [revision, setRevision] = useState(0);
+  const needsContracts = displayedInvoices.length > 0 ||
+    activeCreateModal === "monthly" || activeCreateModal === "oneoff";
+  const contractsLoaded = contractLookup?.propertyId === propertyId;
+  const contracts = contractsLoaded ? contractLookup.rows : [];
+  const contractError = contractsLoaded ? contractLookup.error : "";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -147,19 +145,41 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
     return () => controller.abort();
   }, []);
   useEffect(() => {
+    setRooms([]);
+    setLookupError("");
+    if (!propertyId) return;
+    const controller = new AbortController();
+    billingApi.rooms(propertyId, controller.signal)
+      .then(({ data }) => {
+        if (!controller.signal.aborted) setRooms(data || []);
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted) setLookupError(errorOf(cause));
+      });
+    return () => controller.abort();
+  }, [propertyId]);
+  useEffect(() => {
+    if (!propertyId || !needsContracts || contractsLoaded) return;
+    const controller = new AbortController();
+    billingApi.contracts(propertyId, controller.signal)
+      .then(({ data }) => {
+        if (!controller.signal.aborted) setContractLookup({ propertyId, rows: data || [] });
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted) setContractLookup({ propertyId, rows: [], error: errorOf(cause) });
+      });
+    return () => controller.abort();
+  }, [propertyId, needsContracts, contractsLoaded]);
+  useEffect(() => {
     if (!propertyId) {
-      setRooms([]);
-      setContracts([]);
       setInvoices([]);
+      setMeta(null);
       return;
     }
     const controller = new AbortController();
     setLoading(true);
     setError("");
-    Promise.all([
-      billingApi.rooms(propertyId, controller.signal),
-      billingApi.contracts(propertyId, controller.signal),
-      billingApi.invoices(
+    billingApi.invoices(
         propertyId,
         page,
         controller.signal,
@@ -174,16 +194,14 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
           year: listPeriod ? Number(listPeriod.slice(0, 4)) : undefined,
           month: listPeriod ? Number(listPeriod.slice(5, 7)) : undefined,
         },
-      ),
-    ])
-      .then(([roomResponse, contractResponse, invoiceResponse]) => {
-        setRooms(roomResponse.data || []);
-        setContracts(contractResponse.data || []);
+      )
+      .then((invoiceResponse) => {
+        if (controller.signal.aborted) return;
         setInvoices(invoiceResponse.data || []);
         setMeta(invoiceResponse.meta);
       })
       .catch((cause) => {
-        if (cause.name !== "AbortError") setError(errorOf(cause));
+        if (!controller.signal.aborted) setError(errorOf(cause));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -269,8 +287,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
       !previewRequested ||
       !propertyId ||
       !contractId ||
-      !month ||
-      tab !== "invoices"
+      !month
     )
       return;
     const [year, billingMonth] = month.split("-").map(Number);
@@ -294,13 +311,14 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
     propertyId,
     contractId,
     month,
-    tab,
     discountAmount,
     discountReason,
   ]);
 
   function changeProperty(value) {
     setPropertyId(value);
+    setInvoices([]);
+    setContractLookup(null);
     setRoomId("");
     setListStatus("Unpaid");
     setListPeriod("");
@@ -345,23 +363,29 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
   );
   const tenantsFor = (contractId) =>
     contracts.find((contract) => contract.id === contractId)?.tenants;
+  const contractLoadError = contractError && (
+    <div>
+      <p className="bill-error" role="alert">Không tải được hợp đồng. {contractError}</p>
+      <button className="bill-button bill-button--secondary" type="button"
+        onClick={() => setContractLookup(null)}>Thử tải hợp đồng lại</button>
+    </div>
+  );
   function openWorkItem(item) {
     if (item.invoiceId) {
       navigate(`landlord/billing/${item.invoiceId}`);
       return;
     }
+    if (item.status === "MissingInputs" || item.status === "NeedsAttention") {
+      const missingMeter = item.missingInputs?.some((input) =>
+        input === "ElectricityReading" || input === "WaterReading");
+      navigate(`landlord/utilities/${propertyId}/${missingMeter ? `meters/${month}` : `inputs/${item.roomId}`}`);
+      return;
+    }
     setRoomId(item.roomId);
     setContractId(item.contractId);
     setPreview(null);
-    // TODO: nếu thiếu chỉ số điện nước riêng lẻ, mở luồng nhập chỉ số chuyên biệt khi được bổ sung;
-    // tạm thời điều hướng về tab "Giá và dịch vụ" để kiểm tra đơn giá và dịch vụ phòng.
-    if (item.status === "MissingInputs" || item.status === "NeedsAttention")
-      setTab("inputs");
-    else {
-      setTab("invoices");
-      setPreviewRequested(true);
-      setActiveCreateModal("monthly");
-    }
+    setPreviewRequested(true);
+    setActiveCreateModal("monthly");
   }
 
   return (
@@ -371,8 +395,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
           <span>QUẢN LÝ THU TIỀN</span>
           <h1>Hóa đơn</h1>
           <p>
-            Nhập dữ liệu tính tiền, xem trước rồi phát hành hóa đơn cho người
-            thuê.
+            Lập, phát hành và theo dõi thanh toán hóa đơn của người thuê.
           </p>
         </div>
         <label>
@@ -390,41 +413,15 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
           </select>
         </label>
       </header>
-      <div className="bill-tabs" role="group" aria-label="Quản lý hóa đơn">
-        <button
-          type="button"
-          aria-pressed={tab === "invoices"}
-          className={tab === "invoices" ? "is-active" : ""}
-          onClick={() => setTab("invoices")}
-        >
-          Hóa đơn
-        </button>
-        <button
-          type="button"
-          aria-pressed={tab === "inputs"}
-          className={tab === "inputs" ? "is-active" : ""}
-          onClick={() => setTab("inputs")}
-        >
-          Giá và dịch vụ
-        </button>
-      </div>
       {!propertyId && !loading && (
         <p className="bill-empty">Bạn chưa có khu trọ để lập hóa đơn.</p>
       )}
-      {propertyId && tab === "inputs" && (
-        <BillingInputs
-          propertyId={propertyId}
-          rooms={rooms}
-          initialRoomId={roomId}
-          onChanged={() => {
-            setPreview(null);
-            setRevision((value) => value + 1);
-          }}
-        />
-      )}
-      {propertyId && tab === "invoices" && (
+      {propertyId && (
         <>
           <BillingPriorityBoard
+            key={`${propertyId}/${month}`}
+            propertyId={propertyId}
+            onBillingChanged={() => setRevision((value) => value + 1)}
             month={month}
             onMonthChange={(value) => {
               setMonth(value);
@@ -495,11 +492,13 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                   Hợp đồng đang hoạt động hoặc chờ tất toán có thể lập hóa đơn tháng.
                   Hợp đồng chờ tất toán chỉ được lập kỳ bàn giao.
                 </p>
+                {contractLoadError}
                 <div className="bill-form bill-form--inline" style={{ marginTop: "12px" }}>
                   <label>
                     Hợp đồng
                     <select
                       value={contractId}
+                      disabled={!contractsLoaded || !!contractError}
                       onChange={(event) => {
                         setContractId(event.target.value);
                         const contract = contracts.find(
@@ -513,7 +512,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                         setPreview(null);
                       }}
                     >
-                      <option value="">Chọn hợp đồng</option>
+                      <option value="">{contractsLoaded ? "Chọn hợp đồng" : "Đang tải hợp đồng…"}</option>
                       {activeContracts.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.contractCode} · Phòng {roomName(item.roomId)}
@@ -615,7 +614,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                       onClick={() =>
                         action(
                           () =>
-                            billingApi.createMonthly(propertyId, monthlyPayload),
+                            billingApi.createMonthly(propertyId, { ...monthlyPayload, previewVersion: preview.version }),
                           "Đã tạo hóa đơn nháp.",
                           (result) => {
                             setPreview(null);
@@ -633,7 +632,8 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                 {!preview && (
                   <p className="bill-hint" style={{ marginTop: "12px" }}>
                     Cần có giá điện nước và chỉ số của cả điện, nước cho kỳ này.
-                    Kiểm tra đơn giá tại tab “Giá và dịch vụ”.
+                    {" "}<a href={`#/landlord/utilities/${propertyId}/inputs`}>Kiểm tra đơn giá</a>
+                    {" hoặc "}<a href={`#/landlord/utilities/${propertyId}/meters/${month}`}>ghi chỉ số</a>.
                   </p>
                 )}
               </div>
@@ -688,7 +688,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                 <p className="bill-modal-desc" style={{ marginBottom: "14px" }}>
                   Thu phí sửa chữa hoặc khoản phát sinh ngoài hóa đơn tháng.
                 </p>
-                <OneOffInvoiceForm
+                {contractError ? contractLoadError : !contractsLoaded ? <p role="status">Đang tải hợp đồng…</p> : <OneOffInvoiceForm
                   propertyId={propertyId}
                   properties={properties}
                   rooms={rooms}
@@ -699,7 +699,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                     setRevision((value) => value + 1);
                     navigate(`landlord/billing/${result.id}`);
                   }}
-                />
+                />}
               </div>
             </InvoiceActionDialog>
           )}
@@ -866,7 +866,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                           {tenantsFor(item.contractId)
                             ?.map((tenant) => tenant.fullName)
                             .filter(Boolean)
-                            .join(", ") || "Chưa có thông tin"}
+                            .join(", ") || (contractsLoaded ? "Chưa có thông tin" : "Đang tải…")}
                         </td>
                         <td>{item.dueDate}</td>
                         <td>
@@ -939,6 +939,8 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
           {error}
         </p>
       )}
+      {lookupError && <p className="bill-error" role="alert">{lookupError}</p>}
+      {!activeCreateModal && needsContracts && contractLoadError}
       {success && (
         <p className="bill-success" role="status">
           {success}
@@ -1082,13 +1084,13 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
       {error && (
         <p className="bill-error" role="alert">
           {error}{" "}
-          {!summary && (
+          {(!summary || selectedAction === "issue") && (
             <button
               className="bill-link"
               type="button"
               onClick={() => setRevision((value) => value + 1)}
             >
-              Thử lại
+              Tải lại hóa đơn
             </button>
           )}
         </p>
@@ -1341,7 +1343,7 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
                     <button
                       type="button"
                       className="bill-button"
-                      disabled={busy}
+                      disabled={busy || loading || (summary.type === "Monthly" && !detail.reviewVersion)}
                       onClick={() => {
                         if (
                           window.confirm(
@@ -1349,7 +1351,7 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
                           )
                         )
                           action(
-                            () => billingApi.issue(invoiceId),
+                            () => billingApi.issue(invoiceId, detail.reviewVersion),
                             "Đã phát hành hóa đơn.",
                           );
                       }}

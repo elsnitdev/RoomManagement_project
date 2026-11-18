@@ -1,15 +1,147 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using RoomManagement.Business.DTOs;
 using RoomManagement.Business.Errors;
+using RoomManagement.Business.Interfaces;
+using RoomManagement.Business.Services;
 using RoomManagement.Data;
 using RoomManagement.Domain;
 using RoomManagement.Domain.Entities;
 using RoomManagement.Domain.Enums;
+using Xunit.Abstractions;
 
 namespace RoomManagement.Tests;
 
-public sealed class BillingInvoiceStoreTests
+public sealed class BillingInvoiceStoreTests(ITestOutputHelper output)
 {
+    private sealed record BillingActor(string UserId) : ICurrentLandlord
+    {
+        public string GetUserId() => UserId;
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_close_creates_one_draft_and_batch_issue_requires_the_reviewed_amount()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId, contractId) = await SeedAsync(database);
+        var today = VietnamDate.Today;
+        var period = new DateOnly(today.Year, today.Month, 1).AddMonths(-1);
+        var year = (short)period.Year;
+        var month = (byte)period.Month;
+        var missingContractId = Guid.NewGuid();
+        const string tenantUserId = "monthly-batch-test-tenant";
+        await using (var seed = database.CreateContext())
+        {
+            var contract = await seed.Contracts.SingleAsync(x => x.Id == contractId);
+            contract.StartDate = period;
+            contract.PaymentDueDay = 31;
+            var tenantProfileId = Guid.NewGuid();
+            seed.Users.Add(new AppUser { Id = tenantUserId, UserName = tenantUserId,
+                NormalizedUserName = tenantUserId.ToUpperInvariant(), FullName = "Người thuê thử",
+                PasswordHash = "test-hash", Role = UserRoles.Tenant, IsActive = true, CreatedAt = DateTime.UtcNow });
+            seed.TenantProfiles.Add(new TenantProfile { Id = tenantProfileId, UserId = tenantUserId,
+                CreatedByUserId = ownerId, FullName = "Người thuê thử", PhoneNumber = "0900000101",
+                DateOfBirth = new DateOnly(1990, 1, 1), CreatedAt = DateTime.UtcNow });
+            seed.ContractTenants.Add(new ContractTenant { Id = Guid.NewGuid(), ContractId = contractId,
+                TenantId = tenantProfileId, JoinDate = period, IsContactPerson = true, CreatedAt = DateTime.UtcNow });
+            var missingRoomId = Guid.NewGuid();
+            seed.Rooms.Add(new Room { Id = missingRoomId, PropertyId = propertyId, RoomNumber = "A102",
+                BasePrice = 3_000_000, MaxOccupants = 2, CreatedAt = DateTime.UtcNow });
+            seed.Contracts.Add(new Contract { Id = missingContractId, RoomId = missingRoomId,
+                ContractCode = $"CT-{missingContractId:N}", StartDate = period, PaymentDueDay = 31,
+                MonthlyRent = 3_000_000, Status = ContractStatus.Active, CreatedAt = DateTime.UtcNow });
+            foreach (var type in new[] { UtilityType.Electricity, UtilityType.Water })
+            {
+                var electric = type == UtilityType.Electricity;
+                seed.UtilityRates.Add(new UtilityRate { Id = Guid.NewGuid(), PropertyId = propertyId, UtilityType = type,
+                    Unit = electric ? "kWh" : "m³", UnitPrice = electric ? 3_500m : 15_000m,
+                    EffectiveFrom = period, CreatedAt = DateTime.UtcNow });
+                seed.MeterReadings.Add(new MeterReading { Id = Guid.NewGuid(), ContractId = contractId,
+                    RoomId = roomId, MeterType = type, Year = year, Month = month,
+                    PreviousValue = electric ? 100 : 30, CurrentValue = electric ? 119 : 33, RecordedAt = DateTime.UtcNow });
+            }
+            await seed.SaveChangesAsync();
+        }
+
+        InvoiceService Service(RoomManagementDbContext db) => new(new BillingActor(ownerId), new LandlordStore(db),
+            new InvoiceStore(db), new BillingInputStore(db), new MonthlyInvoiceCalculator());
+        var actor = new OperatorContext(ownerId, ownerId, UserRoles.Landlord, false);
+        var input = new MonthlyInvoiceInput(contractId, year, month);
+        await using (var previewContext = database.CreateContext())
+        {
+            var service = Service(previewContext);
+            var preview = await service.PreviewMonthlyAsync(propertyId, input, default);
+            Assert.Equal(3_111_500m, preview.TotalAmount);
+            await using var import = database.CreateContext();
+            var updated = await ImportStore(import).SaveAsync(propertyId, period, actor,
+                new MeterImportRowInput(roomId, 120m, null, 100m, ExpectedElectricityCurrent: 119m), default);
+            Assert.Equal("Saved", updated.Electricity.Status);
+            var conflict = await Assert.ThrowsAsync<BusinessException>(() =>
+                service.CreateMonthlyAsync(propertyId, input with { PreviewVersion = preview.Version }, default));
+            Assert.Equal("INVOICE_PREVIEW_CHANGED", conflict.Code);
+        }
+
+        async Task<IReadOnlyList<BillingBatchResult>> CloseAsync()
+        {
+            await using var db = database.CreateContext();
+            return await Service(db).CloseMonthAsync(propertyId, year, month, default);
+        }
+        async Task UpdateElectricityAsync(decimal expected, decimal value)
+        {
+            await using var db = database.CreateContext();
+            var result = await ImportStore(db).SaveAsync(propertyId, period, actor,
+                new MeterImportRowInput(roomId, value, null, 100m, ExpectedElectricityCurrent: expected), default);
+            Assert.Equal("Saved", result.Electricity.Status);
+        }
+
+        var closeRequests = Task.WhenAll(CloseAsync(), CloseAsync());
+        await Task.WhenAll(closeRequests, UpdateElectricityAsync(120m, 121m));
+        var requests = await closeRequests;
+        var rows = requests.SelectMany(x => x).ToList();
+        var created = Assert.Single(rows, x => x.ContractId == contractId && x.Status == "DraftCreated");
+        Assert.Single(rows, x => x.ContractId == contractId && x.Status == "AlreadyExists");
+        Assert.Equal(2, rows.Count(x => x.ContractId == missingContractId && x.Code == "INVOICE_INPUT_INCOMPLETE"));
+        var invoiceId = created.InvoiceId!.Value;
+        string oldVersion;
+        await using (var review = database.CreateContext())
+        {
+            var detail = await Service(review).GetDetailAsync(invoiceId, default);
+            Assert.Equal(3_118_500m, detail.Invoice.TotalAmount);
+            Assert.Equal(InvoiceStatus.Draft, detail.Invoice.Status);
+            oldVersion = InvoiceReviewVersion.ForDraft(detail.Invoice, detail.Items);
+        }
+        await UpdateElectricityAsync(121m, 122m);
+        async Task<BillingBatchResult> IssueAsync(string version)
+        {
+            await using var db = database.CreateContext();
+            return Assert.Single(await Service(db).IssueMonthAsync(propertyId, year, month,
+                [new(invoiceId, version)], default));
+        }
+
+        var stale = await IssueAsync(oldVersion);
+        Assert.Equal("INVOICE_REVIEW_CHANGED", stale.Code);
+        string newVersion;
+        await using (var review = database.CreateContext())
+        {
+            var detail = await Service(review).GetDetailAsync(invoiceId, default);
+            Assert.Equal(3_122_000m, detail.Invoice.TotalAmount);
+            Assert.Equal(InvoiceStatus.Draft, detail.Invoice.Status);
+            newVersion = InvoiceReviewVersion.ForDraft(detail.Invoice, detail.Items);
+        }
+        var issues = await Task.WhenAll(IssueAsync(newVersion), IssueAsync(newVersion));
+        Assert.All(issues, result => Assert.Equal("Issued", result.Status));
+        await using var verify = database.CreateContext();
+        Assert.Equal(InvoiceStatus.Issued, (await verify.Invoices.SingleAsync()).Status);
+        Assert.Single(await verify.UserNotifications.Where(x => x.InvoiceId == invoiceId &&
+            x.UserId == tenantUserId && x.Type == "InvoiceIssued").ToListAsync());
+        output.WriteLine($"Kỳ {month:D2}/{year} | A101: thuê 3000000, điện 100→121 × 3500, nước 30→33 × 15000");
+        output.WriteLine("Xem trước 3111500 với số điện 119; đổi thành 120 → INVOICE_PREVIEW_CHANGED");
+        output.WriteLine("Hai yêu cầu chốt: DraftCreated + AlreadyExists; A102: INVOICE_INPUT_INCOMPLETE");
+        output.WriteLine("Cập nhật điện thành 121 đồng thời với chốt → nháp 3118500");
+        output.WriteLine("Sửa số điện thành 122 → nháp 3122000; duyệt cũ → INVOICE_REVIEW_CHANGED");
+        output.WriteLine("Hai yêu cầu phát hành phiên bản mới: Issued + Issued; đúng một hóa đơn và một thông báo");
+    }
+
     [SqlServerFact]
     public async Task Concurrent_contract_activation_allows_only_one_overlapping_room_booking()
     {
@@ -418,7 +550,289 @@ public sealed class BillingInvoiceStoreTests
         var attention = await store.AttentionAsync(propertyId, ownerId, CancellationToken.None);
         Assert.Contains(attention.Unpaid, row => row.Invoice.Id == invoiceId);
         Assert.Null(await store.GetOwnedDetailAsync(invoiceId, "another-owner", CancellationToken.None));
+
+        await new PaymentStore(context).RecordReceivedAsync(invoiceId, ownerId,
+            new RecordReceivedPaymentInput(1_000_000, PaymentMethod.Cash, null, null, null, Guid.NewGuid()),
+            CancellationToken.None);
+        var tooLarge = await Assert.ThrowsAsync<BusinessException>(() => store.AddAdjustmentAsync(invoiceId, ownerId,
+            new InvoiceAdjustmentInput(InvoiceAdjustmentType.Discount, 2_200_001,
+                "Miễn tiền còn lại", Guid.NewGuid().ToString("N"), true), CancellationToken.None));
+        Assert.Equal("ADJUSTMENT_EXCEEDS_AMOUNT_DUE", tooLarge.Code);
+        var input = new InvoiceAdjustmentInput(InvoiceAdjustmentType.Discount, 2_200_000,
+            "Miễn tiền còn lại", Guid.NewGuid().ToString("N"), true);
+        var reduction = await store.AddAdjustmentAsync(invoiceId, ownerId, input, CancellationToken.None);
+        var retry = await store.AddAdjustmentAsync(invoiceId, ownerId, input, CancellationToken.None);
+        Assert.Equal(reduction.Id, retry.Id);
+        var settled = await store.GetOwnedDetailAsync(invoiceId, ownerId, CancellationToken.None);
+        Assert.Equal(0, settled!.Balance.RemainingAmount);
+        Assert.Equal(1_000_000, settled.Balance.TotalPaid);
     }
+
+    [SqlServerFact]
+    public async Task Full_discount_can_reduce_a_draft_to_zero_and_issue_it()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, _, roomId, contractId) = await SeedAsync(database);
+        var today = VietnamDate.Today;
+        var invoiceId = Guid.NewGuid();
+        await using var context = database.CreateContext();
+        var store = new InvoiceStore(context);
+        var invoice = new Invoice { Id = invoiceId, ContractId = contractId, RoomId = roomId,
+            InvoiceCode = $"INV-{invoiceId:N}", InvoiceType = InvoiceType.Monthly,
+            BillingYear = (short)today.Year, BillingMonth = (byte)today.Month,
+            IssueDate = today, DueDate = today, TotalAmount = 3_000_000,
+            Status = InvoiceStatus.Draft, CreatedAt = DateTime.UtcNow };
+        await store.CreateDraftAsync(invoice, [new InvoiceItem { Id = Guid.NewGuid(), InvoiceId = invoiceId,
+            ItemType = InvoiceItemType.Rent, Description = "Tiền phòng", Quantity = 1,
+            UnitPrice = 3_000_000, Amount = 3_000_000, CreatedAt = DateTime.UtcNow }], ownerId, CancellationToken.None);
+        await store.ReplaceDraftItemsAsync(invoiceId, ownerId,
+            [new EditableInvoiceItem(null, InvoiceItemType.Discount, "Miễn tiền phòng", 1, 3_000_000)], CancellationToken.None);
+        await store.IssueAsync(invoiceId, ownerId, CancellationToken.None);
+        var detail = await store.GetOwnedDetailAsync(invoiceId, ownerId, CancellationToken.None);
+        Assert.Equal(InvoiceStatus.Issued, detail!.Invoice.Status);
+        Assert.Equal(0, detail.Invoice.TotalAmount);
+        Assert.Equal(0, detail.Balance.RemainingAmount);
+    }
+
+    [SqlServerFact]
+    public async Task Meter_import_separates_same_month_contracts_and_uses_the_handover()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId, previousId) = await SeedAsync(database);
+        var nextId = Guid.NewGuid();
+        var period = new DateOnly(2026, 6, 1);
+        await using (var seed = database.CreateContext())
+        {
+            var previous = await seed.Contracts.SingleAsync(x => x.Id == previousId);
+            previous.Status = ContractStatus.Terminated;
+            previous.HandoverOn = period.AddDays(14);
+            previous.ClosedOn = previous.HandoverOn;
+            previous.EndDate = previous.HandoverOn;
+            seed.Contracts.Add(new Contract { Id = nextId, ContractCode = $"CT-{nextId:N}", RoomId = roomId,
+                StartDate = period.AddDays(15), MonthlyRent = previous.MonthlyRent,
+                Status = ContractStatus.Active, CreatedAt = DateTime.UtcNow });
+            seed.MeterReadings.Add(new MeterReading { Id = Guid.NewGuid(), RoomId = roomId, ContractId = previousId,
+                MeterType = UtilityType.Electricity, Year = 2026, Month = 6, PreviousValue = 95m,
+                CurrentValue = 150m, RecordedAt = DateTime.UtcNow });
+            seed.MeterReadings.Add(new MeterReading { Id = Guid.NewGuid(), RoomId = roomId, ContractId = previousId,
+                MeterType = UtilityType.Water, Year = 2026, Month = 6, PreviousValue = 25m,
+                CurrentValue = 35m, RecordedAt = DateTime.UtcNow });
+            seed.Invoices.Add(new Invoice { Id = Guid.NewGuid(), ContractId = previousId, RoomId = roomId,
+                InvoiceCode = $"INV-{Guid.NewGuid():N}", InvoiceType = InvoiceType.Monthly, BillingYear = 2026,
+                BillingMonth = 6, IssueDate = period, DueDate = period, Status = InvoiceStatus.Issued,
+                TotalAmount = 100m, CreatedAt = DateTime.UtcNow });
+            await seed.SaveChangesAsync();
+        }
+        var actor = new OperatorContext(ownerId, ownerId, UserRoles.Landlord, false);
+        await using (var context = database.CreateContext())
+        {
+            var store = ImportStore(context);
+            var list = await store.InspectAsync(propertyId, period, null, CancellationToken.None);
+            Assert.Single(list.Rows);
+            Assert.Contains(list.Rows, x => x.ContractId == nextId && x.Electricity.PreviousValue == 150m);
+            Assert.Equal(35m, Assert.Single(list.Rows, x => x.ContractId == nextId).Water.PreviousValue);
+            var ambiguous = await store.InspectAsync(propertyId, period, [new(roomId, 200m, null)], CancellationToken.None);
+            Assert.Equal("METER_IMPORT_MULTIPLE_CONTRACTS", Assert.Single(ambiguous.Rows).Electricity.Code);
+            var input = new MeterImportRowInput(roomId, 200m, null, 150m, ContractId: nextId);
+            var saved = await store.SaveAsync(propertyId, period, actor, input, CancellationToken.None);
+            Assert.Equal("Saved", saved.Electricity.Status);
+            Assert.Equal(50m, saved.Electricity.Consumption);
+        }
+        await using var verify = database.CreateContext();
+        var readings = await verify.MeterReadings.Where(x => x.RoomId == roomId && x.Year == 2026 && x.Month == 6).ToListAsync();
+        Assert.Equal(3, readings.Count);
+        Assert.Equal(150m, Assert.Single(readings, x => x.ContractId == nextId).PreviousValue);
+    }
+
+    [SqlServerFact]
+    public async Task Meter_import_hides_handed_over_invoiced_tenancy_but_preserves_history()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (_, propertyId, roomId, contractId) = await SeedAsync(database);
+        var period = new DateOnly(2026, 6, 1);
+        await using (var seed = database.CreateContext())
+        {
+            var contract = await seed.Contracts.SingleAsync(x => x.Id == contractId);
+            contract.Status = ContractStatus.Terminated;
+            contract.HandoverOn = period.AddDays(14);
+            contract.ClosedOn = contract.HandoverOn;
+            contract.EndDate = contract.HandoverOn;
+            seed.MeterReadings.Add(new MeterReading { Id = Guid.NewGuid(), RoomId = roomId, ContractId = contractId,
+                MeterType = UtilityType.Water, Year = 2026, Month = 6, PreviousValue = 20, CurrentValue = 35,
+                RecordedAt = DateTime.UtcNow });
+            seed.Invoices.Add(new Invoice { Id = Guid.NewGuid(), ContractId = contractId, RoomId = roomId,
+                InvoiceCode = $"INV-{Guid.NewGuid():N}", InvoiceType = InvoiceType.Monthly, BillingYear = 2026,
+                BillingMonth = 6, IssueDate = period, DueDate = period, Status = InvoiceStatus.Issued,
+                TotalAmount = 100, CreatedAt = DateTime.UtcNow });
+            await seed.SaveChangesAsync();
+        }
+        await using var context = database.CreateContext();
+        Assert.Empty((await ImportStore(context).InspectAsync(propertyId, period, null, CancellationToken.None)).Rows);
+        Assert.Single(await context.MeterReadings.Where(x => x.ContractId == contractId).ToListAsync());
+        var historical = await ImportStore(context).InspectAsync(propertyId, period,
+            [new MeterImportRowInput(roomId, null, null, ContractId: contractId)], CancellationToken.None);
+        Assert.Equal(35m, Assert.Single(historical.Rows).Water.CurrentValue);
+    }
+
+    [SqlServerFact]
+    public async Task Meter_import_uses_last_handover_after_vacancy_and_can_save_only_electricity()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId, previousContractId) = await SeedAsync(database);
+        var newContractId = Guid.NewGuid();
+        var handover = new DateOnly(2026, 3, 15);
+        var period = new DateOnly(2026, 6, 1);
+        await using (var seed = database.CreateContext())
+        {
+            var previousContract = await seed.Contracts.SingleAsync(x => x.Id == previousContractId);
+            previousContract.Status = ContractStatus.Terminated;
+            previousContract.EndDate = handover;
+            previousContract.ClosedOn = handover;
+            previousContract.HandoverOn = handover;
+            seed.Contracts.Add(new Contract
+            {
+                Id = newContractId, ContractCode = $"CT-{newContractId:N}", RoomId = roomId,
+                StartDate = period.AddDays(11), MonthlyRent = previousContract.MonthlyRent,
+                Status = ContractStatus.Active, CreatedAt = DateTime.UtcNow
+            });
+            seed.MeterReadings.Add(new MeterReading
+            {
+                Id = Guid.NewGuid(), RoomId = roomId, ContractId = previousContractId,
+                MeterType = UtilityType.Electricity, Year = 2026, Month = 3, PreviousValue = 80m,
+                CurrentValue = 100m, RecordedAt = DateTime.UtcNow
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var actor = new OperatorContext(ownerId, ownerId, UserRoles.Landlord, false);
+        var input = new MeterImportRowInput(roomId, 139.25m, null, 100m);
+        await using (var storeContext = database.CreateContext())
+        {
+            var store = ImportStore(storeContext);
+            var emptyMonth = await store.InspectAsync(propertyId, period.AddMonths(-1), null, CancellationToken.None);
+            Assert.Empty(emptyMonth.Rows);
+            var saved = await store.SaveAsync(propertyId, period, actor, input, CancellationToken.None);
+            Assert.Equal("Saved", saved.Electricity.Status);
+            Assert.Equal(100m, saved.Electricity.PreviousValue);
+            Assert.Equal(39.25m, saved.Electricity.Consumption);
+            Assert.NotEqual("Saved", saved.Water.Status);
+        }
+
+        await using var verify = database.CreateContext();
+        var retry = await ImportStore(verify).SaveAsync(propertyId, period, actor, input, CancellationToken.None);
+        Assert.Equal("AlreadyRecorded", retry.Electricity.Status);
+        var reading = await verify.MeterReadings.SingleAsync(x => x.RoomId == roomId && x.Year == 2026 && x.Month == 6);
+        Assert.Equal(newContractId, reading.ContractId);
+        Assert.Equal(139.25m, reading.CurrentValue);
+        Assert.False(await verify.Invoices.AnyAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Meter_import_syncs_draft_totals_but_rejects_readings_for_an_issued_invoice()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId, contractId) = await SeedAsync(database);
+        var invoiceId = Guid.NewGuid();
+        var period = new DateOnly(2026, 2, 1);
+        await using (var seed = database.CreateContext())
+        {
+            foreach (var type in new[] { UtilityType.Electricity, UtilityType.Water })
+            {
+                seed.MeterReadings.Add(new MeterReading
+                {
+                    Id = Guid.NewGuid(), RoomId = roomId, MeterType = type, Year = 2026, Month = 1,
+                    PreviousValue = 90m, CurrentValue = 100m, RecordedAt = DateTime.UtcNow
+                });
+                seed.UtilityRates.Add(new UtilityRate
+                {
+                    Id = Guid.NewGuid(), PropertyId = propertyId, UtilityType = type,
+                    Unit = type == UtilityType.Electricity ? "kWh" : "m³", UnitPrice = 3_000m,
+                    EffectiveFrom = period.AddMonths(-1), CreatedAt = DateTime.UtcNow
+                });
+            }
+            seed.Invoices.Add(new Invoice
+            {
+                Id = invoiceId, ContractId = contractId, RoomId = roomId,
+                InvoiceCode = $"INV-{invoiceId:N}", InvoiceType = InvoiceType.Monthly,
+                BillingYear = 2026, BillingMonth = 2, IssueDate = period, DueDate = period.AddDays(4),
+                Status = InvoiceStatus.Draft, TotalAmount = 3_020_000m, CreatedAt = DateTime.UtcNow
+            });
+            seed.InvoiceItems.AddRange(
+                new InvoiceItem { Id = Guid.NewGuid(), InvoiceId = invoiceId, ItemType = InvoiceItemType.Rent,
+                    Description = "Tiền phòng", Quantity = 1, UnitPrice = 3_000_000m, Amount = 3_000_000m, CreatedAt = DateTime.UtcNow },
+                new InvoiceItem { Id = Guid.NewGuid(), InvoiceId = invoiceId, ItemType = InvoiceItemType.Other,
+                    Description = "Khoản bổ sung", Quantity = 1, UnitPrice = 20_000m, Amount = 20_000m, CreatedAt = DateTime.UtcNow });
+            await seed.SaveChangesAsync();
+        }
+
+        var actor = new OperatorContext(ownerId, ownerId, UserRoles.Landlord, false);
+        await using (var draftContext = database.CreateContext())
+        {
+            var store = ImportStore(draftContext);
+            var result = await store.SaveAsync(propertyId, period, actor,
+                new MeterImportRowInput(roomId, 110m, null, 100m), CancellationToken.None);
+            Assert.Equal("Saved", result.Electricity.Status);
+            var revision = new MeterImportRowInput(roomId, 112m, null, 100m, ExpectedElectricityCurrent: 110m);
+            var preview = await store.InspectAsync(propertyId, period, [revision], CancellationToken.None);
+            var replacement = Assert.Single(preview.Rows).Electricity;
+            Assert.Equal("Ready", replacement.Status);
+            Assert.Equal(110m, replacement.RecordedValue);
+            var updated = await store.SaveAsync(propertyId, period, actor, revision, CancellationToken.None);
+            Assert.Equal("Saved", updated.Electricity.Status);
+            Assert.Equal(result.Electricity.ReadingId, updated.Electricity.ReadingId);
+            var stale = await store.SaveAsync(propertyId, period, actor, revision with { Electricity = 115m }, CancellationToken.None);
+            Assert.Equal("METER_IMPORT_BASELINE_CHANGED", stale.Electricity.Code);
+        }
+        await using (var verifyDraft = database.CreateContext())
+        {
+            var invoice = await verifyDraft.Invoices.SingleAsync();
+            Assert.Equal(InvoiceStatus.Draft, invoice.Status);
+            Assert.Equal(3_056_000m, invoice.TotalAmount);
+            var items = await verifyDraft.InvoiceItems.ToListAsync();
+            Assert.Equal(20_000m, Assert.Single(items, x => x.ItemType == InvoiceItemType.Other).Amount);
+            var electricity = Assert.Single(items, x => x.ItemType == InvoiceItemType.Electricity);
+            Assert.Equal(12m, electricity.Quantity);
+            Assert.Equal(36_000m, electricity.Amount);
+            Assert.NotNull(electricity.ReferenceId);
+            invoice.Status = InvoiceStatus.Issued;
+            await verifyDraft.SaveChangesAsync();
+        }
+        await using var verifyIssued = database.CreateContext();
+        var blocked = await ImportStore(verifyIssued).SaveAsync(propertyId, period, actor,
+            new MeterImportRowInput(roomId, 116m, 112m, 100m, 100m, ExpectedElectricityCurrent: 112m), CancellationToken.None);
+        Assert.Equal("METER_IMPORT_INVOICE_LOCKED", blocked.Electricity.Code);
+        Assert.NotEqual("Saved", blocked.Water.Status);
+        Assert.False(await verifyIssued.MeterReadings.AnyAsync(x => x.Year == 2026 && x.Month == 2 && x.MeterType == UtilityType.Water));
+        Assert.Equal(112m, await verifyIssued.MeterReadings.Where(x => x.Year == 2026 && x.Month == 2 && x.MeterType == UtilityType.Electricity)
+            .Select(x => x.CurrentValue).SingleAsync());
+        Assert.Equal(3_056_000m, await verifyIssued.Invoices.Select(x => x.TotalAmount).SingleAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Meter_import_accepts_manual_opening_once_and_does_not_allow_bypassing_a_later_gap()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId, _) = await SeedAsync(database);
+        await using var context = database.CreateContext();
+        var store = ImportStore(context);
+        var actor = new OperatorContext(ownerId, ownerId, UserRoles.Landlord, false);
+        var period = new DateOnly(2026, 2, 1);
+        var input = new MeterImportRowInput(roomId, 10m, null, 0m,
+            ElectricityManual: true, InitialElectricityPrevious: 0m);
+        var initial = await store.InspectAsync(propertyId, period, null, CancellationToken.None);
+        Assert.True(Assert.Single(initial.Rows).Electricity.CanEnterOpening);
+        var saved = await store.SaveAsync(propertyId, period, actor, input, CancellationToken.None);
+        Assert.Equal("Saved", saved.Electricity.Status);
+        Assert.Equal(0m, saved.Electricity.PreviousValue);
+        Assert.False(saved.Electricity.CanEnterOpening);
+        var gap = await store.SaveAsync(propertyId, period.AddMonths(2), actor, input, CancellationToken.None);
+        Assert.Equal("METER_IMPORT_INITIAL_NOT_ALLOWED", gap.Electricity.Code);
+        Assert.True(gap.Water.CanEnterOpening);
+        Assert.Single(await context.MeterReadings.ToListAsync());
+    }
+
+    private static MeterImportStore ImportStore(RoomManagementDbContext context) =>
+        new(context, new LandlordStore(context), NullLogger<MeterImportStore>.Instance);
 
     private static async Task<(string OwnerId, Guid PropertyId, Guid RoomId, Guid ContractId)> SeedAsync(SqlServerDatabase database)
     {

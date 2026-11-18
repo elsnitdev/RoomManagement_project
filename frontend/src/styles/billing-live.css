@@ -1560,19 +1560,63 @@
 .bill-evidence-preview {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  overflow-wrap: anywhere;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #f8fafc;
 }
 
-.bill-evidence-preview img,
-.bill-evidence-gallery img {
-  width: 110px;
-  height: 84px;
-  object-fit: contain;
+.bill-evidence-preview img {
+  width: 120px;
+  height: 90px;
+  flex: none;
+  object-fit: cover;
   border: 1px solid #d9e5ef;
   border-radius: 8px;
-  background: #f6f9fc;
+  background: #ffffff;
+}
+
+.bill-evidence-preview__meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.bill-evidence-preview__meta strong {
+  color: #243b53;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bill-evidence-preview__meta span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.bill-evidence-preview__remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  min-height: 36px;
+  padding: 6px 11px;
+  border: 1px solid #e5b8b6;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #9e302a;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bill-evidence-preview__remove:hover:not(:disabled) {
+  background: #fdf2f2;
 }
 
 .bill-evidence-manager {
@@ -1581,9 +1625,9 @@
 }
 
 .bill-evidence-gallery {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
   padding: 0;
   margin: 12px 0;
   list-style: none;
@@ -1595,12 +1639,108 @@
   border: 0;
 }
 
-.bill-evidence-gallery a {
+.bill-evidence-card {
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: hidden;
+  min-width: 0;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bill-evidence-card:hover {
+  border-color: #9ec1e6;
+  box-shadow: 0 4px 14px rgba(33, 103, 170, 0.08);
+}
+
+.bill-evidence-card__btn {
   display: grid;
-  gap: 4px;
-  max-width: 130px;
-  overflow-wrap: anywhere;
-  color: #1c5f9f;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bill-evidence-card__thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.bill-evidence-card__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.25s ease;
+}
+
+.bill-evidence-card__btn:hover .bill-evidence-card__thumb img {
+  transform: scale(1.03);
+}
+
+.bill-evidence-card__zoom {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.34);
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.bill-evidence-card__btn:hover .bill-evidence-card__zoom,
+.bill-evidence-card__btn:focus-visible .bill-evidence-card__zoom {
+  opacity: 1;
+}
+
+.bill-evidence-card__name {
+  display: block;
+  padding: 8px 10px;
+  border-top: 1px solid #edf2f7;
+  color: #243b53;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bill-evidence-card__state {
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  color: #64748b;
+  background: #f8fafc;
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .bill-evidence-preview {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .bill-evidence-preview img {
+    width: 96px;
+    height: 72px;
+  }
+
+  .bill-evidence-preview__remove {
+    min-height: 40px;
+    margin-left: auto;
+  }
+
+  .bill-evidence-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
 }
 
 .bill-tenants-heading p {
@@ -3458,5 +3598,268 @@
 
   .bill-oneoff-target-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Manual Meter Reading Modal */
+.meter-manual {
+  display: grid;
+  gap: 16px;
+  color: #243b53;
+}
+
+.meter-manual__subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.meter-manual__subtitle strong {
+  color: #243b53;
+}
+
+.meter-manual-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.meter-manual-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #dce5ef;
+}
+
+.meter-manual-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.meter-manual-card__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.meter-manual-card__icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.meter-manual-card__icon--electricity {
+  background: #fff8eb;
+  color: #855012;
+}
+
+.meter-manual-card__icon--water {
+  background: #eff6fd;
+  color: #2167aa;
+}
+
+.meter-manual-card__title strong {
+  display: block;
+  font-size: 15px;
+  color: #243b53;
+}
+
+.meter-manual-card__title small {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.meter-manual-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.meter-manual-badge--success {
+  background: #eaf8f1;
+  color: #176a49;
+}
+
+.meter-manual-badge--warning {
+  background: #fff8eb;
+  color: #855012;
+}
+
+.meter-manual-badge--danger {
+  background: #fff1f0;
+  color: #9e302a;
+}
+
+.meter-manual-badge--neutral {
+  background: #ffffff;
+  color: #64748b;
+  border: 1px solid #dce5ef;
+}
+
+.meter-manual-ref {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+.meter-manual-ref strong {
+  color: #243b53;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-manual-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.meter-manual-field {
+  display: grid;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #243b53;
+}
+
+.meter-manual-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #243b53;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-manual-field input:focus {
+  outline: 2px solid #2167aa;
+  outline-offset: 1px;
+  border-color: #2167aa;
+}
+
+.meter-manual-field input[aria-invalid="true"] {
+  border-color: #9e302a;
+}
+
+.meter-manual-error {
+  font-size: 12px;
+  font-weight: 600;
+  color: #9e302a;
+  line-height: 1.35;
+}
+
+.meter-manual-readonly {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid #dce5ef;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.meter-manual-readonly strong {
+  color: #243b53;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-manual-readonly--locked {
+  flex-wrap: wrap;
+  background: #f1f5f9;
+}
+
+.meter-manual-readonly--locked small {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.meter-manual-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: #eff6fd;
+  border: 1px solid #d5e5f6;
+  font-size: 13px;
+  color: #2167aa;
+}
+
+.meter-manual-preview strong {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-manual-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: #fff8eb;
+  border: 1px solid #f0ddb8;
+  color: #855012;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.meter-manual-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.meter-manual-confirm {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fff8eb;
+  border: 1px solid #f0ddb8;
+  color: #855012;
+  font-size: 13px;
+}
+
+.meter-manual-confirm strong {
+  font-size: 13.5px;
+}
+
+.meter-manual-confirm p {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .meter-manual-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .meter-import__state .bill-link {
+    min-height: 40px;
+    padding: 6px 10px;
+    display: inline-flex;
+    align-items: center;
   }
 }

@@ -1350,15 +1350,20 @@
 .ct-refund-evidence-panel .bill-evidence-preview {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #f8fafc
 }
 
 .ct-refund-evidence-panel .bill-evidence-preview img {
-  width: 72px;
-  height: 72px;
+  width: 120px;
+  height: 90px;
+  flex: none;
   object-fit: cover;
-  border-radius: 8px
+  border-radius: 8px;
+  border: 1px solid #d9e5ef
 }
 
 .ct-refund-evidence-panel__saved {
@@ -1366,20 +1371,82 @@
   gap: 10px
 }
 
-.ct-refund-evidence-panel__saved a {
+.ct-refund-evidence-grid {
   display: grid;
-  justify-items: start;
-  gap: 7px;
-  color: #176a9a;
-  font-weight: 700
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px
 }
 
-.ct-refund-evidence-panel__saved img {
-  max-width: min(100%, 320px);
-  max-height: 220px;
-  object-fit: contain;
-  border-radius: 9px;
-  border: 1px solid #d8e4eb
+.ct-refund-evidence-card {
+  display: grid;
+  width: 100%;
+  padding: 0;
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease
+}
+
+.ct-refund-evidence-card:hover {
+  border-color: #9ec1e6;
+  box-shadow: 0 4px 14px rgba(33, 103, 170, .08)
+}
+
+.ct-refund-evidence-card__thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #f8fafc;
+  overflow: hidden
+}
+
+.ct-refund-evidence-card__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .25s ease
+}
+
+.ct-refund-evidence-card:hover .ct-refund-evidence-card__thumb img {
+  transform: scale(1.03)
+}
+
+.ct-refund-evidence-card__zoom {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, .34);
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity .18s ease
+}
+
+.ct-refund-evidence-card:hover .ct-refund-evidence-card__zoom,
+.ct-refund-evidence-card:focus-visible .ct-refund-evidence-card__zoom {
+  opacity: 1
+}
+
+.ct-refund-evidence-card__name {
+  display: block;
+  padding: 8px 10px;
+  border-top: 1px solid #edf2f7;
+  color: #243b53;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+@media (max-width: 640px) {
+  .ct-refund-evidence-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px
+  }
 }
 
 .ct-pages .ct-facts dd {

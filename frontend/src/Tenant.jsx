@@ -935,7 +935,7 @@ const formatDateTime = (value) => {
 function RequestsPage({ notify }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [selectedPropertyId, setSelectedPropertyId] = useState("");
+  const [selectedContractId, setSelectedContractId] = useState("");
   const [activeStays, setActiveStays] = useState([]);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -955,7 +955,7 @@ function RequestsPage({ notify }) {
       ]);
       setActiveStays(stays);
       if (stays.length === 1) {
-        setSelectedPropertyId(stays[0].propertyId);
+        setSelectedContractId(stays[0].contractId);
       }
       const items = requestsRes?.data || [];
       setRequests(items);
@@ -987,8 +987,11 @@ function RequestsPage({ notify }) {
     event.preventDefault();
     const cleanTitle = title.trim();
     const cleanContent = content.trim();
-    if (activeStays.length > 1 && !selectedPropertyId) {
-      setError("Vui lòng chọn khu trọ bạn muốn gửi yêu cầu.");
+    const selectedStay = activeStays.find(
+      (stay) => stay.contractId === selectedContractId,
+    );
+    if (activeStays.length > 1 && !selectedContractId) {
+      setError("Vui lòng chọn hợp đồng/phòng bạn muốn gửi yêu cầu.");
       return;
     }
     if (!cleanTitle) {
@@ -1003,7 +1006,8 @@ function RequestsPage({ notify }) {
     setError("");
     try {
       const created = await requestApi.createTenantRequest({
-        propertyId: selectedPropertyId || undefined,
+        propertyId: selectedStay?.propertyId || undefined,
+        contractId: selectedStay?.contractId || selectedContractId || undefined,
         title: cleanTitle,
         content: cleanContent,
       });
@@ -1051,15 +1055,18 @@ function RequestsPage({ notify }) {
           <form onSubmit={submit} noValidate>
             {activeStays.length > 1 && (
               <label>
-                Khu trọ áp dụng
+                Khu trọ / phòng áp dụng
                 <select
-                  value={selectedPropertyId}
-                  onChange={(e) => setSelectedPropertyId(e.target.value)}
+                  value={selectedContractId}
+                  onChange={(e) => {
+                    setSelectedContractId(e.target.value);
+                    setError("");
+                  }}
                   required
                 >
-                  <option value="">-- Chọn khu trọ --</option>
+                  <option value="">-- Chọn khu trọ / phòng --</option>
                   {activeStays.map((stay) => (
-                    <option key={stay.propertyId} value={stay.propertyId}>
+                    <option key={stay.contractId} value={stay.contractId}>
                       {stay.propertyName} (Phòng {stay.roomNumber})
                     </option>
                   ))}

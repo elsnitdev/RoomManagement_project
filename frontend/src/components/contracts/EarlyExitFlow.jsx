@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { ZoomIn } from 'lucide-react'
 import { billingApi } from '../../services/api/billingApi'
 import { contractApi } from '../../services/api/contractApi'
 import { EvidenceSelector } from '../billing/PaymentEvidence'
+import ImageLightbox from '../common/ImageLightbox'
 
 const today = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const money = value => new Intl.NumberFormat('vi-VN').format(Number(value || 0)) + ' ₫'
@@ -41,6 +43,7 @@ export function SettlementRefundEvidencePanel({ propertyId, contractId }) {
   const [evidence, setEvidence] = useState(null)
   const [selection, setSelection] = useState(null)
   const [imageUrl, setImageUrl] = useState('')
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
@@ -77,8 +80,9 @@ export function SettlementRefundEvidencePanel({ propertyId, contractId }) {
   if (!visible) return null
   return <section className="ct-card ct-refund-evidence-panel"><h2>Chứng từ hoàn cọc</h2>
     {error && <p className="contract-message contract-message--error" role="alert">{error}</p>}
-    {eligible && (evidence ? <div className="ct-refund-evidence-panel__saved"><p>Đã lưu: <strong>{evidence.fileName}</strong></p>{imageUrl ? <a href={imageUrl} target="_blank" rel="noopener noreferrer"><img src={imageUrl} alt={`Chứng từ hoàn cọc ${evidence.fileName}`} />Mở ảnh chứng từ ↗</a> : <p role="status">Đang tải ảnh chứng từ…</p>}</div> : <form onSubmit={upload}><p>Hợp đồng đã tất toán và có khoản hoàn cọc. Tải ảnh chứng từ tại đây nếu lần tải trước chưa thành công.</p><EvidenceSelector selection={selection} onChange={setSelection} disabled={busy} /><button type="submit" className="contract-button contract-button--secondary" disabled={busy || !selection}>{busy ? 'Đang tải ảnh…' : 'Lưu ảnh hoàn cọc'}</button></form>)}
+    {eligible && (evidence ? <div className="ct-refund-evidence-panel__saved">{imageUrl ? <div className="ct-refund-evidence-grid"><button type="button" className="ct-refund-evidence-card" aria-label={`Xem phóng to chứng từ ${evidence.fileName}`} onClick={() => setLightboxOpen(true)}><div className="ct-refund-evidence-card__thumb"><img src={imageUrl} alt={`Chứng từ hoàn cọc ${evidence.fileName}`} /><span className="ct-refund-evidence-card__zoom" aria-hidden="true"><ZoomIn size={18} /></span></div><span className="ct-refund-evidence-card__name" title={evidence.fileName}>{evidence.fileName}</span></button></div> : <p role="status">Đang tải ảnh chứng từ…</p>}</div> : <form onSubmit={upload}><p>Hợp đồng đã tất toán và có khoản hoàn cọc. Tải ảnh chứng từ tại đây nếu lần tải trước chưa thành công.</p><EvidenceSelector selection={selection} onChange={setSelection} disabled={busy} /><button type="submit" className="contract-button contract-button--secondary" disabled={busy || !selection}>{busy ? 'Đang tải ảnh…' : 'Lưu ảnh hoàn cọc'}</button></form>)}
     <button type="button" className="contract-button contract-button--ghost" onClick={() => setRevision(value => value + 1)} disabled={busy}>Làm mới chứng từ</button>
+    <ImageLightbox items={lightboxOpen && imageUrl && evidence ? [{ src: imageUrl, title: evidence.fileName, downloadName: evidence.fileName }] : []} index={lightboxOpen ? 0 : -1} onClose={() => setLightboxOpen(false)} />
   </section>
 }
 export default function EarlyExitFlow({ propertyId, contract, navigate, onChanged }) {
@@ -118,11 +122,16 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
   const [offset, setOffset] = useState('0')
   const [offsetKey, setOffsetKey] = useState(() => crypto.randomUUID())
   const [refund, setRefund] = useState('')
+  const [refundMode, setRefundMode] = useState('')
   const [note, setNote] = useState('')
   const [payment, setPayment] = useState('')
   const [method, setMethod] = useState('BankTransfer')
   const [transactionCode, setTransactionCode] = useState('')
   const [paymentKey, setPaymentKey] = useState(() => crypto.randomUUID())
+  const [discountInvoiceId, setDiscountInvoiceId] = useState('')
+  const [discountAmount, setDiscountAmount] = useState('')
+  const [discountReason, setDiscountReason] = useState('')
+  const [discountKey, setDiscountKey] = useState(() => crypto.randomUUID())
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -169,6 +178,50 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
   const settlementTotal = projectedTotal + [...oneOffs, ...oldUnpaid].reduce((sum, row) => sum + Number(row.effectiveTotal ?? row.baseTotal ?? 0), 0)
   const projectedDue = (monthly?.status === 'Issued' ? Number(monthly.amountDue || 0) : projectedTotal) + [...oneOffs, ...oldUnpaid].reduce((sum, row) => sum + Number(row.amountDue || 0), 0)
   const unsettledInvoices = invoices.filter(row => row.status === 'Draft' || (row.status === 'Issued' && Number(row.amountDue) > 0))
+  const refundAmount = refundMode === 'full' ? held : refundMode === 'none' ? 0 : Number(refund)
+  const refundValid = held <= 0 || refundMode === 'full' || refundMode === 'none' && Boolean(note.trim()) ||
+    refundMode === 'partial' && /^\d+(?:\.\d{1,2})?$/.test(refund) && refundAmount > 0 && refundAmount < held && Boolean(note.trim())
+  const finishBlockers = [
+    ...(!monthly || monthly.status !== 'Issued' ? ['Hóa đơn tháng cuối chưa được phát hành.'] : []),
+    ...(missingMonthlyPeriods.length ? [`Còn kỳ chưa phát hành: ${missingMonthlyPeriods.join(', ')}.`] : []),
+    ...(overview?.hasDraftInvoices || invoices.some(row => row.status === 'Draft') ? ['Còn hóa đơn nháp chưa được xử lý.'] : []),
+    ...(outstanding > 0 ? [`Còn công nợ ${money(outstanding)}.`] : []),
+    ...(outstanding <= 0 && invoices.some(row => row.status === 'Issued' && Number(row.amountDue) > 0) ? ['Có hóa đơn còn phải thu; hãy làm mới và kiểm tra công nợ.'] : []),
+    ...(held > 0 && !refundMode ? ['Chọn cách xử lý tiền cọc còn giữ.'] : []),
+    ...(held > 0 && refundMode === 'partial' && (!/^\d+(?:\.\d{1,2})?$/.test(refund) || refundAmount <= 0 || refundAmount >= held) ? ['Nhập số hoàn lớn hơn 0 và nhỏ hơn tiền cọc còn giữ.'] : []),
+    ...(held > 0 && ['partial', 'none'].includes(refundMode) && !note.trim() ? ['Nhập lý do giữ lại tiền cọc.'] : []),
+    ...(!allowed('CompleteSettlement') && !missingMonthlyPeriods.length && monthly?.status === 'Issued' && !overview?.hasDraftInvoices && outstanding <= 0 ? ['Trạng thái tất toán chưa sẵn sàng; hãy làm mới dữ liệu.'] : []),
+  ]
+  const discountInvoices = invoices.filter(row => ['Monthly', 'Damage', 'Other'].includes(row.type) && (row.status === 'Draft' && row.type === 'Monthly' || row.status === 'Issued' && Number(row.amountDue) > 0))
+  const discountInvoice = discountInvoices.find(row => row.id === discountInvoiceId) || discountInvoices[0]
+  const discountLimit = discountInvoice?.status === 'Draft' ? Number(discountInvoice.baseTotal || 0) : Number(discountInvoice?.amountDue || 0)
+  const previewInvoices = invoices.filter(row => row.status === 'Draft' || row.status === 'Issued')
+  const draftDiscount = monthly?.status === 'Draft' ? (currentDetail?.items || []).filter(row => row.type === 'Discount').reduce((sum, row) => sum + Math.abs(Number(row.amount || 0)), 0) : 0
+  const previewBase = previewInvoices.reduce((sum, row) => sum + Number(row.baseTotal || 0), 0) + draftDiscount
+  const previewEffective = previewInvoices.reduce((sum, row) => sum + Number(row.effectiveTotal ?? row.baseTotal ?? 0), 0)
+  const previewPaid = previewInvoices.reduce((sum, row) => sum + Number(row.totalPaid || 0) - Number(row.totalRefunded || 0), 0)
+  const previewApplied = previewInvoices.reduce((sum, row) => sum + Number(row.totalDepositApplied || 0), 0)
+  const discountForm = discountInvoices.length > 0 && <form className="ct-exit-form" onSubmit={saveDiscount}>
+    <h3>Miễn hoặc giảm tiền</h3>
+    <label>Hóa đơn<select value={discountInvoice?.id || ''} onChange={event => { setDiscountInvoiceId(event.target.value); setDiscountAmount(''); setDiscountKey(crypto.randomUUID()) }}>{discountInvoices.map(row => <option key={row.id} value={row.id}>{row.code} · {row.status === 'Draft' ? 'Nháp' : 'Đã phát hành'}</option>)}</select></label>
+    <label>Số tiền giảm<input type="number" min="0.01" max={discountLimit} step="0.01" required value={discountAmount} onChange={event => { setDiscountAmount(event.target.value); setDiscountKey(crypto.randomUUID()) }} /></label>
+    <button type="button" className="contract-button contract-button--ghost" disabled={busy || discountLimit <= 0} onClick={() => { setDiscountAmount(String(discountLimit)); setDiscountKey(crypto.randomUUID()) }}>Giảm toàn bộ số còn phải thu ({money(discountLimit)})</button>
+    <label>Lý do<input required maxLength="255" value={discountReason} onChange={event => { setDiscountReason(event.target.value); setDiscountKey(crypto.randomUUID()) }} /></label>
+    <p>Khoản giảm được lưu vào hóa đơn đã chọn, không phải khoản thanh toán.</p>
+    <button className="contract-button contract-button--secondary" disabled={busy}>Lưu khoản giảm</button>
+  </form>
+  const settlementPreview = <section className="ct-exit-invoice-card" aria-label="Xem trước tất toán">
+    <h3>Xem trước tất toán</h3>
+    <ul className="ct-exit-line-items">{previewInvoices.map(row => <li key={row.id}><span>{row.code} · {row.status === 'Draft' ? 'Nháp' : 'Đã phát hành'}</span><strong>Còn {money(row.status === 'Draft' ? row.baseTotal : row.amountDue)}</strong></li>)}</ul>
+    <p>Tổng hóa đơn gốc: <strong>{money(previewBase)}</strong></p>
+    <p>Điều chỉnh đã lưu: <strong>{signedMoney(previewEffective - previewBase)}</strong></p>
+    <p>Đã thanh toán sau hoàn tiền: <strong>{money(previewPaid)}</strong></p>
+    <p>Cọc đã cấn trừ: <strong>{money(previewApplied)}</strong></p>
+    <p>Cọc dự kiến cấn trừ: <strong>{money(offset)}</strong></p>
+    <p>Dự kiến còn phải thu: <strong>{money(Math.max(0, projectedDue - Number(offset || 0)))}</strong></p>
+    <p>Cọc còn lại sau cấn trừ dự kiến: <strong>{money(Math.max(0, held - Number(offset || 0)))}</strong></p>
+    <p>Số tiền đang nhập ở mục giảm chỉ được tính sau khi lưu. Các hóa đơn chưa tạo không nằm trong tổng hóa đơn gốc.</p>
+  </section>
 
   useEffect(() => { setHandoverOn(contract.handoverOn || today()) }, [contract.id, contract.handoverOn])
   useEffect(() => {
@@ -310,10 +363,27 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
     const saved = await run(() => billingApi.saveDraftItems(invoiceId, { items: [...original, { type: extraType, description: extraDescription.trim(), quantity: 1, unitPrice: extra }] }), 'Đã thêm khoản phát sinh vào hóa đơn.')
     if (saved) { setExtraDescription(''); setExtraAmount('') }
   }
+  async function saveDiscount(event) {
+    event.preventDefault()
+    const amount = Number(discountAmount)
+    if (!discountInvoice || !/^\d+(?:\.\d{1,2})?$/.test(discountAmount) || amount <= 0 || amount > discountLimit || !discountReason.trim()) {
+      setError('Nhập lý do và số tiền giảm lớn hơn 0, không vượt số còn phải thu.'); return
+    }
+    const reason = discountReason.trim()
+    const saved = await run(async () => {
+      if (discountInvoice.status === 'Issued') return billingApi.addAdjustment(discountInvoice.id, { type: 'Discount', amount, reason, idempotencyKey: discountKey, limitToRemainingAmount: true })
+      const draft = await billingApi.invoice(discountInvoice.id)
+      const original = draft.items.filter(row => editable.includes(row.type)).map(row => ({ id: row.id, type: row.type, description: row.description, quantity: row.quantity, unitPrice: row.unitPrice }))
+      return billingApi.saveDraftItems(discountInvoice.id, { items: [...original, { type: 'Discount', description: reason, quantity: 1, unitPrice: amount }] })
+    }, 'Đã lưu khoản giảm.', true)
+    if (saved) { setDiscountAmount(''); setDiscountReason(''); setDiscountKey(crypto.randomUUID()); setOffset('0') }
+  }
   async function createDraft() {
     if (!allowed('CreateMonthlyInvoice')) { setError('Hóa đơn cuối đã tồn tại hoặc bước lập hóa đơn đã khép lại.'); setRevision(value => value + 1); return }
     if (!extraValid) { setError('Khoản phát sinh chưa hợp lệ.'); return }
-    const created = await run(() => billingApi.createMonthly(propertyId, { contractId: contract.id, ...period }), 'Đã tạo hóa đơn cuối dạng nháp.')
+    const created = await run(() => billingApi.createMonthly(propertyId, {
+      contractId: contract.id, ...period, previewVersion: currentPreview?.version,
+    }), 'Đã tạo hóa đơn cuối dạng nháp.')
     if (!created || !wantsExtra) return
     const newDetail = await run(() => billingApi.invoice(created.id), 'Đang tải hóa đơn nháp.')
     if (newDetail) await saveExtra(created.id, newDetail.items)
@@ -350,7 +420,8 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
   async function issueAndOffset() {
     if (!monthly) return
     if (monthly.status === 'Draft') {
-      const issued = await run(() => billingApi.issue(monthly.id), 'Đã phát hành hóa đơn cuối.', true)
+      if (!currentDetail?.reviewVersion) { setError('Hãy tải chi tiết hóa đơn trước khi phát hành.'); return }
+      const issued = await run(() => billingApi.issue(monthly.id, currentDetail.reviewVersion), 'Đã phát hành hóa đơn cuối.', true)
       if (!issued) return
     }
     if (Number(offset) > 0) {
@@ -384,12 +455,13 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
     event.preventDefault()
     if (settlementCompleted) return
     if (!allowed('CompleteSettlement')) { setError('Còn hóa đơn chưa xử lý hoặc dữ liệu đã đổi. Hãy tải lại trạng thái tất toán.'); setRevision(value => value + 1); return }
-    const disposition = held > 0 ? 'Refunded' : invoices.some(row => Number(row.totalDepositApplied) > 0) ? 'Offset' : 'NoDeposit'
+    if (!refundValid) { setError('Vui lòng chọn cách xử lý cọc và nhập đầy đủ thông tin.'); return }
+    const disposition = held > 0 ? refundMode === 'full' ? 'Refunded' : refundMode === 'partial' ? 'PartialRefund' : 'Forfeited' : invoices.some(row => Number(row.totalDepositApplied) > 0) ? 'Offset' : 'NoDeposit'
     setBusy(true); setError(''); setSuccess('')
     try {
-      await contractApi.completeSettlement(propertyId, contract.id, { depositDisposition: disposition, refundAmount: held > 0 ? Number(refund) : 0, note: note.trim() || null })
+      await contractApi.completeSettlement(propertyId, contract.id, { depositDisposition: disposition, refundAmount: held > 0 ? refundAmount : 0, note: note.trim() || null })
       setSettlementCompleted(true)
-      if (held > 0 && refundSelection) {
+      if (held > 0 && refundAmount > 0 && refundSelection) {
         try {
           await contractApi.uploadSettlementRefundEvidence(propertyId, contract.id, refundSelection)
           setRefundSelection(null); setPendingRefundUpload(null)
@@ -448,7 +520,7 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
                 <label>Đơn vị<input maxLength="50" required placeholder={type === 'Electricity' ? 'Ví dụ: kWh' : 'Ví dụ: m³'} value={rateInputs[type].unit} onChange={event => setRateInputs(current => ({ ...current, [type]: { ...current[type], unit: event.target.value } }))} /></label>
                 <button type="submit" className="contract-button contract-button--secondary" disabled={busy}>Lưu giá {type === 'Electricity' ? 'điện' : 'nước'}</button>
               </form>)}
-              {(missingRates.length > 0 || rateError) && <div className="ct-exit-actions"><button type="button" className="contract-button contract-button--secondary" onClick={() => setRevision(value => value + 1)}>Kiểm tra lại đơn giá</button>{navigate && <button type="button" className="contract-button contract-button--ghost" onClick={() => { setOpen(false); navigate(`landlord/billing/rooms/${propertyId}/${contract.roomId}`) }}>Đến trang hóa đơn để cấu hình giá</button>}</div>}
+              {(missingRates.length > 0 || rateError) && <div className="ct-exit-actions"><button type="button" className="contract-button contract-button--secondary" onClick={() => setRevision(value => value + 1)}>Kiểm tra lại đơn giá</button>{navigate && <button type="button" className="contract-button contract-button--ghost" onClick={() => { setOpen(false); navigate(`landlord/utilities/${propertyId}/inputs/${contract.roomId}`) }}>Đi đến giá và dịch vụ</button>}</div>}
               {(missingRates.length > 0 || rateError) && navigate && <p>Trong trang hóa đơn, mở tab “Giá, chỉ số và dịch vụ” để thêm giá của kỳ này.</p>}
             </div>
             {(!readingFor('Electricity') || !readingFor('Water')) && <form className="ct-exit-form" onSubmit={saveReading}>
@@ -471,7 +543,7 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
             <div className="ct-exit-columns">
               <section>
                 <h3>Hóa đơn cuối · {period.month}/{period.year}</h3>
-                {monthly ? <p>Mã {monthly.code} · {monthly.status === 'Draft' ? 'Bản nháp' : 'Đã phát hành'}</p> : <div>{previewLoading && <p role="status">Đang tính hóa đơn cuối…</p>}{previewError && <p className="contract-message contract-message--error" role="alert">{previewError}</p>}{previewError && <button type="button" className="contract-button contract-button--secondary" onClick={() => setRevision(value => value + 1)}>Kiểm tra dữ liệu và thử lại</button>}{previewError && missingRates.length > 0 && navigate && <button type="button" className="contract-button contract-button--ghost" onClick={() => { setOpen(false); navigate(`landlord/billing/rooms/${propertyId}/${contract.roomId}`) }}>Đến trang cấu hình giá</button>}</div>}
+                {monthly ? <p>Mã {monthly.code} · {monthly.status === 'Draft' ? 'Bản nháp' : 'Đã phát hành'}</p> : <div>{previewLoading && <p role="status">Đang tính hóa đơn cuối…</p>}{previewError && <p className="contract-message contract-message--error" role="alert">{previewError}</p>}{previewError && <button type="button" className="contract-button contract-button--secondary" onClick={() => setRevision(value => value + 1)}>Kiểm tra dữ liệu và thử lại</button>}{previewError && missingRates.length > 0 && navigate && <button type="button" className="contract-button contract-button--ghost" onClick={() => { setOpen(false); navigate(`landlord/utilities/${propertyId}/inputs/${contract.roomId}`) }}>Đến trang cấu hình giá</button>}</div>}
                 {(currentDetail?.items || currentPreview?.items)?.length ? <ul className="ct-exit-line-items">{(currentDetail?.items || currentPreview?.items).map((row, index) => <li key={row.id || index}><span>{row.description}</span><strong>{money(row.amount)}</strong></li>)}</ul> : <p>Chưa có hóa đơn được tính.</p>}
                 {wantsExtra && !extraSaved && <p>Khoản phát sinh dự kiến: {extraDescription} · {money(extra)}</p>}
                 <strong>Tổng dự kiến: {money(projectedTotal)}</strong>
@@ -489,23 +561,28 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
               <section>
                 <h3>Đối chiếu tiền cọc</h3><p>Cọc đang giữ: <strong>{money(held)}</strong></p>
                 <label>Số cọc muốn cấn trừ vào hóa đơn cuối<input type="number" min="0" max={maxOffset} step="0.01" value={offset} onChange={event => { setOffset(event.target.value); setOffsetKey(crypto.randomUUID()) }} disabled={!monthly} /></label>
-                <p>Giới hạn có thể cấn trừ: {money(maxOffset)}. Phần còn lại được hoàn khi tất toán.</p>
+                <p>Giới hạn có thể cấn trừ: {money(maxOffset)}. Chọn cách xử lý phần cọc còn lại khi tất toán.</p>
                 <p>Tổng các hóa đơn: <strong>{money(settlementTotal)}</strong></p>
                 <p>Dự kiến còn phải thu: <strong>{money(Math.max(0, projectedDue - Number(offset || 0)))}</strong></p>
               </section>
             </div>
             <section className="ct-exit-old-invoices"><h3>Hóa đơn cũ còn nợ ({oldUnpaid.length})</h3>{oldUnpaid.length ? oldUnpaid.map(row => <OldUnpaidInvoice key={row.id} invoice={row} detail={oldInvoiceDetails[row.id]} />) : <p>Không có hóa đơn cũ còn nợ.</p>}</section>
+            {discountForm}
+            {settlementPreview}
             <div className="ct-exit-actions">{!inCollect && <button type="button" className="contract-button contract-button--ghost" onClick={() => setStep(1)}>Quay lại</button>}<button type="button" className="contract-button contract-button--primary" disabled={!monthly || !currentDetail || (!inCollect && (!extraValid || !oneOffReady || (wantsExtra && !extraSaved))) || Number(offset) < 0 || Number(offset) > maxOffset} onClick={() => setStep(3)}>{inCollect ? 'Trở lại công nợ' : 'Đối soát lần cuối'}</button></div>
           </div>}
           {overview && step === 3 && <div className="ct-exit-stage">
             <h3>{inCollect ? 'Tiếp tục thu công nợ' : 'Đối soát và phát hành'}</h3>
             {inCollect && <p>{outstanding > 0 ? <>Còn phải thu: <strong>{money(outstanding)}</strong>.</> : missingMonthlyPeriods.length > 0 ? 'Đã thu đủ các hóa đơn hiện có; cần phát hành thêm kỳ còn thiếu trước khi hoàn tất.' : 'Các hóa đơn đã được thanh toán. Kiểm tra cọc và hoàn tất hợp đồng.'} Hóa đơn đã lập được giữ nguyên khi mở lại quy trình.</p>}
+            {missingMonthlyPeriods.length > 0 && <p>Các kỳ chưa phát hành: <strong>{missingMonthlyPeriods.join(', ')}</strong>. Hóa đơn tháng cuối dạng nháp có thể phát hành bên dưới; với các kỳ trước, hãy <a href={`#/landlord/billing/rooms/${propertyId}/${contract.roomId}`} target="_blank" rel="noopener noreferrer">mở trang hóa đơn của phòng ↗</a> để kiểm tra và xử lý.</p>}
             <div className="ct-exit-invoice-card"><strong>Hóa đơn cuối {monthly?.code} · {monthly?.status === 'Issued' ? 'Đã phát hành' : 'Bản nháp'}</strong><ul className="ct-exit-line-items">{currentDetail?.items?.map(row => <li key={row.id}><span>{row.description}</span><strong>{money(row.amount)}</strong></li>)}</ul><p>Tổng hóa đơn: <strong>{money(projectedTotal)}</strong> · Cọc chọn cấn trừ: <strong>{money(offset)}</strong></p>
               {monthly?.status === 'Draft' && <button type="button" className="contract-button contract-button--primary" disabled={busy} onClick={issueAndOffset}>Phát hành hóa đơn cuối{Number(offset) > 0 ? ' và cấn trừ cọc' : ''}</button>}
               {monthly?.status === 'Issued' && Number(offset) > 0 && <button type="button" className="contract-button contract-button--secondary" disabled={busy} onClick={issueAndOffset}>Áp dụng cọc đã chọn</button>}
             </div>
             {oneOffs.map(row => <div className="ct-exit-invoice-card" key={row.id}><strong>Hóa đơn riêng {row.code} · {row.status === 'Draft' ? 'Bản nháp' : 'Đã phát hành'}</strong><ul className="ct-exit-line-items">{oneOffDetails[row.id]?.items?.map(item => <li key={item.id}><span>{item.description}</span><strong>{money(item.amount)}</strong></li>)}</ul><p>Tổng: <strong>{money(row.effectiveTotal ?? row.baseTotal)}</strong> · Còn phải thu: <strong>{money(row.amountDue)}</strong></p>{row.status === 'Draft' && <button type="button" className="contract-button contract-button--secondary" disabled={busy} onClick={() => issueOneOff(row.id)}>Phát hành hóa đơn riêng</button>}</div>)}
             {oldUnpaid.length > 0 && <section className="ct-exit-old-invoices"><h3>Đối soát hóa đơn cũ còn nợ</h3>{oldUnpaid.map(row => <OldUnpaidInvoice key={row.id} invoice={row} detail={oldInvoiceDetails[row.id]} />)}</section>}
+            {discountForm}
+            {settlementPreview}
             {allowed('RecordPayment') && paymentInvoice && Number(paymentInvoice.amountDue) > 0 && <form className="ct-exit-form" onSubmit={recordPayment}><h3>Ghi nhận thanh toán (có thể một phần)</h3>
               <label>Hóa đơn<select value={paymentInvoice.id} onChange={event => { setPaymentInvoiceId(event.target.value); setPaymentKey(crypto.randomUUID()) }}>{invoices.filter(row => row.status === 'Issued' && Number(row.amountDue) > 0).map(row => <option key={row.id} value={row.id}>{row.code} · còn {money(row.amountDue)}</option>)}</select></label>
               <label>Số đã nhận<input type="number" min="0.01" step="0.01" required value={payment} onChange={event => { setPayment(event.target.value); setPaymentKey(crypto.randomUUID()) }} /></label>
@@ -515,7 +592,21 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
               <button className="contract-button contract-button--primary" disabled={busy || Boolean(pendingPaymentUpload)}>Ghi nhận khoản đã thu</button>
             </form>}
             {pendingPaymentUpload && <div className="ct-exit-upload-retry"><p>Khoản thanh toán đã được ghi nhận. Ảnh chứng từ chưa tải lên.</p><button type="button" className="contract-button contract-button--secondary" disabled={busy} onClick={() => uploadManualPaymentEvidence(pendingPaymentUpload.paymentId, pendingPaymentUpload.selection)}>Thử tải lại ảnh thanh toán</button></div>}
-            <form className="ct-exit-form" onSubmit={finish}><h3>Hoàn tất hợp đồng</h3>{held > 0 && <label>Số cọc đã hoàn<input type="number" min="0" max={held} step="0.01" value={refund} onChange={event => setRefund(event.target.value)} /></label>}{held > 0 && <EvidenceSelector selection={refundSelection} onChange={setRefundSelection} disabled={busy || settlementCompleted} />}<label>Ghi chú<input maxLength="1000" value={note} onChange={event => setNote(event.target.value)} /></label><p>Chỉ hoàn tất khi mọi hóa đơn đã phát hành, công nợ bằng 0 và đã xử lý đủ cọc còn giữ. Ảnh hoàn cọc được lưu sau khi hoàn tất.</p><button className="contract-button contract-button--secondary" disabled={busy || settlementCompleted || Boolean(pendingPaymentUpload) || !allowed('CompleteSettlement') || unsettledInvoices.length > 0 || Number(overview?.outstandingAmount) !== 0 || overview?.hasDraftInvoices || (held > 0 && Number(refund) !== held)}>Hoàn tất hợp đồng</button></form>
+            <form className="ct-exit-form" onSubmit={finish}>
+              <h3>Hoàn tất hợp đồng</h3>
+              {held > 0 && <>
+                <p>Tiền cọc còn giữ: <strong>{money(held)}</strong></p>
+                <label>Cách xử lý tiền cọc<select required value={refundMode} onChange={event => { setRefundMode(event.target.value); setRefund(''); setRefundSelection(null) }}><option value="">Chọn cách xử lý</option><option value="full">Hoàn toàn bộ</option><option value="partial">Hoàn một phần</option><option value="none">Không hoàn</option></select></label>
+                {refundMode === 'partial' && <label>Số tiền hoàn<input type="number" min="0.01" max={held} step="0.01" required value={refund} onChange={event => setRefund(event.target.value)} /></label>}
+                {refundMode && <p>Ghi nhận đã hoàn: <strong>{money(refundAmount)}</strong> · Giữ lại: <strong>{money(Math.max(0, held - refundAmount))}</strong></p>}
+                {refundMode && refundAmount > 0 && <p>Hãy hoàn tiền cho người thuê trước khi xác nhận; thao tác này chỉ ghi nhận việc hoàn tiền.</p>}
+                {refundMode && refundAmount > 0 && <EvidenceSelector selection={refundSelection} onChange={setRefundSelection} disabled={busy || settlementCompleted} />}
+              </>}
+              <label>{['partial', 'none'].includes(refundMode) && held > 0 ? 'Lý do giữ lại cọc' : 'Ghi chú'}<input maxLength="1000" required={held > 0 && ['partial', 'none'].includes(refundMode)} value={note} onChange={event => setNote(event.target.value)} /></label>
+              <p>Cần phát hành đủ hóa đơn và xử lý hết công nợ trước khi hoàn tất. Ảnh hoàn cọc được lưu sau khi hoàn tất.</p>
+              {finishBlockers.length > 0 && <div role="status"><strong>Chưa thể hoàn tất:</strong><ul>{finishBlockers.map(item => <li key={item}>{item}</li>)}</ul></div>}
+              <button className="contract-button contract-button--secondary" disabled={busy || settlementCompleted || Boolean(pendingPaymentUpload) || !allowed('CompleteSettlement') || unsettledInvoices.length > 0 || outstanding > 0 || overview?.hasDraftInvoices || !refundValid}>Hoàn tất hợp đồng</button>
+            </form>
             {pendingRefundUpload && <div className="ct-exit-upload-retry"><p>Hợp đồng đã tất toán. Hãy tải lại ảnh hoàn cọc; không bấm hoàn tất lần nữa.</p><button type="button" className="contract-button contract-button--secondary" disabled={busy} onClick={retryRefundEvidence}>Thử tải lại ảnh hoàn cọc</button></div>}
             <div className="ct-exit-actions"><button type="button" className="contract-button contract-button--ghost" onClick={() => setStep(2)}>Xem lại hóa đơn và cọc</button><button type="button" className="contract-button contract-button--ghost" onClick={() => setRevision(value => value + 1)}>Làm mới công nợ</button></div>
           </div>}

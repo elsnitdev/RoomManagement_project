@@ -25,9 +25,10 @@ export async function getMyRequestProperties({ signal } = {}) {
   return response.data || []
 }
 
-export async function createTenantRequest({ propertyId, title, content }) {
+export async function createTenantRequest({ propertyId, contractId, title, content }) {
   const body = { title, content }
   if (propertyId) body.propertyId = propertyId
+  if (contractId) body.contractId = contractId
   const response = await apiRequest('/api/me/requests', { method: 'POST', body })
   invalidateRequestQueries()
   return response.data

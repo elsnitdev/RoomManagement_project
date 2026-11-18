@@ -29,11 +29,24 @@ public sealed class NotificationEmailWorker(
                     !string.IsNullOrWhiteSpace(configuration["SendGrid:FromEmail"]))
                     await ProcessBatch(stoppingToken);
             }
-            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+            catch (Exception) when (stoppingToken.IsCancellationRequested)
+            {
+                // Service resolution or disposal can fail during shutdown without throwing
+                // OperationCanceledException. Do not report it as a failed background service.
+                return;
+            }
+            catch (Exception ex)
             {
                 logger.LogError(ex, "Notification email batch failed");
             }
-            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
         }
     }
 

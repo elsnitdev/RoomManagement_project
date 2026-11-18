@@ -212,17 +212,49 @@ public sealed class InvoiceStore : IInvoiceStore
         };
     }
 
-    /// <inheritdoc />
-    public async Task<Invoice> CreateDraftAsync(Invoice invoice, IReadOnlyList<InvoiceItem> items,
+    public Task<Invoice> CreateMonthlyDraftAsync(Guid roomId, string ownerId,
+        Func<Task<(Invoice Invoice, IReadOnlyList<InvoiceItem> Items)>> calculate, CancellationToken ct)
+        => WithRoomTransactionAsync(roomId, async () =>
+        {
+            var (invoice, items) = await calculate();
+            if (invoice.RoomId != roomId)
+                throw BusinessException.Conflict("Phòng của hợp đồng đã thay đổi. Vui lòng thử lại.", "INVOICE_ROOM_CHANGED");
+            return await SaveDraftAsync(invoice, items, ownerId, ct);
+        }, ct);
+
+    private async Task<Invoice> WithRoomTransactionAsync(Guid roomId, Func<Task<Invoice>> action, CancellationToken ct)
+    {
+        try
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+            await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {roomId}")
+                .AsNoTracking().SingleAsync(ct);
+            var invoice = await action();
+            await tx.CommitAsync(ct);
+            return invoice;
+        }
+        catch (Exception ex)
+        {
+            _db.ChangeTracker.Clear();
+            if (ex is SqlException { Number: 1205 or 1222 } ||
+                ex is DbUpdateException { InnerException: SqlException { Number: 1205 or 1222 } })
+                throw new BusinessException(BusinessErrorType.Conflict, "INVOICE_BUSY",
+                    "Dữ liệu kỳ này đang được xử lý. Vui lòng thử lại.", ex);
+            throw;
+        }
+    }
+
+    public Task<Invoice> CreateDraftAsync(Invoice invoice, IReadOnlyList<InvoiceItem> items,
+        string ownerId, CancellationToken ct) =>
+        WithRoomTransactionAsync(invoice.RoomId, () => SaveDraftAsync(invoice, items, ownerId, ct), ct);
+
+    private async Task<Invoice> SaveDraftAsync(Invoice invoice, IReadOnlyList<InvoiceItem> items,
         string ownerId, CancellationToken ct)
     {
         if (invoice.Status != InvoiceStatus.Draft || items.Count == 0 ||
             invoice.DueDate < invoice.IssueDate || invoice.TotalAmount != items.Sum(x => x.Amount) ||
             items.Any(x => x.InvoiceId != invoice.Id || x.Quantity <= 0 || x.UnitPrice < 0))
             throw Validation("INVOICE_TOTAL_MISMATCH", "Hóa đơn và các dòng tiền không hợp lệ.");
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {invoice.RoomId}")
-            .AsNoTracking().SingleAsync(ct);
         var owned = await (from contract in _db.Contracts
                            join room in _db.Rooms on contract.RoomId equals room.Id
                            join property in _db.Properties on room.PropertyId equals property.Id
@@ -276,7 +308,6 @@ public sealed class InvoiceStore : IInvoiceStore
         try
         {
             await _db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
         }
         catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
         {
@@ -287,17 +318,28 @@ public sealed class InvoiceStore : IInvoiceStore
     }
 
     /// <inheritdoc />
-    public async Task<Invoice> IssueAsync(Guid invoiceId, string ownerId, CancellationToken ct)
+    public async Task<Invoice> IssueAsync(Guid invoiceId, string ownerId, CancellationToken ct,
+        string? expectedVersion = null, Guid? monthlyPropertyId = null, short? year = null, byte? month = null)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var roomId = await OwnedInvoices(ownerId).AsNoTracking()
             .Where(x => x.Id == invoiceId).Select(x => (Guid?)x.RoomId).SingleOrDefaultAsync(ct)
             ?? throw NotFound();
-        await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {roomId}")
-            .AsNoTracking().SingleAsync(ct);
+        return await WithRoomTransactionAsync(roomId,
+            () => IssueLockedAsync(invoiceId, ownerId, ct, expectedVersion, monthlyPropertyId, year, month), ct);
+    }
+
+    private async Task<Invoice> IssueLockedAsync(Guid invoiceId, string ownerId, CancellationToken ct,
+        string? expectedVersion, Guid? monthlyPropertyId, short? year, byte? month)
+    {
         await InvoiceTransactionLock.AcquireAsync(_db, invoiceId, ct);
         var invoice = await OwnedInvoices(ownerId).SingleOrDefaultAsync(x => x.Id == invoiceId, ct)
             ?? throw NotFound();
+        if (monthlyPropertyId is { } propertyId &&
+            (invoice.InvoiceType != InvoiceType.Monthly || invoice.BillingYear != year || invoice.BillingMonth != month ||
+             !await _db.Rooms.AnyAsync(x => x.Id == invoice.RoomId && x.PropertyId == propertyId, ct)))
+            throw NotFound();
+        if (monthlyPropertyId.HasValue && invoice.Status == InvoiceStatus.Issued)
+            return invoice;
         if (invoice.Status != InvoiceStatus.Draft)
             throw Invalid("INVOICE_INVALID_STATUS", "Chỉ hóa đơn nháp mới được phát hành.");
         if (invoice.InvoiceType == InvoiceType.Monthly &&
@@ -316,9 +358,14 @@ public sealed class InvoiceStore : IInvoiceStore
                 : contract.Status is not (ContractStatus.Draft or ContractStatus.Active or
                     ContractStatus.PendingMoveOut or ContractStatus.PendingSettlement)))
             throw Invalid("CONTRACT_CLOSED", "Hợp đồng đã đóng, không thể phát hành hóa đơn.");
-        var amounts = await _db.InvoiceItems.AsNoTracking().Where(x => x.InvoiceId == invoiceId)
-            .Select(x => x.Amount).ToListAsync(ct);
-        if (amounts.Count == 0 || amounts.Sum() != invoice.TotalAmount)
+        var items = await _db.InvoiceItems.AsNoTracking().Where(x => x.InvoiceId == invoiceId).ToListAsync(ct);
+        if (expectedVersion == string.Empty && invoice.InvoiceType == InvoiceType.Monthly)
+            throw BusinessException.Conflict("Hãy tải chi tiết hóa đơn tháng trước khi phát hành.",
+                "INVOICE_REVIEW_REQUIRED");
+        if (!string.IsNullOrEmpty(expectedVersion) && expectedVersion != InvoiceReviewVersion.ForDraft(invoice, items))
+            throw BusinessException.Conflict("Hóa đơn đã thay đổi. Hãy tải lại và kiểm tra trước khi phát hành.",
+                "INVOICE_REVIEW_CHANGED");
+        if (items.Count == 0 || items.Sum(x => x.Amount) != invoice.TotalAmount)
             throw Invalid("INVOICE_TOTAL_MISMATCH", "Tổng hóa đơn không khớp các dòng tiền.");
         if (invoice.DueDate < today)
         {
@@ -340,7 +387,6 @@ public sealed class InvoiceStore : IInvoiceStore
                 $"invoice-issued:{invoice.Id}", invoice.Id, ownerId, ct);
         }
         await _db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
         return invoice;
     }
 
@@ -434,7 +480,7 @@ public sealed class InvoiceStore : IInvoiceStore
         var total = fixedTotal + replacements.Sum(x => x.Type == InvoiceItemType.Discount
             ? -decimal.Round(x.Quantity * x.UnitPrice, 2, MidpointRounding.AwayFromZero)
             : decimal.Round(x.Quantity * x.UnitPrice, 2, MidpointRounding.AwayFromZero));
-        if (total <= 0 || total > 9_999_999_999_999_999.99m ||
+        if (total < 0 || total > 9_999_999_999_999_999.99m ||
             original.Count - editable.Count + replacements.Count == 0)
             throw Validation("INVOICE_TOTAL_INVALID", "Tổng hóa đơn không hợp lệ.");
         invoice.TotalAmount = total;
@@ -452,7 +498,7 @@ public sealed class InvoiceStore : IInvoiceStore
     }
 
     public async Task<InvoiceAdjustment> AddAdjustmentAsync(Guid invoiceId, string ownerId,
-        InvoiceAdjustmentInput input, CancellationToken ct)
+        InvoiceAdjustmentInput input, CancellationToken ct, string? actorUserId = null)
     {
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
         await InvoiceTransactionLock.AcquireAsync(_db, invoiceId, ct);
@@ -471,6 +517,8 @@ public sealed class InvoiceStore : IInvoiceStore
             return existing;
         }
         var balance = await _db.InvoiceBalances.AsNoTracking().SingleAsync(x => x.InvoiceId == invoiceId, ct);
+        if (input.LimitToRemainingAmount && input.Amount > balance.RemainingAmount)
+            throw Validation("ADJUSTMENT_EXCEEDS_AMOUNT_DUE", "Khoản giảm vượt số tiền còn phải thu.");
         if (input.Type != InvoiceAdjustmentType.AdditionalCharge && balance.EffectiveAmount < input.Amount)
             throw Validation("ADJUSTMENT_EXCEEDS_TOTAL", "Khoản giảm vượt số phải thu.");
         if (input.Type == InvoiceAdjustmentType.AdditionalCharge &&
@@ -484,7 +532,7 @@ public sealed class InvoiceStore : IInvoiceStore
             Amount = input.Amount,
             Reason = input.Reason,
             IdempotencyKey = input.IdempotencyKey,
-            CreatedByUserId = ownerId,
+            CreatedByUserId = actorUserId ?? ownerId,
             CreatedAt = DateTime.UtcNow
         };
         _db.InvoiceAdjustments.Add(adjustment);

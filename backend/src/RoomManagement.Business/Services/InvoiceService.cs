@@ -118,7 +118,7 @@ public sealed class InvoiceService
 
         var assignments = await _inputs.ListRoomServicesAsync(contract.RoomId, ct);
         var services = new List<BillableRoomService>();
-        foreach (var assignment in assignments)
+        foreach (var assignment in assignments.OrderBy(x => x.Assignment.ServiceId))
         {
             var item = assignment.Assignment;
             if (item.StartDate > periodEnd || item.EndDate is { } end && end < periodStart) continue;
@@ -154,8 +154,23 @@ public sealed class InvoiceService
 
     public async Task<Invoice> CreateMonthlyAsync(Guid propertyId, MonthlyInvoiceInput input, CancellationToken ct)
     {
-        var preview = await PreviewMonthlyAsync(propertyId, input, ct); // Recompute on the server.
-        var owner = await OwnerAsync(ct);
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlords, ct,
+            "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+        var owner = context.OwnerLandlordUserId;
+        var contract = await _invoices.GetOwnedContractAsync(propertyId, input.ContractId, owner, ct)
+            ?? throw NotFound("CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng.");
+        return await _invoices.CreateMonthlyDraftAsync(contract.RoomId, owner,
+            () => CalculateMonthlyDraftAsync(propertyId, input, ct), ct);
+    }
+
+    private async Task<(Invoice Invoice, IReadOnlyList<InvoiceItem> Items)> CalculateMonthlyDraftAsync(
+        Guid propertyId, MonthlyInvoiceInput input, CancellationToken ct)
+    {
+        var preview = await PreviewMonthlyAsync(propertyId, input, ct);
+        if (input.PreviewVersion is not null && input.PreviewVersion != preview.Version)
+            throw BusinessException.Conflict("Dữ liệu tính hóa đơn đã thay đổi. Hãy xem trước lại.",
+                "INVOICE_PREVIEW_CHANGED");
         var invoiceId = Guid.NewGuid();
         var now = DateTime.UtcNow;
         var invoice = new Invoice
@@ -172,7 +187,81 @@ public sealed class InvoiceService
             Description = x.Description, Quantity = x.Quantity, UnitPrice = x.UnitPrice,
             Amount = x.Amount, ReferenceId = x.ReferenceId, CreatedAt = now
         }).ToList();
-        return await _invoices.CreateDraftAsync(invoice, items, owner, ct);
+        return (invoice, items);
+    }
+
+    public async Task<IReadOnlyList<BillingBatchResult>> CloseMonthAsync(Guid propertyId, short year, byte month,
+        CancellationToken ct)
+    {
+        var context = await MonthlyBatchContextAsync(propertyId, year, month, ct);
+        var candidates = await _invoices.ListMonthlyCandidatesAsync(propertyId, context.OwnerLandlordUserId, year, month, ct);
+        var results = new List<BillingBatchResult>(candidates.Count);
+        foreach (var candidate in candidates)
+        {
+            if (candidate.InvoiceId is { } existingId)
+            {
+                results.Add(new(candidate.ContractId, existingId, "AlreadyExists"));
+                continue;
+            }
+            try
+            {
+                var invoice = await CreateMonthlyAsync(propertyId, new(candidate.ContractId, year, month), ct);
+                results.Add(new(candidate.ContractId, invoice.Id, "DraftCreated"));
+            }
+            catch (BusinessException ex)
+            {
+                var status = ex.Code switch
+                {
+                    "ROOM_MONTH_INVOICE_EXISTS" or "INVOICE_ALREADY_EXISTS" => "AlreadyExists",
+                    "INVOICE_BUSY" => "Retry",
+                    _ => "NeedsReview"
+                };
+                results.Add(new(candidate.ContractId, null, status, ex.Code, ex.Message));
+            }
+        }
+        return results;
+    }
+
+    public async Task<IReadOnlyList<BillingBatchResult>> IssueMonthAsync(Guid propertyId, short year, byte month,
+        IReadOnlyList<InvoiceApproval> approvals, CancellationToken ct)
+    {
+        var context = await MonthlyBatchContextAsync(propertyId, year, month, ct);
+        if (approvals is null || approvals.Count is < 1 or > 100 ||
+            approvals.Any(x => x is null || x.InvoiceId == Guid.Empty ||
+                x.Version is not { Length: 64 } || !x.Version.All(Uri.IsHexDigit)) ||
+            approvals.Select(x => x.InvoiceId).Distinct().Count() != approvals.Count)
+            throw Validation("INVOICE_APPROVALS_INVALID", "Chọn từ 1 đến 100 hóa đơn đã kiểm tra.");
+        var results = new List<BillingBatchResult>(approvals.Count);
+        foreach (var approval in approvals)
+        {
+            try
+            {
+                await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, approval.InvoiceId, _landlords, ct);
+                var invoice = await _invoices.IssueAsync(approval.InvoiceId, context.OwnerLandlordUserId, ct,
+                    approval.Version, propertyId, year, month);
+                results.Add(new(invoice.ContractId, invoice.Id, "Issued"));
+            }
+            catch (BusinessException ex)
+            {
+                results.Add(new(null, approval.InvoiceId, ex.Code == "INVOICE_BUSY" ? "Retry" : "NeedsReview",
+                    ex.Code, ex.Message));
+            }
+        }
+        return results;
+    }
+
+    private async Task<OperatorContext> MonthlyBatchContextAsync(Guid propertyId, short year, byte month, CancellationToken ct)
+    {
+        var today = VietnamToday();
+        if (year is < 2000 or > 2100 || month is < 1 or > 12 ||
+            new DateOnly(year, month, 1) >= new DateOnly(today.Year, today.Month, 1))
+            throw Validation("INVOICE_PERIOD_INVALID", "Chỉ xử lý hàng loạt cho kỳ đã kết thúc.");
+        var context = await OperatorAsync(ct);
+        await OperatorAccessGuard.EnsurePropertyAccessAsync(context, propertyId, _landlords, ct,
+            "PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
+        if (!await _inputs.PropertyOwnedAsync(propertyId, context.OwnerLandlordUserId, ct))
+            throw NotFound("PROPERTY_NOT_FOUND", "Không tìm thấy khu trọ.");
+        return context;
     }
 
     public async Task<Invoice> CreateDepositAsync(Guid contractId, CancellationToken ct)
@@ -279,7 +368,8 @@ public sealed class InvoiceService
 
     public async Task<InvoiceAdjustment> AddAdjustmentAsync(Guid invoiceId, InvoiceAdjustmentInput input, CancellationToken ct)
     {
-        if (!Enum.IsDefined(input.Type) || input.Amount <= 0 ||
+        if (!Enum.IsDefined(input.Type) || input.LimitToRemainingAmount &&
+            input.Type is not (InvoiceAdjustmentType.Discount or InvoiceAdjustmentType.WriteOff) || input.Amount <= 0 ||
             input.Amount > 9_999_999_999_999_999.99m ||
             input.Amount != decimal.Round(input.Amount, 2) ||
             string.IsNullOrWhiteSpace(input.Reason) || input.Reason.Trim().Length > 500 ||
@@ -288,7 +378,8 @@ public sealed class InvoiceService
         var context = await OperatorAsync(ct);
         await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct);
         return await _invoices.AddAdjustmentAsync(invoiceId, context.OwnerLandlordUserId,
-            input with { Reason = input.Reason.Trim(), IdempotencyKey = input.IdempotencyKey.Trim() }, ct);
+            input with { Reason = input.Reason.Trim(), IdempotencyKey = input.IdempotencyKey.Trim() }, ct,
+            context.ActorUserId);
     }
 
     public async Task<IReadOnlyList<InvoiceAdjustment>> ListAdjustmentsAsync(Guid invoiceId, CancellationToken ct)
@@ -400,11 +491,11 @@ public sealed class InvoiceService
         _invoices.CanTenantDeclarePaymentAsync(invoiceId, tenantUserId,
             VietnamDate.Today, ct);
 
-    public async Task<Invoice> IssueAsync(Guid invoiceId, CancellationToken ct)
+    public async Task<Invoice> IssueAsync(Guid invoiceId, CancellationToken ct, string? expectedVersion = null)
     {
         var context = await OperatorAsync(ct);
         await OperatorAccessGuard.EnsureInvoiceAccessAsync(context, invoiceId, _landlords, ct);
-        return await _invoices.IssueAsync(invoiceId, context.OwnerLandlordUserId, ct);
+        return await _invoices.IssueAsync(invoiceId, context.OwnerLandlordUserId, ct, expectedVersion);
     }
 
     public async Task<Invoice> CancelAsync(Guid invoiceId, CancellationToken ct)

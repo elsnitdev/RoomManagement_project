@@ -17,8 +17,8 @@ function queryString({ page = 1, pageSize = 20, search, isActive } = {}) {
   return params.toString()
 }
 
-export function listProperties(filters = {}) {
-  return apiRequest(`${basePath}?${queryString(filters)}`)
+export function listProperties(filters = {}, options = {}) {
+  return apiRequest(`${basePath}?${queryString(filters)}`, { signal: options.signal })
 }
 
 export function getProperty(id) {

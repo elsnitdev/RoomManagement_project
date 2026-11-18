@@ -11,6 +11,53 @@ namespace RoomManagement.Tests;
 public sealed class EarlyExitStoreTests
 {
     [SqlServerFact]
+    public async Task Settlement_records_refund_and_retained_deposit_and_closes_balance()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var today = VietnamDate.Today;
+        var ownerId = "settlement-deposit-owner";
+        await using var db = database.CreateContext();
+        db.Users.Add(new AppUser { Id = ownerId, UserName = ownerId, NormalizedUserName = ownerId.ToUpperInvariant(),
+            PasswordHash = "test", Role = UserRoles.Landlord, IsActive = true, CreatedAt = DateTime.UtcNow });
+        var propertyId = Guid.NewGuid();
+        db.Properties.Add(new Property { Id = propertyId, OwnerUserId = ownerId, Name = "Khu thử",
+            Address = "Địa chỉ", IsActive = true, CreatedAt = DateTime.UtcNow });
+        foreach (var (mode, refund) in new[] { ("Refunded", 100m), ("PartialRefund", 40m), ("Forfeited", 0m) })
+        {
+            var roomId = Guid.NewGuid();
+            var contractId = Guid.NewGuid();
+            var depositId = Guid.NewGuid();
+            db.Rooms.Add(new Room { Id = roomId, PropertyId = propertyId, RoomNumber = mode,
+                BasePrice = 100, MaxOccupants = 1, CreatedAt = DateTime.UtcNow });
+            var contract = new Contract { Id = contractId, RoomId = roomId, ContractCode = $"CT-{contractId:N}",
+                StartDate = new DateOnly(today.Year, today.Month, 1), HandoverOn = today, MonthlyRent = 0,
+                DepositAmount = 100, PaymentDueDay = 5, Status = ContractStatus.PendingSettlement, CreatedAt = DateTime.UtcNow };
+            db.Contracts.Add(contract);
+            db.Invoices.AddRange(
+                new Invoice { Id = depositId, ContractId = contractId, RoomId = roomId, InvoiceCode = $"DEP-{depositId:N}",
+                    InvoiceType = InvoiceType.Deposit, IssueDate = today, DueDate = today, TotalAmount = 100,
+                    Status = InvoiceStatus.Issued, CreatedAt = DateTime.UtcNow },
+                new Invoice { Id = Guid.NewGuid(), ContractId = contractId, RoomId = roomId, InvoiceCode = $"INV-{contractId:N}",
+                    InvoiceType = InvoiceType.Monthly, BillingYear = (short)today.Year, BillingMonth = (byte)today.Month,
+                    IssueDate = today, DueDate = today, TotalAmount = 0, Status = InvoiceStatus.Issued, CreatedAt = DateTime.UtcNow });
+            db.Payments.Add(new Payment { Id = Guid.NewGuid(), InvoiceId = depositId, ClaimedAmount = 100,
+                VerifiedAmount = 100, PaymentMethod = PaymentMethod.Cash, Status = PaymentStatus.Success,
+                PaidAt = DateTime.UtcNow, VerifiedAt = DateTime.UtcNow, VerifiedByUserId = ownerId,
+                IdempotencyKey = Guid.NewGuid().ToString("N"), CreatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+            var store = new ContractStore(db);
+            if (mode != "Refunded")
+                await Assert.ThrowsAsync<BusinessException>(() => store.CompleteSettlementAsync(contract, mode, refund, null, CancellationToken.None));
+            await store.CompleteSettlementAsync(contract, mode, refund, "Theo thỏa thuận", CancellationToken.None);
+            var settlement = await db.ContractSettlements.SingleAsync(x => x.ContractId == contractId);
+            Assert.Equal(refund, settlement.RefundAmount);
+            Assert.Equal(100 - refund, settlement.ForfeitedAmount);
+            Assert.Equal(0, (await db.ContractDepositBalances.SingleAsync(x => x.ContractId == contractId)).DepositHeld);
+            Assert.Equal(ContractStatus.Terminated, contract.Status);
+        }
+    }
+
+    [SqlServerFact]
     public async Task Handover_releases_room_but_keeps_contract_pending_until_financials_close()
     {
         await using var database = await SqlServerDatabase.CreateAsync();

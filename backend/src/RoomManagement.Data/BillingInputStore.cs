@@ -120,9 +120,29 @@ public sealed class BillingInputStore : IBillingInputStore
     public async Task AddReadingAsync(MeterReading reading, CancellationToken ct)
     {
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {reading.RoomId}")
+            .AsNoTracking().SingleAsync(ct);
         var previous = await LatestReadingBeforeAsync(reading.RoomId, reading.MeterType, reading.Year, reading.Month, ct);
         var next = await NextReadingAfterAsync(reading.RoomId, reading.MeterType, reading.Year, reading.Month, ct);
         var period = new DateOnly(reading.Year, reading.Month, 1);
+        var periodEnd = period.AddMonths(1).AddDays(-1);
+        if (await _db.Invoices.AnyAsync(x => x.RoomId == reading.RoomId &&
+                x.InvoiceType == InvoiceType.Monthly && x.Status != InvoiceStatus.Cancelled &&
+                x.BillingYear == reading.Year && x.BillingMonth == reading.Month, ct))
+            throw Conflict("METER_READING_INVOICE_EXISTS",
+                "Kỳ này đã có hóa đơn. Hãy dùng bảng chốt điện nước để cập nhật hóa đơn nháp.");
+        if (reading.ContractId is null)
+        {
+            // An existing scoped reading takes precedence over a room reading for this contract and period.
+            var effectiveContracts = await _db.Contracts.AsNoTracking().Where(x => x.RoomId == reading.RoomId &&
+                x.Status != ContractStatus.Cancelled && x.Status != ContractStatus.Draft &&
+                x.StartDate <= periodEnd && (x.HandoverOn ?? x.EndDate ?? DateOnly.MaxValue) >= period)
+                .Select(x => x.Id).Take(2).ToArrayAsync(ct);
+            if (effectiveContracts.Length == 1 && await _db.MeterReadings.AnyAsync(x =>
+                    x.ContractId == effectiveContracts[0] && x.MeterType == reading.MeterType &&
+                    x.Year == reading.Year && x.Month == reading.Month, ct))
+                throw Conflict("METER_READING_CONFLICT", "Chỉ số kỳ này đã được ghi theo hợp đồng.");
+        }
         if (previous is not null &&
             (new DateOnly(previous.Year, previous.Month, 1).AddMonths(1) != period || previous.CurrentValue != reading.PreviousValue))
             throw Conflict("METER_READING_GAP", "Chỉ số không nối tiếp kỳ trước.");

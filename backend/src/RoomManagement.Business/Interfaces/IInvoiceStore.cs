@@ -30,15 +30,18 @@ public interface IInvoiceStore
     /// <summary>Tạo hóa đơn nháp cùng các dòng tiền sau khi kiểm tra dữ liệu.</summary>
     Task<Invoice> CreateDraftAsync(Invoice invoice, IReadOnlyList<InvoiceItem> items,
         string ownerId, CancellationToken ct);
+    Task<Invoice> CreateMonthlyDraftAsync(Guid roomId, string ownerId,
+        Func<Task<(Invoice Invoice, IReadOnlyList<InvoiceItem> Items)>> calculate, CancellationToken ct);
     /// <summary>Phát hành hóa đơn nháp sau khi kiểm tra điều kiện phát hành.</summary>
-    Task<Invoice> IssueAsync(Guid invoiceId, string ownerId, CancellationToken ct);
+    Task<Invoice> IssueAsync(Guid invoiceId, string ownerId, CancellationToken ct, string? expectedVersion = null,
+        Guid? monthlyPropertyId = null, short? year = null, byte? month = null);
     /// <summary>Hủy hóa đơn nếu chưa phát sinh giao dịch tài chính.</summary>
     Task<Invoice> CancelAsync(Guid invoiceId, string ownerId, CancellationToken ct);
     Task<InvoiceAttention> AttentionAsync(Guid propertyId, string ownerId, CancellationToken ct);
     Task<Invoice> ReplaceDraftItemsAsync(Guid invoiceId, string ownerId,
         IReadOnlyList<EditableInvoiceItem> items, CancellationToken ct);
     Task<InvoiceAdjustment> AddAdjustmentAsync(Guid invoiceId, string ownerId,
-        InvoiceAdjustmentInput input, CancellationToken ct);
+        InvoiceAdjustmentInput input, CancellationToken ct, string? actorUserId = null);
     Task<IReadOnlyList<InvoiceAdjustment>> ListAdjustmentsAsync(Guid invoiceId,
         string ownerId, CancellationToken ct);
 }

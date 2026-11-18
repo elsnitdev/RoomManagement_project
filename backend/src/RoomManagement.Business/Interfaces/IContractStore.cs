@@ -114,4 +114,12 @@ public interface IContractStore
 
   Task RecordClosedActorAsync(Guid contractId, string actorUserId, CancellationToken ct)
       => Task.CompletedTask;
+
+  Task<Contract> RequestCancelWithDepositAsync(Contract contract, ContractStatus expectedStatus,
+      string reason, string actorUserId, CancellationToken ct)
+      => throw new NotSupportedException();
+
+  Task<Contract> CompleteCancelWithDepositAsync(Contract contract, string disposition,
+      decimal refundAmount, decimal forfeitedAmount, string? note, string actorUserId, CancellationToken ct)
+      => throw new NotSupportedException();
 }

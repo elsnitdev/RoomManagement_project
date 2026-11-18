@@ -1,21 +1,269 @@
-.room-gallery { padding: 1.25rem; }
-.room-gallery__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
-.room-gallery__head h3 { margin: 0; color: #24344e; }
-.room-gallery__head p { margin: .4rem 0 0; color: #64748b; font-size: .85rem; }
-.room-gallery__upload { position: relative; flex: none; cursor: pointer; }
-.room-gallery__upload:has(input:disabled) { opacity: .55; cursor: not-allowed; }
-.room-gallery__upload:focus-within { outline: 2px solid #1d4ed8; outline-offset: 3px; }
-.room-gallery__upload input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
-.room-gallery__state { margin: 1rem 0 0; padding: 1.5rem; border: 1px dashed #cbd5e1; border-radius: 10px; color: #64748b; text-align: center; }
-.room-gallery__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 1rem; margin-top: 1rem; }
-.room-gallery__grid figure { margin: 0; border: 1px solid #e4e8ec; border-radius: 10px; overflow: hidden; min-width: 0; }
-.room-gallery__grid img, .room-gallery__loading { display: block; width: 100%; height: 160px; object-fit: cover; }
-.room-gallery__loading { display: grid; place-items: center; color: #64748b; background: #f1f5f9; }
-.room-gallery__grid figcaption { padding: .65rem; overflow-wrap: anywhere; font-size: .85rem; }
-.room-gallery__grid figcaption div { display: flex; gap: .35rem; margin-top: .65rem; }
-.room-gallery__grid figcaption button { border: 1px solid #cbd5e1; border-radius: 6px; padding: .25rem .5rem; background: #fff; color: #334155; cursor: pointer; }
-.room-gallery__grid figcaption button:hover:not(:disabled) { background: #eff6ff; }
-.room-gallery__grid figcaption button:disabled { opacity: .45; cursor: not-allowed; }
-.room-gallery .form-error { margin-top: 1rem; }
-.room-gallery .form-error button { margin-left: .5rem; border: 0; background: none; color: #1d4ed8; text-decoration: underline; cursor: pointer; }
-@media (max-width: 600px) { .room-gallery__head { flex-direction: column; } }
+.room-gallery {
+  padding: 1.25rem;
+}
+
+.room-gallery__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.room-gallery__head h3 {
+  margin: 0;
+  color: #243b53;
+}
+
+.room-gallery__head p {
+  margin: 0.4rem 0 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.room-gallery__upload {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #2167aa;
+  border-radius: 9px;
+  background: #2167aa;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  flex: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.room-gallery__upload:hover {
+  background: #164f83;
+  border-color: #164f83;
+}
+
+.room-gallery__upload:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.room-gallery__upload:focus-within {
+  outline: 2px solid #5ca4e6;
+  outline-offset: 2px;
+}
+
+.room-gallery__upload input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.room-gallery__state {
+  margin: 1rem 0 0;
+  padding: 1.5rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #64748b;
+  text-align: center;
+}
+
+.room-gallery__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+  margin-top: 1rem;
+}
+
+.room-gallery__card {
+  margin: 0;
+  border: 1px solid #dce5ef;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.room-gallery__card:hover {
+  border-color: #9ec1e6;
+  box-shadow: 0 6px 16px rgba(33, 103, 170, 0.08);
+}
+
+.room-gallery__media {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.room-gallery__cover-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #2167aa;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.room-gallery__preview-btn {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.room-gallery__preview-btn img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.25s ease;
+}
+
+.room-gallery__preview-btn:hover img {
+  transform: scale(1.03);
+}
+
+.room-gallery__zoom {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.34);
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.room-gallery__preview-btn:hover .room-gallery__zoom,
+.room-gallery__preview-btn:focus-visible .room-gallery__zoom {
+  opacity: 1;
+}
+
+.room-gallery__loading {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  color: #64748b;
+  background: #f8fafc;
+  font-size: 12px;
+  text-align: center;
+}
+
+.room-gallery__caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid #edf2f7;
+  background: #ffffff;
+}
+
+.room-gallery__filename {
+  min-width: 0;
+  flex: 1;
+  color: #243b53;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.room-gallery__controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.room-gallery__controls button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #243b53;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.room-gallery__controls button:hover:not(:disabled) {
+  background: #eff6fd;
+  border-color: #9ec1e6;
+  color: #2167aa;
+}
+
+.room-gallery__controls .room-gallery__delete-btn:hover:not(:disabled) {
+  background: #fdf2f2;
+  border-color: #e5b8b6;
+  color: #9e302a;
+}
+
+.room-gallery__controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.room-gallery .form-error {
+  margin-top: 1rem;
+}
+
+.room-gallery .form-error button {
+  margin-left: 0.5rem;
+  border: 0;
+  background: none;
+  color: #2167aa;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .room-gallery__head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .room-gallery__upload {
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .room-gallery__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .room-gallery__caption {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 9px 10px;
+  }
+
+  .room-gallery__controls {
+    justify-content: flex-end;
+  }
+}

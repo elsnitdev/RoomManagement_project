@@ -10,10 +10,14 @@ public sealed record MonthlyInvoiceRequest(
     [property: JsonRequired][Range(2000, 2100)] short Year,
     [property: JsonRequired][Range(1, 12)] byte Month,
     decimal DiscountAmount = 0,
-    [StringLength(255)] string? DiscountReason = null)
+    [StringLength(255)] string? DiscountReason = null,
+    string? PreviewVersion = null)
 {
-    public MonthlyInvoiceInput ToInput() => new(ContractId, Year, Month, DiscountAmount, DiscountReason);
+    public MonthlyInvoiceInput ToInput() => new(ContractId, Year, Month, DiscountAmount, DiscountReason, PreviewVersion);
 }
+
+public sealed record CloseBillingMonthRequest(short Year, byte Month);
+public sealed record IssueBillingMonthRequest(short Year, byte Month, IReadOnlyList<InvoiceApproval> Invoices);
 
 public sealed record EditableInvoiceItemRequest(Guid? Id, InvoiceItemType Type,
     string Description, decimal Quantity, decimal UnitPrice)
@@ -35,7 +39,7 @@ public sealed record DraftInvoiceItemsRequest(IReadOnlyList<EditableInvoiceItemR
 }
 
 public sealed record InvoiceAdjustmentRequest(InvoiceAdjustmentType Type, decimal Amount,
-    string Reason, string IdempotencyKey)
+    string Reason, string IdempotencyKey, bool LimitToRemainingAmount = false)
 {
-    public InvoiceAdjustmentInput ToInput() => new(Type, Amount, Reason, IdempotencyKey);
+    public InvoiceAdjustmentInput ToInput() => new(Type, Amount, Reason, IdempotencyKey, LimitToRemainingAmount);
 }

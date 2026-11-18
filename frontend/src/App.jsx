@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Bell,
   Building2,
@@ -16,6 +16,7 @@ import {
   UserRound,
   Users,
   X,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "./contexts/AuthContext";
 import Admin from "./Admin";
@@ -49,6 +50,8 @@ import {
 import { Brand } from "./ui";
 import "./App.css";
 
+const LandlordUtilities = lazy(() => import("./components/billing/LandlordUtilities"));
+
 const adminNavGroups = [
   {
     label: "Quản trị hệ thống",
@@ -80,6 +83,7 @@ const landlordNavGroups = [
     items: [
       { id: "contracts", label: "Hợp đồng", icon: FileText },
       { id: "billing", label: "Hóa đơn", icon: ReceiptText },
+      { id: "utilities", label: "Điện nước và dịch vụ", icon: Zap },
     ],
   },
   {
@@ -131,6 +135,7 @@ const titleMap = {
   notifications: "Thông báo",
   contracts: "Hợp đồng",
   billing: "Hóa đơn & công nợ",
+  utilities: "Điện nước và dịch vụ",
   requests: "Yêu cầu người thuê",
   profile: "Hồ sơ của tôi",
 };
@@ -499,6 +504,11 @@ export default function App() {
               initialRoomId={roomId === "rooms" ? roomAction : undefined}
               navigate={navigate}
             />
+          ) : activeRole === "landlord" && page === "utilities" ? (
+            <Suspense fallback={<p role="status">Đang mở trang điện nước và dịch vụ…</p>}>
+              <LandlordUtilities key={route} initialPropertyId={roomId}
+                initialTab={propertySection} context={roomAction} />
+            </Suspense>
           ) : activeRole === "landlord" && page === "contracts" ? (
             <LandlordContracts
               key={route}

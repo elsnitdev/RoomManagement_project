@@ -393,7 +393,7 @@ namespace RoomManagement.Data.Migrations
 
                             t.HasCheckConstraint("CK_Contracts_DueDay", "(PaymentDueDay IS NULL OR PaymentDueDay BETWEEN 1 AND 31)");
 
-                            t.HasCheckConstraint("CK_Contracts_Status", "(Status IN (N'Draft', N'PendingTenantConfirmation', N'PendingOperatorConfirmation', N'PendingStart', N'Active', N'Expired', N'Terminated', N'Cancelled', N'PendingMoveOut', N'PendingSettlement'))");
+                            t.HasCheckConstraint("CK_Contracts_Status", "(Status IN (N'Draft', N'PendingTenantConfirmation', N'PendingOperatorConfirmation', N'PendingStart', N'PendingCancelSettlement', N'Active', N'Expired', N'Terminated', N'Cancelled', N'PendingMoveOut', N'PendingSettlement'))");
 
                             t.HasCheckConstraint("CK_Contracts_TenancyMode", "(TenancyMode IN (N'CoTenancy', N'PrimaryTenantWithFamily'))");
 
@@ -678,6 +678,11 @@ namespace RoomManagement.Data.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasDefaultValueSql("0", "DF_ContractSettlements_Outstanding");
 
+                    b.Property<decimal>("ForfeitedAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValueSql("0", "DF_ContractSettlements_Forfeited");
+
                     b.Property<decimal>("RefundAmount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("decimal(18,2)")
@@ -716,9 +721,9 @@ namespace RoomManagement.Data.Migrations
 
                     b.ToTable("ContractSettlements", "dbo", t =>
                         {
-                            t.HasCheckConstraint("CK_ContractSettlements_Amounts", "(DepositAmount >= 0 AND OutstandingAmount >= 0 AND DamageFee >= 0 AND OtherFee >= 0 AND RefundAmount >= 0)");
+                            t.HasCheckConstraint("CK_ContractSettlements_Amounts", "(DepositAmount >= 0 AND OutstandingAmount >= 0 AND DamageFee >= 0 AND OtherFee >= 0 AND RefundAmount >= 0 AND ForfeitedAmount >= 0)");
 
-                            t.HasCheckConstraint("CK_ContractSettlements_Disposition", "(DepositDisposition IN (N'Refunded', N'Offset', N'NoDeposit'))");
+                            t.HasCheckConstraint("CK_ContractSettlements_Disposition", "(DepositDisposition IN (N'Refunded', N'PartialRefund', N'Forfeited', N'Offset', N'NoDeposit', N'CancelRefunded', N'CancelPartialRefund', N'CancelForfeited'))");
                         });
                 });
 

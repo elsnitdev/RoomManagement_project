@@ -10,7 +10,7 @@ public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
     {
         builder.ToTable("Contracts", "dbo", table =>
         {
-            table.HasCheckConstraint("CK_Contracts_Status", @"(Status IN (N'Draft', N'PendingTenantConfirmation', N'PendingOperatorConfirmation', N'PendingStart', N'Active', N'Expired', N'Terminated', N'Cancelled', N'PendingMoveOut', N'PendingSettlement'))");
+            table.HasCheckConstraint("CK_Contracts_Status", @"(Status IN (N'Draft', N'PendingTenantConfirmation', N'PendingOperatorConfirmation', N'PendingStart', N'PendingCancelSettlement', N'Active', N'Expired', N'Terminated', N'Cancelled', N'PendingMoveOut', N'PendingSettlement'))");
             table.HasCheckConstraint("CK_Contracts_Workflow", @"(Workflow IN (N'LegacyRules', N'Invitation'))");
             table.HasCheckConstraint("CK_Contracts_Dates", @"(EndDate IS NULL OR EndDate >= StartDate)");
             table.HasCheckConstraint("CK_Contracts_Amounts", @"(MonthlyRent >= 0 AND DepositAmount >= 0)");

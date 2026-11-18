@@ -17,12 +17,13 @@ public sealed record InvoicePreviewResponse(Guid ContractId, Guid RoomId, short 
     DateOnly IssueDate, DateOnly DueDate, decimal TotalAmount,
     IReadOnlyList<InvoiceItemResponse> Items)
 {
+    public string Version { get; init; } = "";
     public MeterCostSnapshot? ElectricityReading { get; init; }
     public MeterCostSnapshot? WaterReading { get; init; }
     public static InvoicePreviewResponse From(InvoicePreviewResult x) =>
         new(x.ContractId, x.RoomId, x.Year, x.Month, x.IssueDate, x.DueDate,
             x.TotalAmount, x.Items.Select(InvoiceItemResponse.From).ToList())
-        { ElectricityReading = x.ElectricityReading, WaterReading = x.WaterReading };
+        { Version = x.Version, ElectricityReading = x.ElectricityReading, WaterReading = x.WaterReading };
 }
 
 public sealed record InvoiceSummaryResponse(Guid Id, string Code, Guid ContractId, Guid RoomId,
@@ -52,6 +53,7 @@ public sealed record InvoiceSummaryResponse(Guid Id, string Code, Guid ContractI
 public sealed record InvoiceDetailResponse(InvoiceSummaryResponse Summary,
     IReadOnlyList<InvoiceItemResponse> Items, IReadOnlyList<InvoiceTenantResult> Tenants)
 {
+    public string? ReviewVersion { get; init; }
     public MeterCostSnapshot? ElectricityReading { get; init; }
     public MeterCostSnapshot? WaterReading { get; init; }
     public IReadOnlyList<InvoiceAdjustmentResponse> Adjustments { get; init; } = [];
@@ -59,6 +61,7 @@ public sealed record InvoiceDetailResponse(InvoiceSummaryResponse Summary,
         new(InvoiceSummaryResponse.From(x.Invoice, x.Balance),
             x.Items.Select(InvoiceItemResponse.From).ToList(), x.Tenants)
         {
+            ReviewVersion = x.Invoice.Status == InvoiceStatus.Draft ? InvoiceReviewVersion.ForDraft(x.Invoice, x.Items) : null,
             ElectricityReading = x.ElectricityReading,
             WaterReading = x.WaterReading,
             Adjustments = x.Adjustments.Select(InvoiceAdjustmentResponse.From).ToList()

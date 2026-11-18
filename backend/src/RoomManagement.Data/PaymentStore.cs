@@ -71,6 +71,13 @@ public sealed class PaymentStore : IPaymentStore
             Note = input.Note, CreatedAt = DateTime.UtcNow
         };
         _db.Payments.Add(payment);
+        var roomNumber = await _db.Rooms.AsNoTracking()
+            .Where(x => x.Id == invoice.RoomId).Select(x => x.RoomNumber).SingleOrDefaultAsync(ct);
+        var roomText = string.IsNullOrWhiteSpace(roomNumber) ? string.Empty : $" (phòng {roomNumber})";
+        await NotificationFactory.AddForPropertyOperatorsAsync(_db, invoice.ContractId,
+            "PaymentDeclared", $"Yêu cầu xác nhận thanh toán {invoice.InvoiceCode}",
+            $"Người thuê đã khai báo thanh toán {input.Amount:N0} đ cho hóa đơn {invoice.InvoiceCode}{roomText}.",
+            $"payment-declared:{payment.Id}", invoiceId, tenantUserId, ct);
         try
         {
             await _db.SaveChangesAsync(ct);

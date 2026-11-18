@@ -1,14 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  Download,
+  ExternalLink,
   FilePlus2,
   FileText,
   Pencil,
   RefreshCw,
   ShieldCheck,
+  ZoomIn,
 } from "lucide-react";
 import { contractApi } from "../../services/api/contractApi";
+import ImageLightbox from "../common/ImageLightbox";
 import "./contractRules.css";
 
 const errorText = (error) =>
@@ -22,13 +26,26 @@ const formatTime = (value) =>
       }).format(new Date(value))
     : "—";
 
+const isImageEvidence = (item) => {
+  const type = String(item?.contentType || "").toLowerCase();
+  const name = String(item?.fileName || "").toLowerCase();
+  return (
+    type.startsWith("image/") ||
+    /\.(jpe?g|png|webp)$/i.test(name)
+  );
+};
+
 function Evidence({ contractId, linkId, propertyId, canUpload }) {
   const [files, setFiles] = useState([]);
+  const [thumbs, setThumbs] = useState({});
+  const [thumbFailed, setThumbFailed] = useState({});
+  const [lightboxIndex, setLightboxIndex] = useState(-1);
   const [file, setFile] = useState(null);
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -42,7 +59,9 @@ function Evidence({ contractId, linkId, propertyId, canUpload }) {
         )
       : contractApi.myEvidence(contractId, linkId, controller.signal);
     request
-      .then(setFiles)
+      .then((rows) => {
+        if (!controller.signal.aborted) setFiles(rows || []);
+      })
       .catch((cause) => {
         if (!controller.signal.aborted) setError(errorText(cause));
       })
@@ -51,6 +70,70 @@ function Evidence({ contractId, linkId, propertyId, canUpload }) {
       });
     return () => controller.abort();
   }, [propertyId, contractId, linkId, revision]);
+
+  useEffect(() => {
+    const imageItems = (files || []).filter(isImageEvidence);
+    setThumbs({});
+    setThumbFailed({});
+    if (!imageItems.length) return undefined;
+
+    const controller = new AbortController();
+    const createdUrls = [];
+
+    imageItems.forEach(async (item) => {
+      try {
+        const blob = propertyId
+          ? await contractApi.tenantEvidenceContent(
+              propertyId,
+              contractId,
+              linkId,
+              item.id,
+              controller.signal,
+            )
+          : await contractApi.myEvidenceContent(
+              contractId,
+              linkId,
+              item.id,
+              controller.signal,
+            );
+        const url = URL.createObjectURL(blob);
+        if (controller.signal.aborted) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        createdUrls.push(url);
+        setThumbs((prev) => ({ ...prev, [item.id]: url }));
+      } catch (cause) {
+        if (!controller.signal.aborted && cause.name !== "AbortError") {
+          setThumbFailed((prev) => ({ ...prev, [item.id]: true }));
+        }
+      }
+    });
+
+    return () => {
+      controller.abort();
+      createdUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [files, propertyId, contractId, linkId]);
+
+  const lightboxItems = useMemo(
+    () =>
+      (files || [])
+        .filter((item) => isImageEvidence(item) && thumbs[item.id])
+        .map((item) => ({
+          id: item.id,
+          src: thumbs[item.id],
+          title: item.fileName,
+          downloadName: item.fileName,
+        })),
+    [files, thumbs],
+  );
+
+  function openImage(itemId) {
+    const idx = lightboxItems.findIndex((entry) => entry.id === itemId);
+    if (idx >= 0) setLightboxIndex(idx);
+  }
+
   async function upload(event) {
     event.preventDefault();
     if (!file) return;
@@ -78,18 +161,23 @@ function Evidence({ contractId, linkId, propertyId, canUpload }) {
       setBusy(false);
     }
   }
+
+  async function fetchContentBlob(item) {
+    return propertyId
+      ? await contractApi.tenantEvidenceContent(
+          propertyId,
+          contractId,
+          linkId,
+          item.id,
+        )
+      : await contractApi.myEvidenceContent(contractId, linkId, item.id);
+  }
+
   async function download(item) {
     setError("");
     setBusy(true);
     try {
-      const blob = propertyId
-        ? await contractApi.tenantEvidenceContent(
-            propertyId,
-            contractId,
-            linkId,
-            item.id,
-          )
-        : await contractApi.myEvidenceContent(contractId, linkId, item.id);
+      const blob = await fetchContentBlob(item);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -102,6 +190,22 @@ function Evidence({ contractId, linkId, propertyId, canUpload }) {
       setBusy(false);
     }
   }
+
+  async function openPdf(item) {
+    setError("");
+    setBusy(true);
+    try {
+      const blob = await fetchContentBlob(item);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="rules-evidence">
       <strong>
@@ -110,24 +214,111 @@ function Evidence({ contractId, linkId, propertyId, canUpload }) {
       {loading ? (
         <p role="status">Đang tải bằng chứng…</p>
       ) : files?.length ? (
-        <ul>
-          {files.map((item) => (
-            <li key={item.id}>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => download(item)}
+        <ul className="rules-evidence-grid">
+          {files.map((item) => {
+            const isImage = isImageEvidence(item);
+            const thumbUrl = thumbs[item.id];
+            const metaText = `${
+              item.isLegacyContractRules
+                ? "Nội quy hợp đồng cũ"
+                : "Nội quy khu trọ"
+            } · Phiên bản ${item.versionNumber} · ${formatTime(item.createdAt)}`;
+
+            if (isImage) {
+              return (
+                <li key={item.id} className="rules-evidence-card">
+                  <div className="rules-evidence-card__thumb">
+                    {thumbUrl ? (
+                      <button
+                        type="button"
+                        className="rules-evidence-card__preview"
+                        aria-label={`Xem phóng to ${item.fileName}`}
+                        onClick={() => openImage(item.id)}
+                      >
+                        <img src={thumbUrl} alt={item.fileName} />
+                        <span
+                          className="rules-evidence-card__zoom"
+                          aria-hidden="true"
+                        >
+                          <ZoomIn size={17} />
+                        </span>
+                      </button>
+                    ) : (
+                      <div className="rules-evidence-card__loading">
+                        {thumbFailed[item.id]
+                          ? "Không tải được ảnh"
+                          : "Đang tải ảnh…"}
+                      </div>
+                    )}
+                  </div>
+                  <div className="rules-evidence-card__body">
+                    <div className="rules-evidence-card__title-row">
+                      <span
+                        className="rules-evidence-card__name"
+                        title={item.fileName}
+                      >
+                        {item.fileName}
+                      </span>
+                      <button
+                        type="button"
+                        className="rules-evidence-card__dl"
+                        aria-label={`Tải xuống ${item.fileName}`}
+                        title="Tải về"
+                        disabled={busy}
+                        onClick={() => download(item)}
+                      >
+                        <Download size={14} aria-hidden="true" />
+                      </button>
+                    </div>
+                    <small>{metaText}</small>
+                  </div>
+                </li>
+              );
+            }
+
+            return (
+              <li
+                key={item.id}
+                className="rules-evidence-card rules-evidence-card--pdf"
               >
-                {item.fileName}
-              </button>
-              <small>
-                {item.isLegacyContractRules
-                  ? "Nội quy hợp đồng cũ"
-                  : "Nội quy khu trọ"}{" "}
-                · Phiên bản {item.versionNumber} · {formatTime(item.createdAt)}
-              </small>
-            </li>
-          ))}
+                <div className="rules-evidence-card__pdf-head">
+                  <span className="rules-evidence-card__pdf-icon">
+                    <FileText size={20} aria-hidden="true" />
+                  </span>
+                  <span className="rules-evidence-card__pdf-badge">PDF</span>
+                </div>
+                <div className="rules-evidence-card__body">
+                  <span
+                    className="rules-evidence-card__name"
+                    title={item.fileName}
+                  >
+                    {item.fileName}
+                  </span>
+                  <small>{metaText}</small>
+                  <div className="rules-evidence-card__pdf-actions">
+                    <button
+                      type="button"
+                      className="rules-evidence-card__action-btn"
+                      disabled={busy}
+                      onClick={() => openPdf(item)}
+                    >
+                      <ExternalLink size={13} aria-hidden="true" />
+                      Mở xem
+                    </button>
+                    <button
+                      type="button"
+                      className="rules-evidence-card__action-btn"
+                      disabled={busy}
+                      onClick={() => download(item)}
+                    >
+                      <Download size={13} aria-hidden="true" />
+                      Tải xuống
+                    </button>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p>Chưa có bằng chứng được tải lên.</p>
@@ -140,6 +331,12 @@ function Evidence({ contractId, linkId, propertyId, canUpload }) {
           </button>
         </p>
       )}
+      <ImageLightbox
+        items={lightboxItems}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(-1)}
+        onIndexChange={setLightboxIndex}
+      />
       {!propertyId &&
         (canUpload ? (
           <form onSubmit={upload}>

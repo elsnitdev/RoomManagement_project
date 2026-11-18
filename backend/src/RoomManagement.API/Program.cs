@@ -63,6 +63,7 @@ builder.Services.AddScoped<ContractService>();
 builder.Services.AddScoped<ContractRulesService>();
 builder.Services.AddScoped<ContractRulesEvidenceService>();
 builder.Services.AddScoped<BillingInputService>();
+builder.Services.AddScoped<MeterImportService>();
 builder.Services.AddScoped<MonthlyInvoiceCalculator>();
 builder.Services.AddScoped<InvoiceService>();
 builder.Services.AddScoped<SettlementOverviewService>();

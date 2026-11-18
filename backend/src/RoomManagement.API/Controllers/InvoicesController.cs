@@ -38,9 +38,9 @@ public sealed class InvoicesController : ControllerBase
             InvoiceAdjustmentResponse.From(await _service.AddAdjustmentAsync(invoiceId, request.ToInput(), ct))));
 
     [HttpPost("{invoiceId:guid}/issue")]
-    public async Task<IActionResult> Issue(Guid invoiceId, CancellationToken ct) =>
+    public async Task<IActionResult> Issue(Guid invoiceId, [FromHeader(Name = "If-Match")] string? version, CancellationToken ct) =>
         Ok(new ApiResponse<InvoiceCreatedResponse>(InvoiceCreatedResponse.From(
-            await _service.IssueAsync(invoiceId, ct))));
+            await _service.IssueAsync(invoiceId, ct, version?.Trim('"') ?? string.Empty))));
 
     [HttpPost("{invoiceId:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid invoiceId, CancellationToken ct) =>

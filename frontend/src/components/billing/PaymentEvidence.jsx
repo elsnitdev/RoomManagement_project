@@ -1,12 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Trash2, ZoomIn } from "lucide-react";
 import { billingApi } from "../../services/api/billingApi";
+import ImageLightbox from "../common/ImageLightbox";
 
 const maxSize = 10 * 1024 * 1024;
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
 
 export function EvidenceSelector({ selection, onChange, disabled }) {
   const [error, setError] = useState("");
   const [preview, setPreview] = useState("");
   const input = useRef(null);
+
   useEffect(() => {
     if (!selection) {
       setPreview("");
@@ -17,6 +26,7 @@ export function EvidenceSelector({ selection, onChange, disabled }) {
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [selection]);
+
   function choose(event) {
     const file = event.target.files?.[0];
     setError("");
@@ -36,6 +46,7 @@ export function EvidenceSelector({ selection, onChange, disabled }) {
     }
     onChange({ file, id: crypto.randomUUID() });
   }
+
   return (
     <div className="bill-evidence-selector bill-field--wide">
       <label>
@@ -57,13 +68,17 @@ export function EvidenceSelector({ selection, onChange, disabled }) {
       {selection && preview && (
         <div className="bill-evidence-preview">
           <img src={preview} alt="Xem trước ảnh bằng chứng" />
-          <span>{selection.file.name}</span>
+          <div className="bill-evidence-preview__meta">
+            <strong title={selection.file.name}>{selection.file.name}</strong>
+            <span>{formatFileSize(selection.file.size)}</span>
+          </div>
           <button
             type="button"
-            className="bill-link"
+            className="bill-evidence-preview__remove"
             disabled={disabled}
             onClick={() => onChange(null)}
           >
+            <Trash2 size={14} aria-hidden="true" />
             Bỏ ảnh
           </button>
         </div>
@@ -72,9 +87,10 @@ export function EvidenceSelector({ selection, onChange, disabled }) {
   );
 }
 
-function EvidenceImage({ paymentId, image }) {
+function EvidenceImage({ paymentId, image, onOpen, onUrlReady }) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState(false);
+
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl = "";
@@ -84,6 +100,7 @@ function EvidenceImage({ paymentId, image }) {
         if (!controller.signal.aborted) {
           objectUrl = URL.createObjectURL(blob);
           setUrl(objectUrl);
+          onUrlReady?.(image.id, objectUrl);
         }
       })
       .catch((cause) => {
@@ -92,19 +109,37 @@ function EvidenceImage({ paymentId, image }) {
     return () => {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
+      onUrlReady?.(image.id, "");
     };
-  }, [paymentId, image.id]);
+  }, [paymentId, image.id, onUrlReady]);
+
   return (
-    <li>
+    <li className="bill-evidence-card">
       {error ? (
-        <span>Không tải được ảnh {image.fileName}.</span>
+        <div className="bill-evidence-card__state">
+          Không tải được ảnh {image.fileName}.
+        </div>
       ) : url ? (
-        <a href={url} target="_blank" rel="noreferrer">
-          <img src={url} alt={`Bằng chứng: ${image.fileName}`} />
-          <span>{image.fileName}</span>
-        </a>
+        <button
+          type="button"
+          className="bill-evidence-card__btn"
+          aria-label={`Xem phóng to ảnh ${image.fileName}`}
+          onClick={() => onOpen?.(image.id)}
+        >
+          <div className="bill-evidence-card__thumb">
+            <img src={url} alt={`Bằng chứng: ${image.fileName}`} />
+            <span className="bill-evidence-card__zoom" aria-hidden="true">
+              <ZoomIn size={17} />
+            </span>
+          </div>
+          <span className="bill-evidence-card__name" title={image.fileName}>
+            {image.fileName}
+          </span>
+        </button>
       ) : (
-        <span role="status">Đang tải ảnh…</span>
+        <div className="bill-evidence-card__state" role="status">
+          Đang tải ảnh…
+        </div>
       )}
     </li>
   );
@@ -113,10 +148,28 @@ function EvidenceImage({ paymentId, image }) {
 export function EvidenceManager({ paymentId, initialOpen = false }) {
   const [open, setOpen] = useState(initialOpen);
   const [images, setImages] = useState([]);
+  const [urls, setUrls] = useState({});
+  const [lightboxIndex, setLightboxIndex] = useState(-1);
   const [selection, setSelection] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+
+  const handleUrlReady = useMemo(
+    () => (imageId, objectUrl) => {
+      setUrls((prev) => {
+        if (!objectUrl) {
+          if (!(imageId in prev)) return prev;
+          const next = { ...prev };
+          delete next[imageId];
+          return next;
+        }
+        return { ...prev, [imageId]: objectUrl };
+      });
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!busy) return;
     const warn = (event) => {
@@ -126,6 +179,7 @@ export function EvidenceManager({ paymentId, initialOpen = false }) {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [busy]);
+
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -140,6 +194,25 @@ export function EvidenceManager({ paymentId, initialOpen = false }) {
       });
     return () => controller.abort();
   }, [open, paymentId, revision]);
+
+  const lightboxItems = useMemo(
+    () =>
+      images
+        .filter((image) => urls[image.id])
+        .map((image) => ({
+          id: image.id,
+          src: urls[image.id],
+          title: image.fileName,
+          downloadName: image.fileName,
+        })),
+    [images, urls],
+  );
+
+  function openLightbox(imageId) {
+    const idx = lightboxItems.findIndex((item) => item.id === imageId);
+    if (idx >= 0) setLightboxIndex(idx);
+  }
+
   async function upload() {
     if (!selection) return;
     setBusy(true);
@@ -154,6 +227,7 @@ export function EvidenceManager({ paymentId, initialOpen = false }) {
       setBusy(false);
     }
   }
+
   return (
     <div className="bill-evidence-manager">
       <button
@@ -174,6 +248,8 @@ export function EvidenceManager({ paymentId, initialOpen = false }) {
                   key={image.id}
                   paymentId={paymentId}
                   image={image}
+                  onOpen={openLightbox}
+                  onUrlReady={handleUrlReady}
                 />
               ))}
             </ul>
@@ -203,6 +279,12 @@ export function EvidenceManager({ paymentId, initialOpen = false }) {
           >
             {busy ? "Đang tải ảnh…" : "Thêm ảnh"}
           </button>
+          <ImageLightbox
+            items={lightboxItems}
+            index={lightboxIndex}
+            onClose={() => setLightboxIndex(-1)}
+            onIndexChange={setLightboxIndex}
+          />
         </div>
       )}
     </div>

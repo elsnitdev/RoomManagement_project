@@ -4,7 +4,7 @@ using RoomManagement.Domain.Enums;
 namespace RoomManagement.Business.DTOs;
 
 public sealed record MonthlyInvoiceInput(Guid ContractId, short Year, byte Month,
-    decimal DiscountAmount = 0, string? DiscountReason = null);
+    decimal DiscountAmount = 0, string? DiscountReason = null, string? PreviewVersion = null);
 public sealed record InvoiceFilter(int Page, int PageSize, Guid? RoomId,
     short? Year, byte? Month, InvoiceStatus? Status);
 public sealed record CalculatedInvoiceItem(InvoiceItemType Type, string Description,
@@ -16,6 +16,11 @@ public sealed record InvoicePreviewResult(Guid ContractId, Guid RoomId, short Ye
 {
     public MeterCostSnapshot? ElectricityReading { get; init; }
     public MeterCostSnapshot? WaterReading { get; init; }
+    public string Version => InvoiceReviewVersion.Hash(new
+    {
+        ContractId, RoomId, Year, Month, IssueDate, DueDate, TotalAmount, Items,
+        ElectricityReading, WaterReading
+    });
 }
 public sealed record MeterCostSnapshot(decimal PreviousValue, decimal CurrentValue,
     decimal Usage, decimal UnitPrice, decimal Amount);
@@ -26,6 +31,24 @@ public sealed record MonthlyBillingWorkItem(Guid ContractId, Guid RoomId, string
     Guid? InvoiceId, InvoiceStatus? InvoiceStatus);
 public sealed record MonthlyBillingWorklist(short Year, byte Month,
     IReadOnlyList<MonthlyBillingWorkItem> Items);
+public sealed record BillingBatchResult(Guid? ContractId, Guid? InvoiceId, string Status,
+    string? Code = null, string? Message = null);
+public sealed record InvoiceApproval(Guid InvoiceId, string Version);
+
+public static class InvoiceReviewVersion
+{
+    public static string ForDraft(Invoice invoice, IEnumerable<InvoiceItem> items) => Hash(new
+    {
+        invoice.Id, invoice.Status, invoice.DueDate, invoice.TotalAmount,
+        Items = items.OrderBy(x => x.Id).Select(x => new
+        {
+            x.Id, x.ItemType, x.Description, x.Quantity, x.UnitPrice, x.Amount, x.ReferenceId
+        })
+    });
+
+    internal static string Hash<T>(T value) => Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(value)));
+}
 public sealed record InvoiceBalanceResult(decimal EffectiveAmount, decimal TotalPaid,
     decimal TotalRefunded, decimal TotalDepositApplied, decimal RemainingAmount);
 public sealed record InvoiceSummaryResult(Invoice Invoice, InvoiceBalanceResult Balance);
@@ -46,7 +69,7 @@ public sealed record OneOffInvoiceInput(Guid ContractId, InvoiceType Type, DateO
     string? Source = null, string? IdempotencyKey = null);
 public sealed record DraftInvoiceItemsInput(IReadOnlyList<EditableInvoiceItem> Items);
 public sealed record InvoiceAdjustmentInput(InvoiceAdjustmentType Type, decimal Amount,
-    string Reason, string IdempotencyKey);
+    string Reason, string IdempotencyKey, bool LimitToRemainingAmount = false);
 public sealed record PendingInvoicePayment(Guid InvoiceId, string InvoiceCode, Guid RoomId,
     Guid PaymentId, decimal ClaimedAmount, string? SubmittedByName, DateTime? PaidAt);
 public sealed record InvoiceAttention(IReadOnlyList<InvoiceSummaryResult> Unpaid,

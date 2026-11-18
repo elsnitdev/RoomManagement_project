@@ -10,8 +10,8 @@ public sealed class ContractSettlementConfiguration : IEntityTypeConfiguration<C
     {
         builder.ToTable("ContractSettlements", "dbo", table =>
         {
-            table.HasCheckConstraint("CK_ContractSettlements_Amounts", @"(DepositAmount >= 0 AND OutstandingAmount >= 0 AND DamageFee >= 0 AND OtherFee >= 0 AND RefundAmount >= 0)");
-            table.HasCheckConstraint("CK_ContractSettlements_Disposition", @"(DepositDisposition IN (N'Refunded', N'Offset', N'NoDeposit'))");
+            table.HasCheckConstraint("CK_ContractSettlements_Amounts", @"(DepositAmount >= 0 AND OutstandingAmount >= 0 AND DamageFee >= 0 AND OtherFee >= 0 AND RefundAmount >= 0 AND ForfeitedAmount >= 0)");
+            table.HasCheckConstraint("CK_ContractSettlements_Disposition", @"(DepositDisposition IN (N'Refunded', N'PartialRefund', N'Forfeited', N'Offset', N'NoDeposit', N'CancelRefunded', N'CancelPartialRefund', N'CancelForfeited'))");
         });
         builder.HasKey(e => e.Id).HasName("PK_ContractSettlements");
         builder.Property(e => e.Id).HasColumnType("uniqueidentifier").IsRequired().ValueGeneratedNever();
@@ -22,6 +22,7 @@ public sealed class ContractSettlementConfiguration : IEntityTypeConfiguration<C
         builder.Property(e => e.DamageFee).HasColumnType("decimal(18,2)").IsRequired().HasDefaultValueSql(@"0", "DF_ContractSettlements_Damage");
         builder.Property(e => e.OtherFee).HasColumnType("decimal(18,2)").IsRequired().HasDefaultValueSql(@"0", "DF_ContractSettlements_Other");
         builder.Property(e => e.RefundAmount).HasColumnType("decimal(18,2)").IsRequired().HasDefaultValueSql(@"0", "DF_ContractSettlements_Refund");
+        builder.Property(e => e.ForfeitedAmount).HasColumnType("decimal(18,2)").IsRequired().HasDefaultValueSql(@"0", "DF_ContractSettlements_Forfeited");
         builder.Property(e => e.DepositDisposition).HasColumnType("nvarchar(20)").IsRequired();
         builder.Property(e => e.Note).HasColumnType("nvarchar(1000)");
         builder.Property(e => e.RefundEvidenceId).HasColumnType("uniqueidentifier");

@@ -15,7 +15,8 @@ public sealed class SettlementRefundEvidenceService(ContractService contracts, I
         await contracts.GetDetailAsync(propertyId, contractId, ct);
         var settlement = await store.GetSettlementAsync(contractId, ct)
             ?? throw new BusinessException(BusinessErrorType.NotFound, "SETTLEMENT_NOT_FOUND", "Chưa có bản ghi tất toán.");
-        if (settlement.DepositDisposition != "Refunded" || settlement.RefundAmount <= 0)
+        if (settlement.RefundAmount <= 0 ||
+            settlement.DepositDisposition is not ("Refunded" or "PartialRefund" or "CancelRefunded" or "CancelPartialRefund"))
             throw new BusinessException(BusinessErrorType.Conflict, "SETTLEMENT_NO_REFUND", "Bản tất toán không có khoản hoàn cọc.");
         return settlement;
     }

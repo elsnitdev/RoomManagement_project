@@ -10,6 +10,7 @@ public sealed class ContractSettlement
     public decimal DamageFee { get; set; }
     public decimal OtherFee { get; set; }
     public decimal RefundAmount { get; set; }
+    public decimal ForfeitedAmount { get; set; }
     public string DepositDisposition { get; set; } = "NoDeposit";
     public string? Note { get; set; }
     public Guid? RefundEvidenceId { get; set; }

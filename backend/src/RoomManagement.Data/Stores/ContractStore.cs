@@ -100,7 +100,8 @@ public sealed class ContractStore : IContractStore
           c.StartDate <= (contract.EndDate ?? DateOnly.MaxValue) &&
           (c.Status == ContractStatus.PendingTenantConfirmation ||
            c.Status == ContractStatus.PendingOperatorConfirmation ||
-           c.Status == ContractStatus.PendingStart || c.Status == ContractStatus.Active ||
+           c.Status == ContractStatus.PendingStart || c.Status == ContractStatus.PendingCancelSettlement ||
+           c.Status == ContractStatus.Active ||
            c.Status == ContractStatus.PendingMoveOut || c.Status == ContractStatus.PendingSettlement) &&
           (c.Status == ContractStatus.PendingSettlement && c.HandoverOn != null
               ? c.HandoverOn >= contract.StartDate
@@ -620,7 +621,9 @@ public sealed class ContractStore : IContractStore
     if (currentStatus != expectedStatus)
       throw new BusinessException(BusinessErrorType.Conflict,
           "CONTRACT_ALREADY_CHANGED", "Hợp đồng đã thay đổi trạng thái.");
-    if (expectedStatus == ContractStatus.Draft && newStatus == ContractStatus.Cancelled)
+    if (newStatus == ContractStatus.Cancelled &&
+        expectedStatus is ContractStatus.Draft or ContractStatus.PendingTenantConfirmation
+            or ContractStatus.PendingOperatorConfirmation or ContractStatus.PendingStart)
     {
       var depositId = await _db.Invoices.AsNoTracking()
           .Where(x => x.ContractId == contract.Id && x.InvoiceType == InvoiceType.Deposit &&
@@ -633,7 +636,7 @@ public sealed class ContractStore : IContractStore
         if (await InvoiceFinancialActivity.ExistsAsync(_db, deposit, ct))
           throw new BusinessException(BusinessErrorType.Conflict,
               "CONTRACT_DEPOSIT_HAS_FINANCIAL_ACTIVITY",
-              "Hóa đơn cọc đã có giao dịch. Cần đối soát trước khi hủy hợp đồng.");
+              "Hóa đơn cọc đã có giao dịch. Vui lòng dùng quy trình hủy hợp đồng có cọc.");
         deposit.Status = InvoiceStatus.Cancelled;
       }
     }
@@ -646,6 +649,130 @@ public sealed class ContractStore : IContractStore
           $"Đề nghị hợp đồng {contract.ContractCode} đã bị phía chủ trọ hủy.", actorUserId, ct);
     await SaveAsync(ct);
     await transaction.CommitAsync(ct);
+  }
+
+  public async Task<Contract> RequestCancelWithDepositAsync(Contract contract, ContractStatus expectedStatus,
+      string reason, string actorUserId, CancellationToken ct)
+  {
+    await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+    await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {contract.RoomId}")
+        .AsNoTracking().SingleAsync(ct);
+    var tracked = await _db.Contracts.SingleAsync(x => x.Id == contract.Id, ct);
+    if (tracked.Status != expectedStatus ||
+        expectedStatus is not (ContractStatus.Draft or ContractStatus.PendingTenantConfirmation
+            or ContractStatus.PendingOperatorConfirmation or ContractStatus.PendingStart))
+      throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ALREADY_CHANGED", "Hợp đồng đã thay đổi trạng thái.");
+    var depositId = await _db.Invoices.AsNoTracking()
+        .Where(x => x.ContractId == contract.Id && x.InvoiceType == InvoiceType.Deposit &&
+            x.Status != InvoiceStatus.Cancelled)
+        .Select(x => (Guid?)x.Id).SingleOrDefaultAsync(ct);
+    if (depositId is { } invoiceId)
+    {
+      await InvoiceTransactionLock.AcquireAsync(_db, invoiceId, ct);
+      if (await _db.Payments.AnyAsync(p => p.InvoiceId == invoiceId && p.Status == PaymentStatus.Pending, ct))
+        throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_DEPOSIT_PENDING_PAYMENT",
+            "Hóa đơn cọc đang có giao dịch chờ duyệt. Vui lòng duyệt hoặc từ chối trước khi hủy hợp đồng.");
+    }
+    var held = await _db.ContractDepositBalances.AsNoTracking()
+        .Where(x => x.ContractId == contract.Id)
+        .SumAsync(x => (decimal?)x.DepositHeld, ct) ?? 0;
+    if (held <= 0)
+      throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_NO_DEPOSIT_TO_SETTLE",
+          "Hợp đồng chưa có tiền cọc đang giữ. Vui lòng dùng thao tác hủy thông thường.");
+    tracked.Status = ContractStatus.PendingCancelSettlement;
+    tracked.ClosureReason = reason;
+    tracked.UpdatedAt = DateTime.UtcNow;
+    await NotifyContractTenantsAsync(contract.Id, "ContractCancelRequested", "Yêu cầu hủy hợp đồng đang xử lý cọc",
+        $"Hợp đồng {contract.ContractCode} đang được làm thủ tục hủy và đối soát khoản cọc. Lý do: {reason}.",
+        actorUserId, ct);
+    await SaveAsync(ct);
+    await tx.CommitAsync(ct);
+    return tracked;
+  }
+
+  public async Task<Contract> CompleteCancelWithDepositAsync(Contract contract, string disposition,
+      decimal refundAmount, decimal forfeitedAmount, string? note, string actorUserId, CancellationToken ct)
+  {
+    await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+    await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {contract.RoomId}")
+        .AsNoTracking().SingleAsync(ct);
+    var tracked = await _db.Contracts.SingleAsync(x => x.Id == contract.Id, ct);
+    if (tracked.Status != ContractStatus.PendingCancelSettlement)
+      throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ALREADY_CHANGED", "Hợp đồng đã thay đổi trạng thái.");
+    if (await _db.ContractSettlements.AnyAsync(x => x.ContractId == contract.Id, ct))
+      throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ALREADY_SETTLED", "Hợp đồng đã có bản ghi tất toán.");
+    var depositId = await _db.Invoices.AsNoTracking()
+        .Where(x => x.ContractId == contract.Id && x.InvoiceType == InvoiceType.Deposit &&
+            x.Status == InvoiceStatus.Issued)
+        .Select(x => (Guid?)x.Id).SingleOrDefaultAsync(ct);
+    if (depositId is { } invoiceId)
+    {
+      await InvoiceTransactionLock.AcquireAsync(_db, invoiceId, ct);
+      if (await _db.Payments.AnyAsync(p => p.InvoiceId == invoiceId && p.Status == PaymentStatus.Pending, ct))
+        throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_DEPOSIT_PENDING_PAYMENT",
+            "Hóa đơn cọc đang có giao dịch chờ duyệt. Vui lòng duyệt hoặc từ chối trước khi hoàn tất hủy.");
+      var remaining = await _db.InvoiceBalances.AsNoTracking()
+          .Where(x => x.InvoiceId == invoiceId)
+          .Select(x => x.RemainingAmount).SingleOrDefaultAsync(ct);
+      if (remaining > 0)
+      {
+        var writeOffKey = $"cancel-deposit-writeoff:{contract.Id:N}";
+        if (!await _db.InvoiceAdjustments.AnyAsync(x => x.IdempotencyKey == writeOffKey, ct))
+        {
+          _db.InvoiceAdjustments.Add(new InvoiceAdjustment
+          {
+            Id = Guid.NewGuid(),
+            InvoiceId = invoiceId,
+            AdjustmentType = InvoiceAdjustmentType.WriteOff,
+            Amount = remaining,
+            Reason = "Đóng phần tiền cọc chưa thu khi hủy hợp đồng.",
+            IdempotencyKey = writeOffKey,
+            CreatedByUserId = actorUserId,
+            CreatedAt = DateTime.UtcNow
+          });
+        }
+      }
+    }
+    var held = await _db.ContractDepositBalances.AsNoTracking()
+        .Where(x => x.ContractId == contract.Id)
+        .SumAsync(x => (decimal?)x.DepositHeld, ct) ?? 0;
+    if (held <= 0 || refundAmount + forfeitedAmount != held)
+      throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_DEPOSIT_UNRESOLVED",
+          "Tổng số tiền hoàn và số tiền giữ lại phải bằng đúng số cọc đang giữ.");
+    var validDisposition = disposition switch
+    {
+      "CancelRefunded" => refundAmount == held && forfeitedAmount == 0,
+      "CancelPartialRefund" => refundAmount > 0 && forfeitedAmount > 0,
+      "CancelForfeited" => refundAmount == 0 && forfeitedAmount == held,
+      _ => false
+    };
+    if (!validDisposition)
+      throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_CANCEL_SETTLEMENT_INVALID",
+          "Phương án xử lý cọc không khớp với số tiền hoàn và giữ lại.");
+    _db.ContractSettlements.Add(new ContractSettlement
+    {
+      Id = Guid.NewGuid(),
+      ContractId = contract.Id,
+      SettlementDate = VietnamDate.Today,
+      DepositAmount = held,
+      OutstandingAmount = 0,
+      DamageFee = 0,
+      OtherFee = 0,
+      RefundAmount = refundAmount,
+      ForfeitedAmount = forfeitedAmount,
+      DepositDisposition = disposition,
+      Note = note,
+      CreatedAt = DateTime.UtcNow
+    });
+    tracked.Status = ContractStatus.Cancelled;
+    tracked.ClosedOn = VietnamDate.Today;
+    tracked.UpdatedAt = DateTime.UtcNow;
+    await NotifyContractTenantsAsync(contract.Id, "ContractCancelled", "Hoàn tất hủy hợp đồng và xử lý cọc",
+        $"Hợp đồng {contract.ContractCode} đã hoàn tất hủy. Hoàn cọc: {refundAmount:N0} đ, giữ lại: {forfeitedAmount:N0} đ.",
+        actorUserId, ct);
+    await SaveAsync(ct);
+    await tx.CommitAsync(ct);
+    return tracked;
   }
 
   public async Task StartEarlyExitAsync(Contract contract, string reason, CancellationToken ct, string? actorUserId = null)
@@ -773,15 +900,19 @@ public sealed class ContractStore : IContractStore
     var held = await _db.ContractDepositBalances.Where(x => x.ContractId == contract.Id)
         .SumAsync(x => (decimal?)x.DepositHeld, ct) ?? 0;
     if (disposition == "NoDeposit" && (held != 0 || refundAmount != 0) ||
-        disposition == "Refunded" && refundAmount != held ||
-        disposition == "Offset" && (held != 0 || refundAmount != 0))
+        disposition == "Refunded" && (held <= 0 || refundAmount != held) ||
+        disposition == "PartialRefund" && (refundAmount <= 0 || refundAmount >= held) ||
+        disposition == "Forfeited" && (held <= 0 || refundAmount != 0) ||
+        disposition == "Offset" && (held != 0 || refundAmount != 0) ||
+        disposition is "PartialRefund" or "Forfeited" && string.IsNullOrWhiteSpace(note))
       throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_DEPOSIT_UNRESOLVED",
-          "Tiền cọc chưa được hoàn đủ hoặc cấn trừ qua chứng từ.");
+          "Số tiền hoàn và phương án xử lý cọc không khớp với số cọc đang giữ hoặc thiếu lý do giữ cọc.");
     if (await _db.ContractSettlements.AnyAsync(x => x.ContractId == contract.Id, ct))
       throw new BusinessException(BusinessErrorType.Conflict, "CONTRACT_ALREADY_SETTLED", "Hợp đồng đã có bản ghi tất toán.");
     _db.ContractSettlements.Add(new ContractSettlement { Id = Guid.NewGuid(), ContractId = contract.Id,
         SettlementDate = VietnamDate.Today, DepositAmount = held, OutstandingAmount = 0,
         DamageFee = 0, OtherFee = 0, RefundAmount = refundAmount,
+        ForfeitedAmount = disposition is "PartialRefund" or "Forfeited" ? held - refundAmount : 0,
         DepositDisposition = disposition, Note = note, CreatedAt = DateTime.UtcNow });
     contract.Status = ContractStatus.Terminated;
     contract.ClosedOn = VietnamDate.Today;
@@ -801,7 +932,8 @@ public sealed class ContractStore : IContractStore
     await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
     var settlement = await _db.ContractSettlements.SingleOrDefaultAsync(x => x.ContractId == contractId, ct)
         ?? throw new BusinessException(BusinessErrorType.NotFound, "SETTLEMENT_NOT_FOUND", "Chưa có bản ghi tất toán.");
-    if (settlement.DepositDisposition != "Refunded" || settlement.RefundAmount <= 0)
+    if (settlement.RefundAmount <= 0 ||
+        settlement.DepositDisposition is not ("Refunded" or "PartialRefund" or "CancelRefunded" or "CancelPartialRefund"))
       throw new BusinessException(BusinessErrorType.Conflict, "SETTLEMENT_NO_REFUND", "Bản tất toán không có khoản hoàn cọc.");
     if (settlement.RefundEvidenceId is not null)
     {
@@ -932,11 +1064,6 @@ public sealed class ContractStore : IContractStore
     {
       // The initial month's service is charged in full, even when the contract starts mid-month.
       var effective = new DateOnly(contract.StartDate.Year, contract.StartDate.Month, 1);
-      if (await _db.Invoices.AnyAsync(x => x.RoomId == room.Id && x.InvoiceType == InvoiceType.Monthly &&
-          x.BillingYear == effective.Year && x.BillingMonth == effective.Month &&
-          x.Status != InvoiceStatus.Cancelled, ct))
-        throw new BusinessException(BusinessErrorType.Conflict, "ROOM_SERVICE_PERIOD_BILLED",
-            "Kỳ bắt đầu hợp đồng đã có hóa đơn; không thể đổi dịch vụ của kỳ đó.");
       var desiredIds = requestedServices.Select(x => x.ServiceId).ToArray();
       var catalog = await _db.Services.AsNoTracking().Where(x => desiredIds.Contains(x.Id) &&
           x.PropertyId == propertyId && x.IsActive).ToDictionaryAsync(x => x.Id, ct);
@@ -947,6 +1074,17 @@ public sealed class ContractStore : IContractStore
             "Dịch vụ hoặc giá dịch vụ không hợp lệ.");
       var active = await _db.RoomServices.Where(x => x.RoomId == room.Id &&
           x.StartDate <= effective && (x.EndDate == null || x.EndDate >= effective)).ToListAsync(ct);
+      var servicesChanged = active.Count != requestedServices.Count || active.Any(current =>
+      {
+        var wanted = requestedServices.FirstOrDefault(x => x.ServiceId == current.ServiceId);
+        return wanted is null || current.Quantity != wanted.Quantity ||
+            current.CustomPrice != (wanted.CustomPrice ?? catalog[wanted.ServiceId].DefaultPrice);
+      });
+      if (servicesChanged && await _db.Invoices.AnyAsync(x => x.RoomId == room.Id && x.InvoiceType == InvoiceType.Monthly &&
+          x.BillingYear == effective.Year && x.BillingMonth == effective.Month &&
+          x.Status != InvoiceStatus.Cancelled, ct))
+        throw new BusinessException(BusinessErrorType.Conflict, "ROOM_SERVICE_PERIOD_BILLED",
+            "Kỳ bắt đầu hợp đồng đã có hóa đơn; không thể đổi dịch vụ của kỳ đó.");
       foreach (var current in active)
       {
         var wanted = requestedServices.FirstOrDefault(x => x.ServiceId == current.ServiceId);

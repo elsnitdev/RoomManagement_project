@@ -7,7 +7,6 @@ import {
   CalendarDays,
   ChevronDown,
   DoorOpen,
-  FileText,
   Landmark,
   MapPin,
   Pencil,
@@ -31,7 +30,6 @@ import {
   moneyText,
 } from "./property/ManagementUi";
 import { billingApi } from "../services/api/billingApi";
-import { PropertyRules } from "./contracts/ContractRules";
 import SearchableSelect from "./common/SearchableSelect";
 import vnAddressData from "../data/vn-addresses.json";
 import {
@@ -436,11 +434,8 @@ function PropertyList({ navigate, notify }) {
   const [status, setStatus] = useState("all");
   const [creating, setCreating] = useState(false);
   const [editingProperty, setEditingProperty] = useState(null);
-  const [rulesModalProperty, setRulesModalProperty] = useState(null);
   const editCloseRef = useRef(null);
   const editOpenerRef = useRef(null);
-  const rulesCloseRef = useRef(null);
-  const rulesOpenerRef = useRef(null);
   const query = useApiQuery(
     `properties:${user?.id}:list:${page}:${search}:${status}`,
     () =>
@@ -483,39 +478,6 @@ function PropertyList({ navigate, notify }) {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [editingProperty]);
-
-  function openRulesModal(property, openerEl) {
-    rulesOpenerRef.current = openerEl || null;
-    setRulesModalProperty({
-      id: property.id,
-      name: property.name,
-      isActive: property.isActive,
-    });
-  }
-
-  function closeRulesModal() {
-    setRulesModalProperty(null);
-    const opener = rulesOpenerRef.current;
-    rulesOpenerRef.current = null;
-    if (opener && typeof opener.focus === "function") {
-      requestAnimationFrame(() => opener.focus());
-    }
-  }
-
-  useEffect(() => {
-    if (!rulesModalProperty) return undefined;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    rulesCloseRef.current?.focus();
-    const onKeyDown = (event) => {
-      if (event.key === "Escape") closeRulesModal();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [rulesModalProperty]);
 
   function applySearch(event) {
     event.preventDefault();
@@ -700,16 +662,6 @@ function PropertyList({ navigate, notify }) {
                     </button>
                     <button
                       type="button"
-                      className="pm-card-btn pm-card-btn--secondary"
-                      onClick={(event) =>
-                        openRulesModal(property, event.currentTarget)
-                      }
-                    >
-                      <FileText size={15} aria-hidden="true" />
-                      Điều khoản
-                    </button>
-                    <button
-                      type="button"
                       className="pm-card-btn pm-card-btn--primary"
                       onClick={() =>
                         navigate(`landlord/properties/${property.id}`)
@@ -774,47 +726,6 @@ function PropertyList({ navigate, notify }) {
         </div>
       )}
 
-      {rulesModalProperty && (
-        <div
-          className="pm-modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeRulesModal();
-          }}
-        >
-          <div
-            className="pm-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="pm-rules-modal-title"
-          >
-            <header className="pm-modal__header">
-              <div>
-                <span className="pm-eyebrow">ĐIỀU KHOẢN KHU TRỌ</span>
-                <h2 id="pm-rules-modal-title">
-                  Điều khoản — {rulesModalProperty.name}
-                </h2>
-              </div>
-              <button
-                ref={rulesCloseRef}
-                type="button"
-                className="pm-modal__close"
-                aria-label="Đóng cửa sổ điều khoản"
-                onClick={closeRulesModal}
-              >
-                <X size={19} aria-hidden="true" />
-              </button>
-            </header>
-            <div className="pm-modal__body">
-              <PropertyRules
-                key={rulesModalProperty.id}
-                propertyId={rulesModalProperty.id}
-                navigate={navigate}
-                embedded
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1350,26 +1261,6 @@ function PropertyDetail({ propertyId, navigate, notify }) {
               </div>
             </div>
 
-            <section className="pm-billing-card content-card">
-              <div className="pm-section-heading">
-                <div>
-                  <span className="pm-eyebrow">QUY ĐỊNH CHUNG</span>
-                  <h2>Nội quy & điều khoản khu trọ</h2>
-                  <p>
-                    Thiết lập nội dung áp dụng cho các hợp đồng trong khu trọ.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="pm-secondary-action"
-                  onClick={() =>
-                    navigate(`landlord/properties/${propertyId}/rules`)
-                  }
-                >
-                  Quản lý nội quy <ArrowRight size={16} aria-hidden="true" />
-                </button>
-              </div>
-            </section>
             <PropertyBillingSummary
               propertyId={propertyId}
               navigate={navigate}

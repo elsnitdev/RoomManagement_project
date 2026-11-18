@@ -22,6 +22,7 @@ import ContractDocuments from "./ContractDocuments";
 import { CONTRACT_DOCUMENT_ACCEPT, validateContractFiles } from "./contractDocumentFiles";
 import { LandlordRules } from "./ContractRules";
 import EarlyExitFlow, { SettlementRefundEvidencePanel } from "./EarlyExitFlow";
+import CancelWithDepositFlow from "./CancelWithDepositFlow";
 import {
   getLandlordTenants,
   lookupTenantExact,
@@ -57,6 +58,7 @@ const statusText = {
   PendingTenantConfirmation: "Chờ người thuê xác nhận",
   PendingOperatorConfirmation: "Chờ chủ trọ đối ký",
   PendingStart: "Chờ ngày bắt đầu",
+  PendingCancelSettlement: "Chờ xử lý hủy & cọc",
   Active: "Đang hiệu lực",
   PendingMoveOut: "Chờ bàn giao",
   PendingSettlement: "Chờ tất toán",
@@ -69,6 +71,7 @@ const PENDING_STATUSES = [
   "PendingTenantConfirmation",
   "PendingOperatorConfirmation",
   "PendingStart",
+  "PendingCancelSettlement",
 ];
 const daysUntil = (dateStr) => {
   if (!dateStr) return null;
@@ -404,6 +407,7 @@ export default function LandlordContracts({
   const [depositInvoiceLoading, setDepositInvoiceLoading] = useState(false);
   const [depositInvoiceError, setDepositInvoiceError] = useState(false);
   const [depositRevision, setDepositRevision] = useState(0);
+  const [cancelFlowOpen, setCancelFlowOpen] = useState(false);
   const [form, setForm] = useState(newForm);
   const [contractFiles, setContractFiles] = useState([]);
   const [roomSearch, setRoomSearch] = useState("");
@@ -2294,8 +2298,15 @@ export default function LandlordContracts({
                             disabled={busy}
                             onClick={() => {
                               if (
+                                Number(detail.depositHeld || 0) > 0 ||
+                                Number(depositInvoice?.totalPaid || 0) > 0
+                              ) {
+                                setCancelFlowOpen(true);
+                                return;
+                              }
+                              if (
                                 window.confirm(
-                                  "Hủy bản nháp và hóa đơn cọc chưa có giao dịch? Nếu đã có giao dịch, hệ thống sẽ chặn để đối soát.",
+                                  "Hủy bản nháp và hóa đơn cọc chưa có giao dịch? Nếu đã có giao dịch, hệ thống sẽ chuyển sang quy trình xử lý cọc.",
                                 )
                               )
                                 run(
@@ -2321,6 +2332,13 @@ export default function LandlordContracts({
                             className="contract-button contract-button--danger"
                             disabled={busy}
                             onClick={() => {
+                              if (
+                                Number(detail.depositHeld || 0) > 0 ||
+                                Number(depositInvoice?.totalPaid || 0) > 0
+                              ) {
+                                setCancelFlowOpen(true);
+                                return;
+                              }
                               if (window.confirm("Hủy đề nghị hợp đồng đang chờ xác nhận?"))
                                 run(
                                   () => contractApi.cancel(propertyId, contractId),
@@ -2370,6 +2388,13 @@ export default function LandlordContracts({
                             className="contract-button contract-button--danger"
                             disabled={busy}
                             onClick={() => {
+                              if (
+                                Number(detail.depositHeld || 0) > 0 ||
+                                Number(depositInvoice?.totalPaid || 0) > 0
+                              ) {
+                                setCancelFlowOpen(true);
+                                return;
+                              }
                               if (window.confirm("Hủy hợp đồng trước khi kích hoạt?"))
                                 run(
                                   () => contractApi.cancel(propertyId, contractId),
@@ -2387,9 +2412,31 @@ export default function LandlordContracts({
                             Người đại diện đã xác nhận. Hợp đồng tự có hiệu lực từ {displayDate(detail.startDate)}; những người khác chỉ được tính là thành viên sau khi tự xác nhận.
                           </p>
                           <button type="button" className="contract-button contract-button--danger" disabled={busy} onClick={() => {
+                            if (
+                              Number(detail.depositHeld || 0) > 0 ||
+                              Number(depositInvoice?.totalPaid || 0) > 0
+                            ) {
+                              setCancelFlowOpen(true);
+                              return;
+                            }
                             if (window.confirm("Hủy hợp đồng đang chờ ngày bắt đầu?"))
                               run(() => contractApi.cancel(propertyId, contractId), "Đã hủy hợp đồng.");
                           }}>Hủy hợp đồng</button>
+                        </>
+                      )}
+                      {detail.status === "PendingCancelSettlement" && (
+                        <>
+                          <p className="ct-member-note" role="status">
+                            Hợp đồng đang trong quy trình hủy có cọc. Hoàn tất xử lý khoản cọc để đóng hợp đồng.
+                          </p>
+                          <button
+                            type="button"
+                            className="contract-button contract-button--primary"
+                            disabled={busy}
+                            onClick={() => setCancelFlowOpen(true)}
+                          >
+                            Tiếp tục xử lý hủy &amp; cọc
+                          </button>
                         </>
                       )}
                       {detail.status === "Active" && (
@@ -2439,7 +2486,21 @@ export default function LandlordContracts({
                     }}
                   />
                 )}
-                {detail.status === "Terminated" && detail.hasSettlement && (
+                <CancelWithDepositFlow
+                  propertyId={propertyId}
+                  contract={detail}
+                  depositInvoice={depositInvoice}
+                  open={cancelFlowOpen}
+                  onClose={() => setCancelFlowOpen(false)}
+                  onChanged={async () => {
+                    setDetail(
+                      await contractApi.detail(propertyId, contractId),
+                    );
+                    setDepositRevision((value) => value + 1);
+                  }}
+                />
+                {["Terminated", "Cancelled"].includes(detail.status) &&
+                  detail.hasSettlement && (
                   <SettlementRefundEvidencePanel
                     propertyId={propertyId}
                     contractId={contractId}

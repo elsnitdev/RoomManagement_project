@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
     services.AddScoped<IContractRulesStore, ContractRulesStore>();
     services.AddScoped<IContractRulesEvidenceStore, ContractRulesEvidenceStore>();
     services.AddScoped<IBillingInputStore, BillingInputStore>();
+    services.AddScoped<IMeterImportStore, MeterImportStore>();
     services.AddScoped<IInvoiceStore, InvoiceStore>();
     services.AddScoped<IPaymentStore, PaymentStore>();
     services.AddScoped<IPaymentEvidenceStore, PaymentEvidenceStore>();

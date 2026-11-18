@@ -15,8 +15,8 @@ function queryString({ page = 1, pageSize = 20, search, status, rowId, floor } =
   return params.toString()
 }
 
-export function listRooms(propertyId, filters = {}) {
-  return apiRequest(`${roomsPath(propertyId)}?${queryString(filters)}`)
+export function listRooms(propertyId, filters = {}, options = {}) {
+  return apiRequest(`${roomsPath(propertyId)}?${queryString(filters)}`, { signal: options.signal })
 }
 
 export function getRoom(propertyId, roomId) {

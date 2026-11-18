@@ -35,8 +35,10 @@ dist/
 .azurite/
 backend/src/RoomManagement.API/appsettings.Local.json
 backend/tools/DemoDataTool/.demo-password
+backend/tools/AutoBillingTestSeeder/.autobill-password
 backend/artifacts/LocalLoginUsers.sql
 backend/artifacts/*.log
+/backend/artifacts/meter-import-check/
 
 # IDE
 .vs/

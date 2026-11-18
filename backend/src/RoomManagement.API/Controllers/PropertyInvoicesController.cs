@@ -52,6 +52,16 @@ public sealed class PropertyInvoicesController : ControllerBase
         return StatusCode(StatusCodes.Status201Created, new ApiResponse<InvoiceCreatedResponse>(result));
     }
 
+    [HttpPost("monthly/close")]
+    public async Task<IActionResult> CloseMonth(Guid propertyId, CloseBillingMonthRequest request, CancellationToken ct) =>
+        Ok(new ApiResponse<IReadOnlyList<BillingBatchResult>>(
+            await _service.CloseMonthAsync(propertyId, request.Year, request.Month, ct)));
+
+    [HttpPost("monthly/issue")]
+    public async Task<IActionResult> IssueMonth(Guid propertyId, IssueBillingMonthRequest request, CancellationToken ct) =>
+        Ok(new ApiResponse<IReadOnlyList<BillingBatchResult>>(
+            await _service.IssueMonthAsync(propertyId, request.Year, request.Month, request.Invoices, ct)));
+
     [HttpGet]
     public async Task<IActionResult> List(Guid propertyId,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20,

@@ -418,3 +418,207 @@
     flex-wrap: wrap;
   }
 }
+
+.rules-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rules-evidence-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #dce5ef;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+  min-width: 0;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.rules-evidence-card:hover {
+  border-color: #9ec1e6;
+  box-shadow: 0 4px 14px rgba(33, 103, 170, 0.08);
+}
+
+.rules-evidence-card__thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.rules-evidence-card .rules-evidence-card__preview {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  text-decoration: none;
+  background: transparent;
+}
+
+.rules-evidence-card__preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.25s ease;
+}
+
+.rules-evidence-card__preview:hover img {
+  transform: scale(1.03);
+}
+
+.rules-evidence-card__zoom {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.34);
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.rules-evidence-card__preview:hover .rules-evidence-card__zoom,
+.rules-evidence-card__preview:focus-visible .rules-evidence-card__zoom {
+  opacity: 1;
+}
+
+.rules-evidence-card__loading {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
+}
+
+.rules-evidence-card__body {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border-top: 1px solid #edf2f7;
+  background: #ffffff;
+}
+
+.rules-evidence-card__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rules-evidence-card__name {
+  min-width: 0;
+  flex: 1;
+  color: #243b53;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rules-evidence-card__body small {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.rules-evidence-card .rules-evidence-card__dl {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #2167aa;
+  text-decoration: none;
+}
+
+.rules-evidence-card .rules-evidence-card__dl:hover:not(:disabled) {
+  background: #eff6fd;
+  border-color: #9ec1e6;
+}
+
+.rules-evidence-card--pdf {
+  background: #f8fafc;
+}
+
+.rules-evidence-card__pdf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 8px;
+  background: #eff6fd;
+}
+
+.rules-evidence-card__pdf-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid #cfe0f2;
+  color: #2167aa;
+}
+
+.rules-evidence-card__pdf-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #2167aa;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+
+.rules-evidence-card__pdf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.rules-evidence-card .rules-evidence-card__action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 4px 9px;
+  border: 1px solid #cbd9e6;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #2167aa;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.rules-evidence-card .rules-evidence-card__action-btn:hover:not(:disabled) {
+  background: #eff6fd;
+  border-color: #9ec1e6;
+}
+
+@media (max-width: 640px) {
+  .rules-evidence-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .rules-evidence-card__body {
+    padding: 9px 10px;
+  }
+}

@@ -111,3 +111,12 @@ public sealed record RejectContractOfferRequest(
 public sealed record AcceptContractInvitationRequest(
     [property: JsonRequired] int OfferVersion,
     [Required] string TermsHash);
+
+public sealed record RequestCancelWithDepositRequest(
+    [Required, StringLength(1000)] string Reason);
+
+public sealed record CompleteCancelWithDepositRequest(
+    [Required] string DepositDisposition,
+    [property: JsonRequired, Range(0, 1000000000)] decimal RefundAmount,
+    [property: JsonRequired, Range(0, 1000000000)] decimal ForfeitedAmount,
+    [StringLength(1000)] string? Note);

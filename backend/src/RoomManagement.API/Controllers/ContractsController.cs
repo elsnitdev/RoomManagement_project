@@ -86,6 +86,19 @@ public sealed class ContractsController : ControllerBase
   public async Task<IActionResult> Cancel(Guid propertyId, Guid contractId, CancellationToken ct) =>
       Ok(new ApiResponse<ContractResponse>(ContractResponse.From(await _service.CancelAsync(propertyId, contractId, ct))));
 
+  [HttpPost("{contractId:guid}/cancel-request")]
+  public async Task<IActionResult> RequestCancelWithDeposit(Guid propertyId, Guid contractId,
+      [FromBody] RequestCancelWithDepositRequest request, CancellationToken ct) =>
+      Ok(new ApiResponse<ContractResponse>(ContractResponse.From(
+          await _service.RequestCancelWithDepositAsync(propertyId, contractId, request.Reason, ct))));
+
+  [HttpPost("{contractId:guid}/complete-cancel")]
+  public async Task<IActionResult> CompleteCancelWithDeposit(Guid propertyId, Guid contractId,
+      [FromBody] CompleteCancelWithDepositRequest request, CancellationToken ct) =>
+      Ok(new ApiResponse<ContractResponse>(ContractResponse.From(
+          await _service.CompleteCancelWithDepositAsync(propertyId, contractId,
+              request.DepositDisposition, request.RefundAmount, request.ForfeitedAmount, request.Note, ct))));
+
   [HttpPost("{contractId:guid}/terminate")]
   public async Task<IActionResult> Terminate(Guid propertyId, Guid contractId,
       [FromBody] TerminateContractRequest request, CancellationToken ct) =>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import MonthlyBillingActions from "./MonthlyBillingActions";
 import {
   AlertCircle,
   Check,
@@ -33,6 +34,8 @@ const lastClosedMonth = () => {
 };
 
 export default function BillingPriorityBoard({
+  propertyId,
+  onBillingChanged,
   month,
   onMonthChange,
   worklist,
@@ -250,6 +253,8 @@ export default function BillingPriorityBoard({
             </p>
           )}
           {worklistLoading && <p role="status">Đang tải việc cần chốt…</p>}
+          <MonthlyBillingActions propertyId={propertyId} month={month}
+            work={work} loading={worklistLoading} onChanged={onBillingChanged} />
           {!worklistLoading && !worklistError && !needsInput.length && (
             <p className="bill-empty">
               Không có phòng thiếu dữ liệu điện nước trong kỳ này.
@@ -289,9 +294,9 @@ export default function BillingPriorityBoard({
                     type="button"
                     onClick={() => onWorkItem(item)}
                   >
-                    {item.status === "NeedsAttention"
-                      ? "Kiểm tra dữ liệu"
-                      : "Nhập chỉ số"}
+                    {item.missingInputs?.some((code) => code === "ElectricityReading" || code === "WaterReading")
+                      ? "Nhập chỉ số"
+                      : "Kiểm tra dữ liệu"}
                   </button>
                 </li>
               ))}

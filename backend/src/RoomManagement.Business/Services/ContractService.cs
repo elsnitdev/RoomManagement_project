@@ -184,6 +184,41 @@ public sealed class ContractService
     return contract;
   }
 
+  public async Task<Contract> RequestCancelWithDepositAsync(Guid propertyId, Guid contractId,
+      string reason, CancellationToken ct)
+  {
+    var context = await PropertyOperatorAsync(propertyId, ct);
+    var contract = await GetAsync(propertyId, contractId, ct);
+    if (contract.Status is not (ContractStatus.Draft or ContractStatus.PendingTenantConfirmation
+        or ContractStatus.PendingOperatorConfirmation or ContractStatus.PendingStart))
+      throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_CANNOT_CANCEL",
+          "Chỉ có thể hủy hợp đồng trước khi kích hoạt.");
+    if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length > 1000)
+      throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_CANCEL_REASON_INVALID",
+          "Vui lòng nhập lý do hủy hợp đồng (tối đa 1000 ký tự).");
+    return await _store.RequestCancelWithDepositAsync(contract, contract.Status, reason.Trim(),
+        context.ActorUserId, ct);
+  }
+
+  public async Task<Contract> CompleteCancelWithDepositAsync(Guid propertyId, Guid contractId,
+      string disposition, decimal refundAmount, decimal forfeitedAmount, string? note, CancellationToken ct)
+  {
+    var context = await PropertyOperatorAsync(propertyId, ct);
+    var contract = await GetAsync(propertyId, contractId, ct);
+    if (contract.Status != ContractStatus.PendingCancelSettlement ||
+        disposition is not ("CancelRefunded" or "CancelPartialRefund" or "CancelForfeited") ||
+        refundAmount < 0 || forfeitedAmount < 0 ||
+        refundAmount != decimal.Round(refundAmount, 2) ||
+        forfeitedAmount != decimal.Round(forfeitedAmount, 2) ||
+        note is { Length: > 1000 })
+      throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_CANCEL_SETTLEMENT_INVALID",
+          "Thông tin xử lý khoản cọc khi hủy hợp đồng không hợp lệ.");
+    var updated = await _store.CompleteCancelWithDepositAsync(contract, disposition, refundAmount,
+        forfeitedAmount, string.IsNullOrWhiteSpace(note) ? null : note.Trim(), context.ActorUserId, ct);
+    await _store.RecordClosedActorAsync(contractId, context.ActorUserId, ct);
+    return updated;
+  }
+
   public async Task<Contract> TerminateAsync(Guid propertyId, Guid contractId, string reason, CancellationToken ct)
   {
     var context = await PropertyOperatorAsync(propertyId, ct);
@@ -234,8 +269,9 @@ public sealed class ContractService
     var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
     if (contract.Status != ContractStatus.PendingSettlement ||
-        disposition is not ("Refunded" or "Offset" or "NoDeposit") || refundAmount < 0 ||
-        note is { Length: > 1000 })
+        disposition is not ("Refunded" or "PartialRefund" or "Forfeited" or "Offset" or "NoDeposit") || refundAmount < 0 ||
+        refundAmount != decimal.Round(refundAmount, 2) || note is { Length: > 1000 } ||
+        disposition is "PartialRefund" or "Forfeited" && string.IsNullOrWhiteSpace(note))
       throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_SETTLEMENT_INVALID", "Thông tin tất toán không hợp lệ.");
     await _store.CompleteSettlementAsync(contract, disposition, refundAmount, note, ct, context.ActorUserId);
     await _store.RecordClosedActorAsync(contractId, context.ActorUserId, ct);

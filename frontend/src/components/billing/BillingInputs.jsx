@@ -54,7 +54,6 @@ const futureRate = (rates, type) =>
 export default function BillingInputs({
   propertyId,
   rooms = [],
-  onChanged,
   initialRoomId = "",
 }) {
   const [roomId, setRoomId] = useState(initialRoomId);
@@ -67,6 +66,8 @@ export default function BillingInputs({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [assignmentError, setAssignmentError] = useState("");
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [success, setSuccess] = useState("");
   const [revision, setRevision] = useState(0);
 
@@ -98,21 +99,38 @@ export default function BillingInputs({
     Promise.all([
       billingApi.rates(propertyId, controller.signal),
       billingApi.propertyServices(propertyId, controller.signal),
-      roomId
-        ? billingApi.roomServices(propertyId, roomId, controller.signal)
-        : Promise.resolve([]),
     ])
-      .then(([r, s, a]) => {
+      .then(([r, s]) => {
+        if (controller.signal.aborted) return;
         setRates(r || []);
         setServices(s || []);
-        setAssignments(a || []);
       })
       .catch((e) => {
-        if (e.name !== "AbortError")
+        if (!controller.signal.aborted)
           setError(e.message || "Không tải được dữ liệu.");
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [propertyId, revision]);
+
+  useEffect(() => {
+    setAssignments([]);
+    setAssignmentError("");
+    setAssignmentLoading(!!propertyId && !!roomId);
+    if (!propertyId || !roomId) return;
+    const controller = new AbortController();
+    billingApi.roomServices(propertyId, roomId, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) setAssignments(data || []);
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setAssignmentError(cause.message || "Không tải được dịch vụ của phòng.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAssignmentLoading(false);
       });
     return () => controller.abort();
   }, [propertyId, roomId, revision]);
@@ -127,7 +145,6 @@ export default function BillingInputs({
       reset();
       setSuccess(message);
       setRevision((v) => v + 1);
-      onChanged?.();
     } catch (e) {
       setError(e.message || "Không thể hoàn tất thao tác.");
     } finally {
@@ -439,7 +456,7 @@ export default function BillingInputs({
               <button
                 type="button"
                 className="bill-button bill-button--secondary"
-                disabled={!roomId || !services.some((s) => s.isActive)}
+                disabled={!roomId || assignmentLoading || !!assignmentError || !services.some((s) => s.isActive)}
                 onClick={() => openAssignmentModal()}
               >
                 <Plus size={15} aria-hidden="true" />
@@ -452,6 +469,10 @@ export default function BillingInputs({
             <p className="bill-empty">
               Chọn phòng ở góc trên để xem và gán dịch vụ áp dụng riêng.
             </p>
+          ) : assignmentError ? (
+            <p className="bill-error" role="alert">{assignmentError}</p>
+          ) : assignmentLoading ? (
+            <p role="status">Đang tải dịch vụ của phòng…</p>
           ) : assignments.length ? (
             <ul className="bill-list bill-list--compact">
               {assignments.map((a) => (
