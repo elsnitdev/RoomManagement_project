@@ -23,6 +23,9 @@ public sealed class ManagerStore : IManagerStore
     public Task<bool> IsEmailTakenAsync(string normalizedEmail, CancellationToken ct = default) =>
         _db.Users.AnyAsync(u => u.NormalizedEmail == normalizedEmail, ct);
 
+    public Task<bool> IsEmailTakenByOtherAsync(string normalizedEmail, string excludeUserId, CancellationToken ct = default) =>
+        _db.Users.AnyAsync(u => u.NormalizedEmail == normalizedEmail && u.Id != excludeUserId, ct);
+
     public async Task<IReadOnlyList<Property>> GetOwnedPropertiesAsync(string landlordId, IReadOnlyCollection<Guid> propertyIds, CancellationToken ct = default) =>
         await _db.Properties.AsNoTracking()
             .Where(p => p.OwnerUserId == landlordId && propertyIds.Contains(p.Id))

@@ -31,5 +31,5 @@ public interface ILandlordApprovalStore
     /// Trả về false nếu một request khác đã xử lý tài khoản.
     /// </summary>
     /// <param name="cancellationToken">Token hủy thao tác không đồng bộ.</param>
-    Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default);
+    Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default, string? actorAdminUserId = null);
 }

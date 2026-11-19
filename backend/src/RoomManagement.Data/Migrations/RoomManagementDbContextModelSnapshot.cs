@@ -168,6 +168,12 @@ namespace RoomManagement.Data.Migrations
                     b.Property<string>("RejectionReason")
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<byte[]>("ReviewVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTime?>("ReviewedAt")
                         .HasColumnType("datetime2(0)");
 
@@ -290,6 +296,12 @@ namespace RoomManagement.Data.Migrations
 
                     b.Property<Guid?>("OfferRulesVersionId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("OfferResponseDeadline")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("OfferResponseTimedOutAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime?>("OfferSentAt")
                         .HasColumnType("datetime2(0)");
@@ -665,6 +677,11 @@ namespace RoomManagement.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<decimal>("ForfeitedAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValueSql("0", "DF_ContractSettlements_Forfeited");
+
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(1000)");
 
@@ -677,11 +694,6 @@ namespace RoomManagement.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("decimal(18,2)")
                         .HasDefaultValueSql("0", "DF_ContractSettlements_Outstanding");
-
-                    b.Property<decimal>("ForfeitedAmount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(18,2)")
-                        .HasDefaultValueSql("0", "DF_ContractSettlements_Forfeited");
 
                     b.Property<decimal>("RefundAmount")
                         .ValueGeneratedOnAdd()
@@ -1592,9 +1604,6 @@ namespace RoomManagement.Data.Migrations
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.Request", b =>
                 {
-                    b.Property<Guid?>("ContractId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
@@ -1602,6 +1611,9 @@ namespace RoomManagement.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid?>("ContractId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -1716,6 +1728,12 @@ namespace RoomManagement.Data.Migrations
 
                     b.Property<int>("MaxOccupants")
                         .HasColumnType("int");
+
+                    b.Property<decimal?>("OpeningElectricity")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("OpeningWater")
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<Guid>("PropertyId")
                         .HasColumnType("uniqueidentifier");
@@ -2329,6 +2347,56 @@ namespace RoomManagement.Data.Migrations
                         .HasDatabaseName("IX_UserNotifications_User_Read_CreatedAt");
 
                     b.ToTable("UserNotifications", "dbo");
+                });
+
+            modelBuilder.Entity("RoomManagement.Domain.Entities.UserReviewHistory", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("ActorAdminUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FromStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("TargetUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ToStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("VerificationMethod")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetUserId", "CreatedAt");
+
+                    b.ToTable("UserReviewHistories", "dbo");
                 });
 
             modelBuilder.Entity("RoomManagement.Domain.Entities.UtilityRate", b =>

@@ -18,6 +18,7 @@ public sealed class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
             table.HasCheckConstraint("CK_Users_IdentityVerificationStatus", @"(IdentityVerificationStatus IN (N'Unverified', N'Pending', N'Verified'))");
         });
         builder.HasKey(e => e.Id).HasName("PK_Users");
+        builder.Property(e => e.ReviewVersion).IsRowVersion();
         builder.Property(e => e.Id).HasColumnType("nvarchar(450)").IsRequired().ValueGeneratedNever();
         builder.Property(e => e.UserName).HasColumnType("nvarchar(256)").IsRequired();
         builder.Property(e => e.NormalizedUserName).HasColumnType("nvarchar(256)").IsRequired();

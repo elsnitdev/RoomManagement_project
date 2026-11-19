@@ -337,17 +337,7 @@ public sealed class UserService : IUserService
         user.Address = TrimOrNull(dto.Address) ?? user.Address;
 
         if (!string.IsNullOrWhiteSpace(dto.IdentityVerificationStatus))
-        {
-            var status = dto.IdentityVerificationStatus.Trim();
-            if (status != IdentityVerificationStatuses.Unverified &&
-                status != IdentityVerificationStatuses.Pending &&
-                status != IdentityVerificationStatuses.Verified)
-            {
-                throw new AppValidationException("Trạng thái xác minh danh tính không hợp lệ.", "INVALID_VERIFICATION_STATUS");
-            }
-            user.IdentityVerificationStatus = status;
-            user.IdentityVerifiedAt = status == IdentityVerificationStatuses.Verified ? DateTime.UtcNow : null;
-        }
+            throw new AppValidationException("Hãy dùng chức năng xác minh danh tính để thay đổi trạng thái.");
 
         UserProfileRules.EnsureValidFormat(user);
 

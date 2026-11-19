@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { billingApi } from "../../services/api/billingApi";
 import { formatVietnamDate } from "./paymentDate";
+import MoneyInput from "./MoneyInput";
 
 const money = (value) =>
   new Intl.NumberFormat("vi-VN").format(Number(value || 0)) + " ₫";
@@ -94,13 +95,12 @@ export default function OverpaymentRefund({
         <form className="bill-form" onSubmit={submit}>
           <label>
             Số tiền đã hoàn *
-            <input
-              type="number"
-              min="0.01"
-              step="any"
+            <MoneyInput
+              allowDecimal
               required
               value={form.amount}
-              onChange={(event) => update("amount", event.target.value)}
+              onValueChange={(val) => update("amount", val)}
+              placeholder="0"
             />
           </label>
           <label>

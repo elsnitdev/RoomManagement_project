@@ -7,6 +7,7 @@ public interface IManagerStore
 {
     Task<bool> IsUserNameTakenAsync(string normalizedUserName, CancellationToken ct = default);
     Task<bool> IsEmailTakenAsync(string normalizedEmail, CancellationToken ct = default);
+    Task<bool> IsEmailTakenByOtherAsync(string normalizedEmail, string excludeUserId, CancellationToken ct = default);
     Task<IReadOnlyList<Property>> GetOwnedPropertiesAsync(string landlordId, IReadOnlyCollection<Guid> propertyIds, CancellationToken ct = default);
     Task<AppUser?> FindManagerAsync(string landlordId, string managerId, bool asNoTracking = false, CancellationToken ct = default);
     Task<(IReadOnlyList<ManagerDto> Items, long TotalItems)> ListManagersAsync(string landlordId, string? search, bool? isActive, int skip, int take, CancellationToken ct = default);

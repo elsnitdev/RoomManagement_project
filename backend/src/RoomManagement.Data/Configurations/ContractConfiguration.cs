@@ -40,6 +40,8 @@ public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
         builder.Property(e => e.OfferSnapshotJson).HasColumnType("nvarchar(max)");
         builder.Property(e => e.OfferRulesVersionId).HasColumnType("uniqueidentifier");
         builder.Property(e => e.OfferSentAt).HasColumnType("datetime2(0)");
+        builder.Property(e => e.OfferResponseDeadline).HasColumnType("datetime2");
+        builder.Property(e => e.OfferResponseTimedOutAt).HasColumnType("datetime2");
         builder.Property(e => e.OfferSentByUserId).HasColumnType("nvarchar(450)");
         builder.Property(e => e.TenantConfirmedAt).HasColumnType("datetime2(0)");
         builder.Property(e => e.TenantConfirmedByUserId).HasColumnType("nvarchar(450)");

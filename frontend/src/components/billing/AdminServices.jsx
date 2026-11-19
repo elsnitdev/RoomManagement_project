@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { billingApi } from "../../services/api/billingApi";
+import MoneyInput from "./MoneyInput";
 import "../../styles/billing-live.css";
 
 export default function AdminServices() {
@@ -83,14 +84,13 @@ export default function AdminServices() {
             </label>
             <label>
               Giá mặc định
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <MoneyInput
+                allowDecimal
                 value={form.defaultPrice}
-                onChange={(event) =>
-                  setForm({ ...form, defaultPrice: event.target.value })
+                onValueChange={(val) =>
+                  setForm({ ...form, defaultPrice: val })
                 }
+                placeholder="0"
               />
             </label>
             <label className="bill-field--wide">

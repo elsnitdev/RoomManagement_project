@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { billingApi } from "../../services/api/billingApi";
+import MoneyInput from "./MoneyInput";
 
 const money = (value) =>
   new Intl.NumberFormat("vi-VN").format(Number(value || 0)) + " ₫";
@@ -166,15 +167,12 @@ export function DraftItemsEditor({
               </label>
               <label>
                 Đơn giá (₫) *
-                <input
+                <MoneyInput
                   required
-                  type="number"
-                  min="0"
-                  step="0.01"
+                  allowDecimal
                   value={row.unitPrice}
-                  onChange={(event) =>
-                    update(row.key, "unitPrice", event.target.value)
-                  }
+                  onValueChange={(val) => update(row.key, "unitPrice", val)}
+                  placeholder="0"
                 />
               </label>
               <button
@@ -218,6 +216,37 @@ export function DraftItemsEditor({
   );
 }
 
+const adjustmentOptions = [
+  {
+    value: "AdditionalCharge",
+    label: "Thu thêm tiền",
+    badge: "Phụ thu",
+    sign: "+",
+    tone: "increase",
+  },
+  {
+    value: "Discount",
+    label: "Giảm trừ",
+    badge: "Giảm trừ",
+    sign: "−",
+    tone: "decrease",
+  },
+  {
+    value: "Correction",
+    label: "Điều chỉnh giảm",
+    badge: "Điều chỉnh giảm",
+    sign: "−",
+    tone: "decrease",
+  },
+  {
+    value: "WriteOff",
+    label: "Xóa nợ",
+    badge: "Xóa nợ",
+    sign: "−",
+    tone: "decrease",
+  },
+];
+
 export function InvoiceAdjustmentHistory({ adjustments = [] }) {
   if (!adjustments.length)
     return (
@@ -225,26 +254,40 @@ export function InvoiceAdjustmentHistory({ adjustments = [] }) {
     );
   return (
     <ul className="bill-adjustment-list">
-      {adjustments.map((item) => (
-        <li className="bill-adjustment-row" key={item.id}>
-          <div>
-            <strong>{typeLabel[item.type] || item.type}</strong>
-            <p>{item.reason}</p>
-            <small>
-              {item.createdAt
-                ? new Date(item.createdAt).toLocaleString("vi-VN", {
-                    timeZone: "Asia/Ho_Chi_Minh",
-                  })
-                : ""}
-              {item.voidedAt ? " · Đã hủy điều chỉnh" : ""}
-            </small>
-          </div>
-          <strong className="bill-adjustment-row__amount">
-            {item.type === "AdditionalCharge" ? "+" : "−"}
-            {money(item.amount)}
-          </strong>
-        </li>
-      ))}
+      {adjustments.map((item) => {
+        const isIncrease = item.type === "AdditionalCharge";
+        return (
+          <li
+            className={`bill-adjustment-row${item.voidedAt ? " bill-adjustment-row--void" : ""}`}
+            key={item.id}
+          >
+            <div className="bill-adjustment-row__main">
+              <div className="bill-adj-row-meta">
+                <span
+                  className={`bill-adj-badge bill-adj-badge--${isIncrease ? "increase" : "decrease"}`}
+                >
+                  {typeLabel[item.type] || item.type}
+                </span>
+                <small>
+                  {item.createdAt
+                    ? new Date(item.createdAt).toLocaleString("vi-VN", {
+                        timeZone: "Asia/Ho_Chi_Minh",
+                      })
+                    : ""}
+                  {item.voidedAt ? " · Đã hủy điều chỉnh" : ""}
+                </small>
+              </div>
+              <p className="bill-adjustment-row__reason">{item.reason}</p>
+            </div>
+            <strong
+              className={`bill-adjustment-row__amount${isIncrease ? "" : " bill-adjustment-row__amount--decrease"}`}
+            >
+              {isIncrease ? "+" : "−"}
+              {money(item.amount)}
+            </strong>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -263,18 +306,20 @@ export function InvoiceAdjustmentEditor({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const signed = type === "AdditionalCharge" ? 1 : -1;
-  const newEffective =
-    Number(summary.effectiveTotal || 0) + signed * Number(amount || 0);
+  const isIncrease = type === "AdditionalCharge";
+  const signed = isIncrease ? 1 : -1;
+  const numericAmount = Number(amount || 0);
+  const currentEffective = Number(summary.effectiveTotal || 0);
+  const newEffective = currentEffective + signed * numericAmount;
+  const isInvalidTotal = !Number.isFinite(newEffective) || newEffective < 0;
 
   async function submit(event) {
     event.preventDefault();
     if (
       !reason.trim() ||
       !isMoney(amount) ||
-      Number(amount) <= 0 ||
-      !Number.isFinite(newEffective) ||
-      newEffective < 0
+      numericAmount <= 0 ||
+      isInvalidTotal
     ) {
       setError("Nhập số tiền hợp lệ và lý do; tổng phải thu không được âm.");
       return;
@@ -301,69 +346,123 @@ export function InvoiceAdjustmentEditor({
 
   return (
     <section className="bill-card" aria-labelledby="bill-adjustment-title">
-      <h2 id="bill-adjustment-title">Phụ thu và giảm trừ</h2>
-      <p>Mỗi khoản phát sinh sau phát hành được ghi riêng cùng lý do.</p>
-      <form className="bill-editor" onSubmit={submit}>
-        <div className="bill-form-grid">
-          <label>
-            Loại điều chỉnh *
-            <select
-              value={type}
-              onChange={(event) => setType(event.target.value)}
-            >
-              <option value="AdditionalCharge">Thu thêm tiền</option>
-              <option value="Discount">Giảm trừ</option>
-              <option value="Correction">Điều chỉnh giảm do sai sót</option>
-              <option value="WriteOff">Xóa nợ</option>
-            </select>
-          </label>
-          <label>
-            Số tiền (₫) *
-            <input
+      <div className="bill-adj-head">
+        <div>
+          <h2 id="bill-adjustment-title">Phụ thu và giảm trừ</h2>
+          <p>Mỗi khoản phát sinh sau phát hành được ghi riêng cùng lý do.</p>
+        </div>
+        <span className="bill-adj-current-pill">
+          Tổng hiện tại: <strong>{money(currentEffective)}</strong>
+        </span>
+      </div>
+
+      <form className="bill-editor bill-editor--adjustment" onSubmit={submit}>
+        <div className="bill-adj-type-wrap">
+          <span className="bill-adj-label">Loại điều chỉnh *</span>
+          <div className="bill-adj-type-group" role="radiogroup" aria-label="Loại điều chỉnh">
+            {adjustmentOptions.map((option) => {
+              const active = type === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className={`bill-adj-type-btn bill-adj-type-btn--${option.tone}${active ? " is-active" : ""}`}
+                  onClick={() => setType(option.value)}
+                >
+                  <span className="bill-adj-type-sign">{option.sign}</span>
+                  <span>{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="bill-adj-fields">
+          <label className="bill-adj-field">
+            <span>Số tiền (₫) *</span>
+            <MoneyInput
               required
-              type="number"
-              min="0.01"
-              step="0.01"
+              allowDecimal
               value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              onValueChange={setAmount}
+              placeholder="Ví dụ: 50.000"
             />
           </label>
-          <label>
-            Lý do *
+          <label className="bill-adj-field">
+            <span>Lý do *</span>
             <input
               required
               maxLength={500}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              placeholder="Ví dụ: phí sửa khóa cửa"
+              placeholder="Ví dụ: phí sửa khóa cửa hoặc giảm trừ kỳ này"
             />
           </label>
         </div>
-        <p>
-          Tổng hiện tại: <strong>{money(summary.effectiveTotal)}</strong> → sau
-          điều chỉnh: <strong>{money(newEffective)}</strong>
-        </p>
+
+        <div className="bill-adj-preview" aria-live="polite">
+          <div className="bill-adj-preview-item">
+            <span>Tổng hiện tại</span>
+            <strong>{money(currentEffective)}</strong>
+          </div>
+          <div className="bill-adj-preview-item">
+            <span>Điều chỉnh</span>
+            <strong
+              className={
+                isIncrease
+                  ? "bill-adj-delta bill-adj-delta--increase"
+                  : "bill-adj-delta bill-adj-delta--decrease"
+              }
+            >
+              {numericAmount > 0
+                ? `${isIncrease ? "+" : "−"}${money(numericAmount)}`
+                : "0 ₫"}
+            </strong>
+          </div>
+          <div className="bill-adj-preview-item bill-adj-preview-item--result">
+            <span>Tổng sau điều chỉnh</span>
+            <strong className={isInvalidTotal ? "bill-adj-invalid" : ""}>
+              {money(newEffective)}
+            </strong>
+          </div>
+        </div>
+
         {error && (
           <p className="bill-error" role="alert">
             {error}
           </p>
         )}
-        <button
-          className="bill-button"
-          type="submit"
-          disabled={
-            busy ||
-            !isMoney(amount) ||
-            Number(amount) <= 0 ||
-            !reason.trim() ||
-            !Number.isFinite(newEffective) ||
-            newEffective < 0
-          }
-        >
-          {busy ? "Đang lưu…" : "Ghi khoản điều chỉnh"}
-        </button>
+
+        <div className="bill-adj-actions">
+          {isInvalidTotal && (
+            <span className="bill-adj-hint">
+              Số tiền giảm không được vượt quá tổng hiện tại.
+            </span>
+          )}
+          <button
+            className="bill-button"
+            type="submit"
+            disabled={
+              busy ||
+              !isMoney(amount) ||
+              numericAmount <= 0 ||
+              !reason.trim() ||
+              isInvalidTotal
+            }
+          >
+            {busy ? "Đang lưu…" : "Ghi khoản điều chỉnh"}
+          </button>
+        </div>
       </form>
-      <h3>Lịch sử điều chỉnh</h3>
+
+      <div className="bill-adj-history-head">
+        <h3>Lịch sử điều chỉnh</h3>
+        {adjustments?.length > 0 && (
+          <span className="bill-adj-count">{adjustments.length} khoản</span>
+        )}
+      </div>
       <InvoiceAdjustmentHistory adjustments={adjustments} />
     </section>
   );

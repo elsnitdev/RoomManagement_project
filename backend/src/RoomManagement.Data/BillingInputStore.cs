@@ -120,10 +120,13 @@ public sealed class BillingInputStore : IBillingInputStore
     public async Task AddReadingAsync(MeterReading reading, CancellationToken ct)
     {
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {reading.RoomId}")
+        var room = await _db.Rooms.FromSqlInterpolated($"SELECT * FROM dbo.Rooms WITH (UPDLOCK, HOLDLOCK) WHERE Id = {reading.RoomId}")
             .AsNoTracking().SingleAsync(ct);
         var previous = await LatestReadingBeforeAsync(reading.RoomId, reading.MeterType, reading.Year, reading.Month, ct);
         var next = await NextReadingAfterAsync(reading.RoomId, reading.MeterType, reading.Year, reading.Month, ct);
+        if (room.OpeningMeterValue(reading.MeterType) is { } opening && reading.PreviousValue != opening &&
+            !await _db.MeterReadings.AnyAsync(x => x.RoomId == reading.RoomId && x.MeterType == reading.MeterType, ct))
+            throw Conflict("METER_READING_OPENING_MISMATCH", $"Chỉ số đầu phải bằng số đầu kỳ đã lưu ({opening:0.##}).");
         var period = new DateOnly(reading.Year, reading.Month, 1);
         var periodEnd = period.AddMonths(1).AddDays(-1);
         if (await _db.Invoices.AnyAsync(x => x.RoomId == reading.RoomId &&

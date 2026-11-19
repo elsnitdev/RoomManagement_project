@@ -14,11 +14,19 @@ public sealed record ContractResponse(
     DateTime? OperatorConfirmedAt = null, string? OperatorConfirmedByUserId = null,
     ContractWorkflow Workflow = ContractWorkflow.LegacyRules)
 {
+    public DateTime? OfferResponseDeadline { get; init; }
+    public DateTime? OfferResponseTimedOutAt { get; init; }
+    public DateTime? TenantRejectedAt { get; init; }
+    public string? TenantRejectionReason { get; init; }
+
   public static ContractResponse From(Contract c, Guid? depositInvoiceId = null) => new(c.Id, c.ContractCode, c.RoomId,
       c.StartDate, c.EndDate, c.MonthlyRent, c.DepositAmount,
       c.PaymentDueDay, c.Status, c.Note, depositInvoiceId, c.HandoverOn, c.TenancyMode,
       c.OfferVersion, c.OfferTermsHash, c.OfferRulesVersionId, c.OfferSentAt,
-      c.TenantConfirmedAt, c.TenantConfirmedByUserId, c.OperatorConfirmedAt, c.OperatorConfirmedByUserId, c.Workflow);
+      c.TenantConfirmedAt, c.TenantConfirmedByUserId, c.OperatorConfirmedAt, c.OperatorConfirmedByUserId, c.Workflow)
+      { OfferResponseDeadline = c.OfferResponseDeadline is { } deadline ? DateTime.SpecifyKind(deadline, DateTimeKind.Utc) : null,
+        OfferResponseTimedOutAt = c.OfferResponseTimedOutAt is { } timedOut ? DateTime.SpecifyKind(timedOut, DateTimeKind.Utc) : null,
+        TenantRejectedAt = c.TenantRejectedAt, TenantRejectionReason = c.TenantRejectionReason };
 }
 
 public sealed record ContractTenantResponse(Guid Id, Guid ContractId, Guid TenantId, DateOnly JoinDate,
@@ -45,6 +53,11 @@ public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid R
     DateTime? OperatorConfirmedAt = null, string? OperatorConfirmedByUserId = null,
     ContractWorkflow Workflow = ContractWorkflow.LegacyRules)
 {
+    public DateTime? OfferResponseDeadline { get; init; }
+    public DateTime? OfferResponseTimedOutAt { get; init; }
+    public DateTime? TenantRejectedAt { get; init; }
+    public string? TenantRejectionReason { get; init; }
+
     public IReadOnlyList<ContractMemberInfo> Members { get; init; } = [];
 
     public static ContractDetailResponse From(ContractDetail detail)
@@ -76,7 +89,9 @@ public sealed record ContractDetailResponse(Guid Id, string ContractCode, Guid R
             c.OfferVersion, c.OfferTermsHash, c.OfferSnapshotJson, c.OfferRulesVersionId, c.OfferSentAt,
             c.TenantConfirmedAt, c.TenantConfirmedByUserId, c.OperatorConfirmedAt, c.OperatorConfirmedByUserId,
             c.Workflow)
-        { Members = detail.Members };
+        { Members = detail.Members, OfferResponseDeadline = c.OfferResponseDeadline is { } deadline ? DateTime.SpecifyKind(deadline, DateTimeKind.Utc) : null,
+        OfferResponseTimedOutAt = c.OfferResponseTimedOutAt is { } timedOut ? DateTime.SpecifyKind(timedOut, DateTimeKind.Utc) : null,
+        TenantRejectedAt = c.TenantRejectedAt, TenantRejectionReason = c.TenantRejectionReason };
     }
 }
 

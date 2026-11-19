@@ -48,7 +48,7 @@ public sealed class LandlordApprovalService : ILandlordApprovalService
     /// </summary>
     /// <exception cref="AppNotFoundException">Không tìm thấy yêu cầu đăng ký.</exception>
     /// <exception cref="AppConflictException">Yêu cầu đã được xử lý trước đó.</exception>
-    public async Task<LandlordRegistrationDto> ApproveAsync(string userId, CancellationToken cancellationToken = default)
+    public async Task<LandlordRegistrationDto> ApproveAsync(string userId, CancellationToken cancellationToken = default, string? actorAdminUserId = null)
     {
         // BƯỚC 1: Lấy yêu cầu qua Store và đảm bảo nó vẫn đang ở trạng thái Pending
         var landlord = await GetPendingLandlordAsync(userId, cancellationToken);
@@ -60,7 +60,7 @@ public sealed class LandlordApprovalService : ILandlordApprovalService
         landlord.ReviewedAt = DateTime.UtcNow;
 
         // BƯỚC 3: Yêu cầu Store lưu thay đổi vào cơ sở dữ liệu
-        await SaveReviewAsync(landlord, cancellationToken);
+        await SaveReviewAsync(landlord, cancellationToken, actorAdminUserId);
 
         _logger.LogInformation("Admin đã DUYỆT yêu cầu đăng ký chủ trọ của {UserName} (ID: {UserId}).",
             landlord.UserName, landlord.Id);
@@ -76,7 +76,7 @@ public sealed class LandlordApprovalService : ILandlordApprovalService
     /// <exception cref="AppValidationException">Không nhập lý do hoặc lý do vượt quá giới hạn ký tự.</exception>
     /// <exception cref="AppNotFoundException">Không tìm thấy yêu cầu đăng ký.</exception>
     /// <exception cref="AppConflictException">Yêu cầu đã được xử lý trước đó.</exception>
-    public async Task<LandlordRegistrationDto> RejectAsync(string userId, string reason, CancellationToken cancellationToken = default)
+    public async Task<LandlordRegistrationDto> RejectAsync(string userId, string reason, CancellationToken cancellationToken = default, string? actorAdminUserId = null)
     {
         // BƯỚC 1: Kiểm tra tính hợp lệ của lý do từ chối (bắt buộc nhập và không quá 500 ký tự)
         if (string.IsNullOrWhiteSpace(reason))
@@ -100,7 +100,7 @@ public sealed class LandlordApprovalService : ILandlordApprovalService
         landlord.ReviewedAt = DateTime.UtcNow;
 
         // BƯỚC 4: Yêu cầu Store lưu thay đổi vào cơ sở dữ liệu
-        await SaveReviewAsync(landlord, cancellationToken);
+        await SaveReviewAsync(landlord, cancellationToken, actorAdminUserId);
 
         _logger.LogInformation("Admin đã TỪ CHỐI yêu cầu đăng ký chủ trọ của {UserName} (ID: {UserId}). Lý do: {Reason}",
             landlord.UserName, landlord.Id, trimmedReason);
@@ -112,9 +112,9 @@ public sealed class LandlordApprovalService : ILandlordApprovalService
     /// <summary>
     /// Chặn ghi đè khi một request khác đã xử lý yêu cầu sau bước đọc dữ liệu.
     /// </summary>
-    private async Task SaveReviewAsync(AppUser landlord, CancellationToken cancellationToken)
+    private async Task SaveReviewAsync(AppUser landlord, CancellationToken cancellationToken, string? actorAdminUserId)
     {
-        if (!await _approvalStore.TryReviewPendingAsync(landlord, cancellationToken))
+        if (!await _approvalStore.TryReviewPendingAsync(landlord, cancellationToken, actorAdminUserId))
         {
             throw new AppConflictException("Yêu cầu đăng ký đã được xử lý bởi một thao tác khác.");
         }

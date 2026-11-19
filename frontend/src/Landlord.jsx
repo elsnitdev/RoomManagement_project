@@ -487,7 +487,7 @@ export default function Landlord({
   if (page === "billing")
     return <InvoicePaymentPage invoices={scopedInvoices} historyInvoices={invoiceHistory} invoiceId={roomId} navigate={navigate} onAddAdjustment={addInvoiceAdjustment} />;
   if (page === "requests")
-    return <LandlordRequestsPage notify={notify} />;
+    return <LandlordRequestsPage notify={notify} navigate={navigate} />;
   return (
     <LandlordOverview
       selectedProperty={selectedProperty}

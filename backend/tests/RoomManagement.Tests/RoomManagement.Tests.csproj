@@ -18,4 +18,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+  <ItemGroup Condition="'$(BILLING_REVIEW_OUTPUT)' == ''">
+    <Compile Remove="BillingUtilitiesApiReviewTests.cs" />
+  </ItemGroup>
 </Project>

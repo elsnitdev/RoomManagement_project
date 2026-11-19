@@ -8,7 +8,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  DoorOpen,
   FileText,
+  ReceiptText,
   Info,
   Plus,
   Search,
@@ -66,6 +68,9 @@ const statusText = {
   Terminated: "Đã kết thúc",
   Cancelled: "Đã hủy",
 };
+const EDITABLE_STATUSES = ["Draft", "PendingTenantConfirmation", "PendingOperatorConfirmation"];
+const formatOfferDeadline = (value) =>
+  new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 const PENDING_STATUSES = [
   "Draft",
   "PendingTenantConfirmation",
@@ -336,11 +341,12 @@ function MonthPicker({ value, min, onChange }) {
 
 function Status({ contract }) {
   const upcoming = isUpcoming(contract);
+  const rejected = contract?.status === "Draft" && contract.tenantRejectedAt;
   return (
     <span
       className={`ct-status ct-status--${upcoming ? "upcoming" : contract?.status?.toLowerCase()}`}
     >
-      {upcoming
+      {rejected ? "Người thuê đã từ chối" : upcoming
         ? "Sắp bắt đầu"
         : statusText[contract?.status] || contract?.status}
     </span>
@@ -423,9 +429,13 @@ export default function LandlordContracts({
   const [extraTenantId, setExtraTenantId] = useState("");
   const [extraTenantRole, setExtraTenantRole] = useState("ContractParty");
   const [extraJoinDate, setExtraJoinDate] = useState(today);
+  const [leaveForm, setLeaveForm] = useState(null);
+  const [leaveError, setLeaveError] = useState("");
   const [editForm, setEditForm] = useState(null);
   const [contractSearch, setContractSearch] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(
+    ["expiring", "settlement", "pending"].includes(first) ? first : "all",
+  );
   const [sortBy, setSortBy] = useState("newest");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -520,6 +530,7 @@ export default function LandlordContracts({
             depositAmount: String(item.depositAmount),
             paymentDueDay: String(item.paymentDueDay || ""),
             note: item.note || "",
+            tenancyMode: item.tenancyMode,
           });
           setExtraJoinDate(item.startDate > today() ? item.startDate : today());
         }
@@ -591,6 +602,13 @@ export default function LandlordContracts({
     () => (detail?.tenants || []).filter((member) => !member.leaveDate),
     [detail],
   );
+  const leavingIndex = currentMembers.findIndex((member) => member.id === leaveForm?.linkId);
+  const leavingMember = currentMembers[leavingIndex];
+  const representativeOptions = leavingMember?.isContactPerson
+    ? [...currentMembers.slice(leavingIndex + 1), ...currentMembers.slice(0, leavingIndex)]
+        .filter((member) => member.canRepresent &&
+          Date.parse(member.joinDate) - Date.parse(leaveForm.leaveDate) <= 86_400_000)
+    : [];
   const unavailableIds = useMemo(
     () => new Set(currentMembers.map((member) => member.tenantId)),
     [currentMembers],
@@ -955,9 +973,7 @@ export default function LandlordContracts({
           ? "Đã tạo hợp đồng và phát hành hóa đơn cọc."
           : "Đã tạo hợp đồng nháp.",
       );
-      if (created.depositInvoiceId)
-        navigate(`landlord/billing/${created.depositInvoiceId}`);
-      else routeTo(navigate, `/${propertyId}/${created.id}`);
+      routeTo(navigate, `/${propertyId}/${created.id}`);
     } catch (cause) {
       const conflict = cause?.details?.code === "CONTRACT_PERIOD_OVERLAP"
         ? cause.details.conflictingContract
@@ -970,7 +986,7 @@ export default function LandlordContracts({
     }
   }
 
-  async function run(action, message) {
+  async function run(action, message, onError = setError) {
     setBusy(true);
     setError("");
     setConflictingContract(null);
@@ -984,9 +1000,56 @@ export default function LandlordContracts({
         ? cause.details.conflictingContract
         : null;
       setConflictingContract(conflict);
-      setError(conflict
+      onError(conflict
         ? `Thời gian thuê trùng với hợp đồng ${conflict.code} (${displayDate(conflict.startDate)}–${displayDate(conflict.endDate)}).`
         : errorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function saveLeave(event) {
+    event.preventDefault();
+    setLeaveError("");
+    let saved = false;
+    run(async () => {
+      await contractApi.leave(propertyId, contractId, leaveForm.linkId, leaveForm.leaveDate,
+        leaveForm.replacementLinkId || undefined);
+      saved = true;
+      setLeaveForm(null);
+    }, "Đã ghi ngày rời. Hãy rà lại dịch vụ của phòng nếu số lượng cần đổi.", (message) => {
+      (saved ? setError : setLeaveError)(message);
+    });
+  }
+
+  async function saveContractEdit() {
+    const endDate = endOfMonth(editForm.endMonth);
+    if (!endDate || !editForm.startDate || endDate < editForm.startDate || endDate < today()) {
+      setError("Ngày kết thúc phải từ hôm nay trở đi và không trước ngày bắt đầu.");
+      return;
+    }
+    if (detail.status !== "Draft" && !window.confirm(
+      "Lưu thay đổi sẽ thu hồi đề nghị hiện tại và đưa hợp đồng về nháp. Sau khi bạn gửi lại, người thuê có 72 giờ để phản hồi."
+    )) return;
+
+    setBusy(true);
+    setError("");
+    try {
+      await contractApi.update(propertyId, contractId, {
+        startDate: editForm.startDate,
+        endDate,
+        monthlyRent: Number(editForm.monthlyRent),
+        depositAmount: Number(editForm.depositAmount),
+        paymentDueDay: editForm.paymentDueDay ? Number(editForm.paymentDueDay) : null,
+        note: editForm.note,
+        tenancyMode: editForm.tenancyMode,
+      });
+      setDetail(await contractApi.detail(propertyId, contractId));
+      setDepositRevision((value) => value + 1);
+      notify?.("Đã lưu bản nháp hợp đồng.");
+      routeTo(navigate, "/" + propertyId + "/" + contractId);
+    } catch (cause) {
+      setError(errorText(cause));
     } finally {
       setBusy(false);
     }
@@ -2018,23 +2081,53 @@ export default function LandlordContracts({
                   />
                 </p>
                 {mode === "detail" && (
-                  <a className="contract-button contract-button--ghost" href="#contract-members">
-                    Xem {detail.tenants?.length || 0} người tham gia
-                  </a>
+                  <div className="ct-detail-quick-links" style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "12px" }}>
+                    {detail.roomId && (
+                      <button
+                        type="button"
+                        className="contract-button contract-button--secondary"
+                        onClick={() => navigate(`landlord/properties/${propertyId}/rooms/${detail.roomId}`)}
+                      >
+                        <DoorOpen size={16} aria-hidden="true" />
+                        <span>Xem phòng {detail.roomNumber || ""}</span>
+                      </button>
+                    )}
+                    {detail.roomId && (
+                      <button
+                        type="button"
+                        className="contract-button contract-button--secondary"
+                        onClick={() => navigate(`landlord/billing/rooms/${propertyId}/${detail.roomId}`)}
+                      >
+                        <ReceiptText size={16} aria-hidden="true" />
+                        <span>Xem hóa đơn phòng</span>
+                      </button>
+                    )}
+                    {depositInvoice?.id && (
+                      <button
+                        type="button"
+                        className="contract-button contract-button--secondary"
+                        onClick={() => navigate(`landlord/billing/${depositInvoice.id}`)}
+                      >
+                        <FileText size={16} aria-hidden="true" />
+                        <span>Xem hóa đơn hợp đồng</span>
+                      </button>
+                    )}
+                    <a className="contract-button contract-button--ghost" href="#contract-members">
+                      Xem {detail.tenants?.length || 0} người tham gia
+                    </a>
+                  </div>
                 )}
               </div>
               <Status contract={detail} />
             </header>
             {mode === "edit" ? (
               <section className="ct-card">
-                <h2>Chỉnh sửa bản nháp</h2>
-                <p className="ct-api-note">
-                  Bạn có thể chuẩn bị thay đổi tại đây. API hiện chưa hỗ trợ lưu
-                  nội dung hợp đồng; nút Lưu sẽ khả dụng sau khi API được bổ
-                  sung.
-                </p>
-                {detail.status !== "Draft" ? (
-                  <p>Chỉ có thể chỉnh sửa hợp đồng nháp.</p>
+                <h2>Chỉnh sửa hợp đồng</h2>
+                {EDITABLE_STATUSES.includes(detail.status) && detail.status !== "Draft" && (
+                  <p className="ct-api-note">Khi lưu, đề nghị hiện tại được thu hồi. Bạn có thể gửi lại bản mới để người thuê phản hồi trong 72 giờ.</p>
+                )}
+                {!EDITABLE_STATUSES.includes(detail.status) ? (
+                  <p>Trạng thái hiện tại đã khóa sửa điều khoản.</p>
                 ) : (
                   editForm && (
                     <div className="ct-fields">
@@ -2058,7 +2151,7 @@ export default function LandlordContracts({
                         Tháng kết thúc
                         <MonthPicker
                           value={editForm.endMonth}
-                          min={editForm.startDate.slice(0, 7)}
+                          min={[today().slice(0, 7), editForm.startDate.slice(0, 7)].sort().at(-1)}
                           onChange={(value) =>
                             setEditForm((current) => ({
                               ...current,
@@ -2089,6 +2182,7 @@ export default function LandlordContracts({
                           min="0"
                           step="1000"
                           value={editForm.depositAmount}
+                          disabled={depositInvoiceLoading || (depositInvoice && depositInvoice.status !== "Cancelled")}
                           onChange={(event) =>
                             setEditForm((current) => ({
                               ...current,
@@ -2110,7 +2204,7 @@ export default function LandlordContracts({
                         >
                           <option value="">Chưa thiết lập</option>
                           {Array.from(
-                            { length: 15 },
+                            { length: 31 },
                             (_, index) => index + 1,
                           ).map((day) => (
                             <option key={day} value={day}>
@@ -2120,9 +2214,22 @@ export default function LandlordContracts({
                         </select>
                       </label>
                       <label>
+                        Hình thức thuê
+                        <select
+                          value={editForm.tenancyMode}
+                          onChange={(event) =>
+                            setEditForm((current) => ({ ...current, tenancyMode: event.target.value }))
+                          }
+                        >
+                          <option value="CoTenancy">Đồng thuê</option>
+                          <option value="PrimaryTenantWithFamily">Một người đứng tên, người thân cùng ở</option>
+                        </select>
+                      </label>
+                      <label>
                         Ghi chú
                         <textarea
                           rows={3}
+                          maxLength={1000}
                           value={editForm.note}
                           onChange={(event) =>
                             setEditForm((current) => ({
@@ -2148,8 +2255,8 @@ export default function LandlordContracts({
                   <button
                     type="button"
                     className="contract-button contract-button--primary"
-                    disabled
-                    title="API cập nhật hợp đồng chưa có"
+                    disabled={busy || !editForm || !EDITABLE_STATUSES.includes(detail.status)}
+                    onClick={saveContractEdit}
                   >
                     Lưu thay đổi
                   </button>
@@ -2161,7 +2268,7 @@ export default function LandlordContracts({
                   <section className="ct-card">
                     <div className="ct-card-title">
                       <h2>Thông tin hợp đồng</h2>
-                      {detail.status === "Draft" && (
+                      {EDITABLE_STATUSES.includes(detail.status) && (
                         <button
                           type="button"
                           className="contract-button contract-button--secondary"
@@ -2266,6 +2373,18 @@ export default function LandlordContracts({
                   <aside className="ct-card">
                     <h2>Trạng thái và thao tác</h2>
                     <Status contract={detail} />
+                    {detail.status === "Draft" && detail.tenantRejectedAt && (
+                      <p className="ct-member-note" role="status">
+                        Người thuê đã từ chối phiên bản {detail.offerVersion}.
+                        {detail.tenantRejectionReason && <> Lý do: {detail.tenantRejectionReason}</>}
+                      </p>
+                    )}
+                    {detail.status === "PendingTenantConfirmation" && detail.offerResponseDeadline && (
+                      <p className="ct-member-note">Hạn người thuê phản hồi: {formatOfferDeadline(detail.offerResponseDeadline)} (giờ Việt Nam).</p>
+                    )}
+                    {detail.status === "PendingOperatorConfirmation" && detail.offerResponseTimedOutAt && (
+                      <p className="ct-member-note" role="status">Đã hết 72 giờ phản hồi. Hệ thống chuyển đề nghị sang chờ bạn duyệt.</p>
+                    )}
                     {detail.tenantConfirmedAt && (
                       <p className="ct-member-note">
                         Người thuê đại diện đã xác nhận {detail.workflow === "Invitation" ? "lời mời" : "hợp đồng và nội quy"} lúc{" "}
@@ -2275,6 +2394,9 @@ export default function LandlordContracts({
                     <div className="ct-actions">
                       {detail.status === "Draft" && (
                         <>
+                          {detail.offerVersion > 0 && (
+                            <p className="ct-member-note">Khi gửi phiên bản mới, người thuê đại diện có 72 giờ để phản hồi. Nếu hết hạn, đề nghị sẽ chuyển sang chờ bạn duyệt.</p>
+                          )}
                           {detail.workflow === "Invitation" && detail.tenants?.some(person => !person.userId) && (
                             <p className="ct-member-note" role="alert">Mỗi người được mời cần có tài khoản để tự xác nhận. Hãy liên kết tài khoản trước khi gửi.</p>
                           )}
@@ -2290,7 +2412,7 @@ export default function LandlordContracts({
                               )
                             }
                           >
-                            {detail.workflow === "Invitation" ? "Gửi lời mời tham gia" : "Gửi đề nghị cho người thuê"}
+                            {detail.offerVersion > 0 ? "Gửi phiên bản mới" : detail.workflow === "Invitation" ? "Gửi lời mời tham gia" : "Gửi đề nghị cho người thuê"}
                           </button>
                           <button
                             type="button"
@@ -2356,16 +2478,14 @@ export default function LandlordContracts({
                             type="button"
                             className="contract-button contract-button--primary"
                             disabled={busy}
-                            onClick={() =>
-                              run(
-                                () => contractApi.activate(propertyId, contractId),
-                                "Đã đối ký và kích hoạt hợp đồng.",
-                              )
-                            }
+                            onClick={() => {
+                              if (detail.offerResponseTimedOutAt && !window.confirm("Đề nghị đã hết hạn phản hồi. Bạn xác nhận duyệt hợp đồng này?")) return;
+                              run(() => contractApi.activate(propertyId, contractId), "Đã duyệt hợp đồng.");
+                            }}
                           >
-                            Đối ký &amp; Kích hoạt hợp đồng
+                            {detail.offerResponseTimedOutAt ? "Duyệt sau khi hết hạn phản hồi" : "Duyệt hợp đồng"}
                           </button>
-                          <button
+                          {detail.workflow !== "Invitation" && <button
                             type="button"
                             className="contract-button contract-button--secondary"
                             disabled={busy}
@@ -2382,7 +2502,7 @@ export default function LandlordContracts({
                             }}
                           >
                             Gửi lại đề nghị cho người thuê
-                          </button>
+                          </button>}
                           <button
                             type="button"
                             className="contract-button contract-button--danger"
@@ -2409,7 +2529,7 @@ export default function LandlordContracts({
                       {detail.status === "PendingStart" && detail.workflow === "Invitation" && (
                         <>
                           <p className="ct-member-note" role="status">
-                            Người đại diện đã xác nhận. Hợp đồng tự có hiệu lực từ {displayDate(detail.startDate)}; những người khác chỉ được tính là thành viên sau khi tự xác nhận.
+                            Hợp đồng tự có hiệu lực từ {displayDate(detail.startDate)}. Người tham gia được tính là thành viên sau khi tự xác nhận.
                           </p>
                           <button type="button" className="contract-button contract-button--danger" disabled={busy} onClick={() => {
                             if (
@@ -2549,7 +2669,7 @@ export default function LandlordContracts({
                           key={item.id}
                           className={`ct-tenant-card ${
                             item.leaveDate ? "is-left" : ""
-                          }`}
+                          } ${leavingMember?.id === item.id ? "ct-tenant-card--editing-leave" : ""}`}
                         >
                           <div className="ct-tenant-main">
                             <span className="ct-tenant-avatar" aria-hidden="true">
@@ -2563,10 +2683,10 @@ export default function LandlordContracts({
                                 {item.isContactPerson && (
                                   <span
                                     className="ct-contact-badge"
-                                    title="Người liên hệ chính của hợp đồng"
+                                    title="Người đại diện hợp đồng"
                                   >
                                     <Star size={11} strokeWidth={2.5} aria-hidden="true" />
-                                    Người liên hệ
+                                    Người đại diện
                                   </span>
                                 )}
                               </div>
@@ -2704,25 +2824,13 @@ export default function LandlordContracts({
                                     type="button"
                                     className="contract-button contract-button--ghost ct-btn-compact"
                                     disabled={busy}
+                                    aria-expanded={leavingMember?.id === item.id}
+                                    aria-controls={leavingMember?.id === item.id ? "contract-leave-form" : undefined}
                                     onClick={() => {
-                                      const leaveDate = window.prompt(
-                                        "Ngày rời (yyyy-mm-dd)",
-                                        today()
-                                      );
-                                      if (
-                                        leaveDate &&
-                                        /^\d{4}-\d{2}-\d{2}$/.test(leaveDate)
-                                      )
-                                        run(
-                                          () =>
-                                            contractApi.leave(
-                                              propertyId,
-                                              contractId,
-                                              item.id,
-                                              leaveDate
-                                            ),
-                                          "Đã ghi ngày rời. Hãy rà lại dịch vụ của phòng nếu số lượng cần đổi."
-                                        );
+                                      setLeaveError("");
+                                      setLeaveForm(leavingMember?.id === item.id ? null : {
+                                        linkId: item.id, leaveDate: today(), replacementLinkId: "",
+                                      });
                                     }}
                                   >
                                     Ghi ngày rời
@@ -2730,6 +2838,59 @@ export default function LandlordContracts({
                                 )}
                               </div>
                             )}
+                          {leavingMember?.id === item.id && (
+                            <form id="contract-leave-form" className="ct-leave-form" onSubmit={saveLeave}>
+                              <div className="ct-fields">
+                                <label>
+                                  Ngày rời
+                                  <input
+                                    type="date"
+                                    min={item.joinDate}
+                                    max={detail.endDate || undefined}
+                                    value={leaveForm.leaveDate}
+                                    disabled={busy}
+                                    required
+                                    onChange={(event) => setLeaveForm({
+                                      ...leaveForm, leaveDate: event.target.value, replacementLinkId: "",
+                                    })}
+                                  />
+                                </label>
+                                {item.isContactPerson && representativeOptions.length > 0 && (
+                                  <label>
+                                    Người đại diện mới
+                                    <select
+                                      value={leaveForm.replacementLinkId}
+                                      disabled={busy}
+                                      onChange={(event) => setLeaveForm({
+                                        ...leaveForm, replacementLinkId: event.target.value,
+                                      })}
+                                    >
+                                      <option value="">Tự động chọn {representativeOptions[0].fullName}</option>
+                                      {representativeOptions.map((member) => (
+                                        <option key={member.id} value={member.id}>{member.fullName}</option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                )}
+                              </div>
+                              {item.isContactPerson && leaveForm.leaveDate && !representativeOptions.length && (
+                                <p className="ct-member-note" role="status">
+                                  Chưa có người đứng tên đủ điều kiện làm đại diện vào ngày rời đã chọn.
+                                </p>
+                              )}
+                              {leaveError && <p className="contract-message contract-message--error" role="alert">{leaveError}</p>}
+                              <div className="ct-tenant-actions">
+                                <button type="button" className="contract-button contract-button--secondary"
+                                  disabled={busy} onClick={() => setLeaveForm(null)}>
+                                  Hủy
+                                </button>
+                                <button type="submit" className="contract-button contract-button--primary"
+                                  disabled={busy || (item.isContactPerson && !representativeOptions.length)}>
+                                  {busy ? "Đang lưu…" : "Xác nhận rời phòng"}
+                                </button>
+                              </div>
+                            </form>
+                          )}
                         </li>
                       ))}
                     </ul>

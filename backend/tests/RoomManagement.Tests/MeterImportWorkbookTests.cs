@@ -41,6 +41,34 @@ public sealed class MeterImportWorkbookTests
     }
 
     [Fact]
+    public void ReadsAnEnteredOpeningWithNoClosingAndKeepsAnUneditedReference()
+    {
+        var uninitialized = new MeterImportCell("NeedsReview", null, null, CanEnterOpening: true);
+        var existing = new MeterImportCell("Missing", 38m, null);
+        var template = MeterImportWorkbook.Create(new MeterImportResult(PropertyId, 2026, 11,
+            [new MeterImportRow(RoomId, "P.101", null, uninitialized, existing)]));
+        using var workbook = EditedWorkbook(row =>
+            SetCell(row, "C5", new XElement(Sheet + "v", "0")), template);
+
+        var input = Assert.Single(MeterImportWorkbook.Read(workbook, PropertyId, 2026, 11)).Input;
+        Assert.Equal(0m, input.InitialElectricityPrevious);
+        Assert.Null(input.Electricity);
+        Assert.Equal(38m, input.ExpectedWaterPrevious);
+        Assert.Null(input.InitialWaterPrevious);
+    }
+
+    [Fact]
+    public void FlagsAChangedOpeningReferenceForValidation()
+    {
+        using var workbook = EditedWorkbook(row =>
+            SetCell(row, "C5", new XElement(Sheet + "v", "5")));
+
+        var input = Assert.Single(MeterImportWorkbook.Read(workbook, PropertyId, 2026, 11)).Input;
+        Assert.Equal(5m, input.InitialElectricityPrevious);
+        Assert.Null(input.Electricity);
+    }
+
+    [Fact]
     public void RejectsFormulaEvenWithCachedValueButKeepsValidOtherReading()
     {
         using var workbook = EditedWorkbook(row =>
@@ -91,9 +119,9 @@ public sealed class MeterImportWorkbookTests
             [new MeterImportRow(RoomId, "P.101", null, emptyReading, emptyReading)]));
     }
 
-    private static MemoryStream EditedWorkbook(Action<XElement> edit)
+    private static MemoryStream EditedWorkbook(Action<XElement> edit, byte[]? templateBytes = null)
     {
-        using var template = new MemoryStream(TemplateBytes());
+        using var template = new MemoryStream(templateBytes ?? TemplateBytes());
         using var input = new ZipArchive(template, ZipArchiveMode.Read);
         var buffer = new MemoryStream();
         using (var output = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))

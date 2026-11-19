@@ -37,12 +37,13 @@ public sealed record AddContractTenantRequest(
 
 public sealed record AddContractUserRequest([Required, EmailAddress] string Email,
     [property: JsonRequired] DateOnly JoinDate);
-public sealed record LeaveContractRequest([property: JsonRequired] DateOnly LeaveDate);
+public sealed record LeaveContractRequest([property: JsonRequired] DateOnly LeaveDate, Guid? ReplacementLinkId = null);
 public sealed record TerminateContractRequest([Required, StringLength(1000)] string Reason);
 public sealed record HandoverContractRequest([property: JsonRequired] DateOnly HandoverOn);
 public sealed record ContractMeterReadingRequest([property: JsonRequired] UtilityType Type,
     [property: JsonRequired] short Year, [property: JsonRequired] byte Month,
-    [property: JsonRequired] decimal PreviousValue, [property: JsonRequired] decimal CurrentValue);
+    [property: JsonRequired] decimal PreviousValue, [property: JsonRequired] decimal CurrentValue,
+    string? ExpectedVersion = null);
 public sealed record CompleteContractSettlementRequest(
     [Required] string DepositDisposition,
     [property: JsonRequired] decimal RefundAmount,
@@ -106,7 +107,7 @@ public sealed record ConfirmContractOfferRequest(
 }
 
 public sealed record RejectContractOfferRequest(
-    [StringLength(1000)] string? Reason);
+    [StringLength(1000)] string? Reason, int? OfferVersion = null);
 
 public sealed record AcceptContractInvitationRequest(
     [property: JsonRequired] int OfferVersion,

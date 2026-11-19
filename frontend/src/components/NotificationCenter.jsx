@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
+  ArrowLeft,
   BellOff,
+  Building2,
   CheckCheck,
   ChevronRight,
   Clock,
@@ -13,10 +15,13 @@ import {
   Plus,
   ReceiptText,
   Send,
+  ShieldAlert,
+  UserRound,
+  Users,
   X,
 } from 'lucide-react'
 import { notificationApi } from '../services/api/notificationApi'
-import { listProperties } from '../services/api/PropertyApi'
+import NotificationComposerModal from './NotificationComposerModal'
 import '../styles/notifications.css'
 
 function getNotificationMeta(item) {
@@ -35,17 +40,60 @@ function getNotificationMeta(item) {
       Icon: FileText,
     }
   }
-  if (item?.requestId || type.includes('request')) {
+  if (type === 'tenantrequest' || (item?.requestId && !type.includes('announcement'))) {
     return {
       label: 'Yêu cầu',
       badgeClass: 'nt-type-badge--request',
       Icon: MessageSquareText,
     }
   }
+  if (
+    type === 'systembroadcast' ||
+    type === 'adminlandlordbroadcast' ||
+    type === 'admindirectlandlord'
+  ) {
+    return {
+      label: 'Hệ thống · Admin',
+      badgeClass: 'nt-type-badge--system',
+      Icon: ShieldAlert,
+    }
+  }
+  if (
+    type === 'operatoralltenants' ||
+    type === 'propertyannouncement' ||
+    type === 'operatordirecttenant' ||
+    type === 'managerannouncement' ||
+    type === 'announcement'
+  ) {
+    return {
+      label: 'Ban quản lý',
+      badgeClass: 'nt-type-badge--general',
+      Icon: Megaphone,
+    }
+  }
   return {
     label: 'Thông báo chung',
     badgeClass: 'nt-type-badge--general',
     Icon: Megaphone,
+  }
+}
+
+function getSentScopeBadge(item) {
+  switch (item?.targetScope) {
+    case 'AllSystem':
+      return { label: 'Toàn hệ thống', badgeClass: 'nt-type-badge--system' }
+    case 'AllLandlords':
+      return { label: 'Tất cả chủ trọ', badgeClass: 'nt-type-badge--system' }
+    case 'SpecificLandlord':
+      return { label: 'Chủ trọ cụ thể', badgeClass: 'nt-type-badge--system' }
+    case 'AllActiveTenants':
+      return { label: 'Tất cả người thuê', badgeClass: 'nt-type-badge--general' }
+    case 'SpecificProperty':
+      return { label: 'Theo khu trọ', badgeClass: 'nt-type-badge--contract' }
+    case 'SpecificTenant':
+      return { label: 'Cá nhân cụ thể', badgeClass: 'nt-type-badge--request' }
+    default:
+      return { label: 'Đã phát hành', badgeClass: 'nt-type-badge--general' }
   }
 }
 
@@ -62,8 +110,9 @@ function formatDateTime(value) {
   })
 }
 
-export default function NotificationCenter({ role, onReadChange }) {
+export default function NotificationCenter({ role, initialNotificationId = '', navigate, onReadChange, notify }) {
   const [items, setItems] = useState([])
+  const [sentItems, setSentItems] = useState([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [filter, setFilter] = useState('all')
@@ -72,19 +121,16 @@ export default function NotificationCenter({ role, onReadChange }) {
   const [error, setError] = useState('')
 
   const [selectedNotification, setSelectedNotification] = useState(null)
+  const [detailItem, setDetailItem] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [selectedSent, setSelectedSent] = useState(null)
   const [markingReadId, setMarkingReadId] = useState(null)
   const [markingAll, setMarkingAll] = useState(false)
   const markingReadRef = useRef(new Set())
 
   const [showComposer, setShowComposer] = useState(false)
-  const [properties, setProperties] = useState([])
-  const [propertyId, setPropertyId] = useState('')
-  const [title, setTitle] = useState('')
-  const [message, setMessage] = useState('')
-  const [confirmingSend, setConfirmingSend] = useState(false)
-  const [sending, setSending] = useState(false)
 
-  const canBroadcast = role === 'Admin' || role === 'Manager'
+  const canSendNotification = role === 'Admin' || role === 'Landlord' || role === 'Manager'
 
   const fetchUnreadCount = useCallback(async () => {
     try {
@@ -100,39 +146,43 @@ export default function NotificationCenter({ role, onReadChange }) {
     setLoading(true)
     setError('')
     try {
-      const unreadOnly = nextFilter === 'unread'
-      const [response] = await Promise.all([
-        notificationApi.list(nextPage, unreadOnly),
-        fetchUnreadCount(),
-      ])
-      setItems(response.data || [])
-      setTotalPages(Math.max(1, response.meta?.totalPages || 1))
-      setPage(nextPage)
-      onReadChange?.()
+      if (nextFilter === 'sent' && canSendNotification) {
+        const [response] = await Promise.all([
+          notificationApi.listSent(nextPage, 20),
+          fetchUnreadCount(),
+        ])
+        setSentItems(response.data || [])
+        setTotalPages(Math.max(1, response.meta?.totalPages || 1))
+        setPage(nextPage)
+      } else {
+        const unreadOnly = nextFilter === 'unread'
+        const [response] = await Promise.all([
+          notificationApi.list(nextPage, unreadOnly),
+          fetchUnreadCount(),
+        ])
+        setItems(response.data || [])
+        setTotalPages(Math.max(1, response.meta?.totalPages || 1))
+        setPage(nextPage)
+        onReadChange?.()
+      }
     } catch (e) {
       setError(e.message || 'Không thể tải thông báo.')
     } finally {
       setLoading(false)
     }
-  }, [filter, fetchUnreadCount, onReadChange])
+  }, [filter, canSendNotification, fetchUnreadCount, onReadChange])
 
   useEffect(() => {
-    load(1, 'all')
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!canSendNotification && filter === 'sent') {
+      setFilter('all')
+      load(1, 'all')
+      return
+    }
+    load(1, filter)
+  }, [role]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (role !== 'Manager') return
-    listProperties({ page: 1, pageSize: 100, isActive: true })
-      .then((response) => {
-        const rows = response.data || []
-        setProperties(rows)
-        setPropertyId(rows[0]?.id || '')
-      })
-      .catch((e) => setError(e.message || 'Không thể tải khu trọ.'))
-  }, [role])
-
-  useEffect(() => {
-    if (!selectedNotification && !showComposer) return undefined
+    if (!selectedNotification && !selectedSent) return undefined
 
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -141,9 +191,8 @@ export default function NotificationCenter({ role, onReadChange }) {
       if (event.key !== 'Escape') return
       if (selectedNotification) {
         setSelectedNotification(null)
-      } else if (showComposer && !sending) {
-        setShowComposer(false)
-        setConfirmingSend(false)
+      } else if (selectedSent) {
+        setSelectedSent(null)
       }
     }
 
@@ -152,7 +201,7 @@ export default function NotificationCenter({ role, onReadChange }) {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [selectedNotification, showComposer, sending])
+  }, [selectedNotification, selectedSent])
 
   async function markRead(id) {
     if (!id || markingReadRef.current.has(id)) return
@@ -181,15 +230,31 @@ export default function NotificationCenter({ role, onReadChange }) {
     }
   }
 
+  const roleBase = role === 'Tenant' ? 'tenant' : role === 'Admin' ? 'admin' : 'landlord'
+
   function openDetail(item) {
-    setSelectedNotification(item)
+    if (!item?.id) return
     if (!item.isRead) {
       markRead(item.id)
+    }
+    if (navigate) {
+      navigate(`${roleBase}/notifications/${item.id}`)
+    } else {
+      window.location.hash = `/${roleBase}/notifications/${item.id}`
+    }
+  }
+
+  function backToList() {
+    setDetailItem(null)
+    if (navigate) {
+      navigate(`${roleBase}/notifications`)
+    } else {
+      window.location.hash = `/${roleBase}/notifications`
     }
   }
 
   async function markAllRead() {
-    if (markingAll || unreadCount === 0) return
+    if (markingAll || unreadCount === 0 || filter === 'sent') return
     setMarkingAll(true)
     setError('')
     try {
@@ -222,47 +287,216 @@ export default function NotificationCenter({ role, onReadChange }) {
     load(1, nextFilter)
   }
 
-  function handleComposerSubmit(event) {
-    event.preventDefault()
-    if (!title.trim() || !message.trim()) return
-    if (role === 'Manager' && !propertyId) return
-    setConfirmingSend(true)
+  function hasRelatedLink(item) {
+    if (!item || role === 'Admin') return false
+    const type = (item?.type || '').toLowerCase()
+    if (item.invoiceId || item.contractId) return true
+    if (item.requestId && !type.includes('announcement')) return true
+    return false
   }
 
-  async function confirmBroadcast() {
-    setSending(true)
-    setError('')
-    try {
-      const body = {
-        title: title.trim(),
-        message: message.trim(),
-        idempotencyKey: crypto.randomUUID(),
-      }
-      if (role === 'Admin') await notificationApi.adminBroadcast(body)
-      else await notificationApi.managerBroadcast(propertyId, body)
-      setTitle('')
-      setMessage('')
-      setConfirmingSend(false)
-      setShowComposer(false)
-      await load(1, filter)
-    } catch (e) {
-      setError(e.message || 'Không thể gửi thông báo.')
-    } finally {
-      setSending(false)
-    }
+  function relatedLabel(item) {
+    if (item?.invoiceId) return 'Xem chi tiết hóa đơn'
+    if (item?.contractId) return 'Xem chi tiết hợp đồng'
+    if (item?.requestId) return 'Xem chi tiết yêu cầu'
+    return 'Xem nội dung liên quan'
   }
 
   function openRelated(item) {
+    if (!hasRelatedLink(item)) return
     setSelectedNotification(null)
     const base = role === 'Tenant' ? 'tenant' : 'landlord'
-    if (item.invoiceId) window.location.hash = `/${base}/billing`
-    else if (item.contractId) window.location.hash = `/${base}/contracts`
-    else if (item.requestId) window.location.hash = `/${base}/requests`
+    let target = `${base}/notifications`
+    if (item.invoiceId) {
+      target = `${base}/billing/${item.invoiceId}`
+    } else if (item.contractId) {
+      target =
+        role !== 'Tenant' && item.propertyId
+          ? `landlord/contracts/${item.propertyId}/${item.contractId}`
+          : `${base}/contracts`
+    } else if (item.requestId) {
+      target = `${base}/requests`
+    }
+    if (navigate) navigate(target)
+    else window.location.hash = `/${target}`
   }
 
-  const hasRelatedLink = (item) => Boolean(item?.invoiceId || item?.contractId || item?.requestId)
+  useEffect(() => {
+    if (!initialNotificationId) {
+      setDetailItem(null)
+      setDetailLoading(false)
+      return
+    }
+    const fromList = items.find((entry) => String(entry.id) === String(initialNotificationId))
+    if (fromList) {
+      setDetailItem(fromList)
+      if (!fromList.isRead) markRead(fromList.id)
+      return
+    }
+    let cancelled = false
+    setDetailLoading(true)
+    notificationApi
+      .list(1, false, 100)
+      .then((res) => {
+        if (cancelled) return
+        const found = (res?.data || []).find(
+          (entry) => String(entry.id) === String(initialNotificationId),
+        )
+        if (found) {
+          setDetailItem(found)
+          if (!found.isRead) markRead(found.id)
+        } else {
+          setDetailItem(null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setDetailItem(null)
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [initialNotificationId, items])
+
+  const subtitle =
+    role === 'Admin'
+      ? 'Nhận thông báo hệ thống và gửi thông báo tới toàn hệ thống, các chủ trọ hoặc một chủ trọ cụ thể.'
+      : role === 'Landlord' || role === 'Manager'
+        ? 'Nhận thông báo từ quản trị viên, yêu cầu từ người thuê và gửi thông báo tới người thuê đang có hợp đồng hoạt động.'
+        : 'Theo dõi hóa đơn, hợp đồng, yêu cầu hỗ trợ và thông báo từ ban quản lý.'
 
   const selectedMeta = selectedNotification ? getNotificationMeta(selectedNotification) : null
+  const selectedSentMeta = selectedSent ? getSentScopeBadge(selectedSent) : null
+
+  if (initialNotificationId) {
+    const detailMeta = detailItem ? getNotificationMeta(detailItem) : null
+    const DetailIcon = detailMeta?.Icon
+    return (
+      <section className="nt-page nt-page--detail">
+        <button type="button" className="nt-back-btn" onClick={backToList}>
+          <ArrowLeft size={16} aria-hidden="true" />
+          <span>Quay lại danh sách thông báo</span>
+        </button>
+
+        {detailLoading && !detailItem ? (
+          <div className="nt-card nt-detail-card">
+            <div className="nt-state" role="status">
+              <p className="nt-state-text">Đang tải chi tiết thông báo…</p>
+            </div>
+          </div>
+        ) : !detailItem ? (
+          <div className="nt-card nt-detail-card">
+            <div className="nt-state">
+              <div className="nt-state-icon">
+                <BellOff size={24} aria-hidden="true" />
+              </div>
+              <strong className="nt-state-title">Không tìm thấy thông báo</strong>
+              <p className="nt-state-text">
+                Thông báo không tồn tại hoặc đã bị xóa khỏi hộp thư của bạn.
+              </p>
+              <button type="button" className="nt-btn nt-btn--primary" onClick={backToList}>
+                Về danh sách thông báo
+              </button>
+            </div>
+          </div>
+        ) : (
+          <article className="nt-card nt-detail-card">
+            <header className="nt-detail-head">
+              <div className="nt-detail-head-top">
+                {DetailIcon && (
+                  <span className="nt-detail-icon">
+                    <DetailIcon size={21} aria-hidden="true" />
+                  </span>
+                )}
+                <div className="nt-detail-head-copy">
+                  <div className="nt-detail-badges">
+                    {detailMeta && (
+                      <span className={`nt-type-badge ${detailMeta.badgeClass}`}>
+                        <span>{detailMeta.label}</span>
+                      </span>
+                    )}
+                    <span className={`nt-status-pill ${detailItem.isRead ? 'nt-status-pill--read' : 'nt-status-pill--new'}`}>
+                      {detailItem.isRead ? 'Đã đọc' : 'Mới'}
+                    </span>
+                  </div>
+                  <h1 className="nt-detail-title">{detailItem.title}</h1>
+                </div>
+              </div>
+
+              <div className="nt-detail-meta-bar">
+                <span className="nt-detail-meta-chip">
+                  <Clock size={13} aria-hidden="true" />
+                  <span>{formatDateTime(detailItem.createdAt)}</span>
+                </span>
+                {detailItem.senderName && (
+                  <span className="nt-detail-meta-chip">
+                    <UserRound size={13} aria-hidden="true" />
+                    <span>Từ: <strong>{detailItem.senderName}</strong></span>
+                  </span>
+                )}
+                {detailItem.propertyName && (
+                  <span className="nt-detail-meta-chip">
+                    <Building2 size={13} aria-hidden="true" />
+                    <span>{detailItem.propertyName}</span>
+                  </span>
+                )}
+              </div>
+            </header>
+
+            <div className="nt-detail-body">
+              <p className="nt-detail-message">{detailItem.message}</p>
+
+              {hasRelatedLink(detailItem) && (
+                <div className="nt-detail-callout">
+                  <div className="nt-detail-callout__info">
+                    {DetailIcon && (
+                      <span className="nt-detail-callout__icon">
+                        <DetailIcon size={18} aria-hidden="true" />
+                      </span>
+                    )}
+                    <div>
+                      <strong>
+                        {detailItem.invoiceId
+                          ? 'Hóa đơn liên quan'
+                          : detailItem.contractId
+                            ? 'Hợp đồng liên quan'
+                            : 'Yêu cầu liên quan'}
+                      </strong>
+                      <span>
+                        Nhấn để mở trực tiếp trang chi tiết và thực hiện thao tác tiếp theo.
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="nt-btn nt-btn--primary"
+                    onClick={() => openRelated(detailItem)}
+                  >
+                    <span>{relatedLabel(detailItem)}</span>
+                    <ExternalLink size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <footer className="nt-detail-foot">
+              <span className="nt-detail-foot-note">
+                {detailItem.readAt
+                  ? `Đã xem lúc ${formatDateTime(detailItem.readAt)}`
+                  : 'Thông báo đã được đánh dấu là đã đọc'}
+              </span>
+              <button type="button" className="nt-btn nt-btn--subtle" onClick={backToList}>
+                <ArrowLeft size={15} aria-hidden="true" />
+                <span>Danh sách thông báo</span>
+              </button>
+            </footer>
+          </article>
+        )}
+      </section>
+    )
+  }
 
   return (
     <section className="nt-page">
@@ -270,22 +504,17 @@ export default function NotificationCenter({ role, onReadChange }) {
         <div className="nt-header-copy">
           <span className="nt-eyebrow">TRUNG TÂM THÔNG BÁO</span>
           <h1 className="nt-title">Thông báo</h1>
-          <p className="nt-subtitle">
-            Theo dõi hóa đơn, hợp đồng, yêu cầu hỗ trợ và thông báo từ ban quản lý.
-          </p>
+          <p className="nt-subtitle">{subtitle}</p>
         </div>
 
-        {canBroadcast && (
+        {canSendNotification && (
           <button
             type="button"
             className="nt-btn nt-btn--primary"
-            onClick={() => {
-              setConfirmingSend(false)
-              setShowComposer(true)
-            }}
+            onClick={() => setShowComposer(true)}
           >
             <Plus size={16} aria-hidden="true" />
-            <span>Phát hành thông báo</span>
+            <span>Gửi thông báo</span>
           </button>
         )}
       </header>
@@ -312,17 +541,31 @@ export default function NotificationCenter({ role, onReadChange }) {
               <span>Chưa đọc</span>
               <span className="nt-tab-badge">{unreadCount}</span>
             </button>
+            {canSendNotification && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={filter === 'sent'}
+                className={`nt-tab ${filter === 'sent' ? 'is-active' : ''}`}
+                onClick={() => handleFilterChange('sent')}
+              >
+                <Send size={13} aria-hidden="true" />
+                <span>Đã gửi</span>
+              </button>
+            )}
           </div>
 
-          <button
-            type="button"
-            className="nt-btn nt-btn--ghost"
-            disabled={loading || markingAll || unreadCount === 0}
-            onClick={markAllRead}
-          >
-            <CheckCheck size={16} aria-hidden="true" />
-            <span>{markingAll ? 'Đang xử lý…' : 'Đánh dấu tất cả đã đọc'}</span>
-          </button>
+          {filter !== 'sent' && (
+            <button
+              type="button"
+              className="nt-btn nt-btn--ghost"
+              disabled={loading || markingAll || unreadCount === 0}
+              onClick={markAllRead}
+            >
+              <CheckCheck size={16} aria-hidden="true" />
+              <span>{markingAll ? 'Đang xử lý…' : 'Đánh dấu tất cả đã đọc'}</span>
+            </button>
+          )}
         </div>
 
         {error && (
@@ -334,6 +577,81 @@ export default function NotificationCenter({ role, onReadChange }) {
 
         {loading ? (
           <div className="nt-loading">Đang tải thông báo…</div>
+        ) : filter === 'sent' ? (
+          sentItems.length > 0 ? (
+            <ul className="nt-list">
+              {sentItems.map((sent) => {
+                const scopeMeta = getSentScopeBadge(sent)
+                const allRead = sent.totalRecipients > 0 && sent.readCount >= sent.totalRecipients
+                return (
+                  <li
+                    key={sent.eventKey}
+                    role="button"
+                    tabIndex={0}
+                    className="nt-item nt-item--read"
+                    onClick={() => setSelectedSent(sent)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        setSelectedSent(sent)
+                      }
+                    }}
+                  >
+                    <div className="nt-item-icon" aria-hidden="true">
+                      <Send size={17} />
+                    </div>
+
+                    <div className="nt-item-body">
+                      <div className="nt-item-top">
+                        <h3 className="nt-item-title" style={{ color: '#102a43', fontWeight: 700 }}>
+                          {sent.title}
+                        </h3>
+                        <span className={`nt-type-badge ${scopeMeta.badgeClass}`}>
+                          {scopeMeta.label}
+                        </span>
+                      </div>
+
+                      <p className="nt-item-preview">{sent.message}</p>
+
+                      <div className="nt-item-meta-row">
+                        <span className="nt-item-meta">
+                          <Users size={12} aria-hidden="true" />
+                          <span>{sent.targetLabel}</span>
+                        </span>
+                        <span className="nt-item-meta">
+                          <Clock size={12} aria-hidden="true" />
+                          <span>{formatDateTime(sent.createdAt)}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="nt-item-side">
+                      <span
+                        className={`nt-progress-pill${allRead ? ' nt-progress-pill--done' : ''}`}
+                      >
+                        Đã đọc {sent.readCount}/{sent.totalRecipients}
+                      </span>
+
+                      <span className="nt-detail-hint">
+                        <span>Xem chi tiết</span>
+                        <ChevronRight size={14} aria-hidden="true" />
+                      </span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <div className="nt-empty">
+              <div className="nt-empty-icon" aria-hidden="true">
+                <Send size={24} />
+              </div>
+              <h3 className="nt-empty-title">Chưa có thông báo đã gửi</h3>
+              <p className="nt-empty-desc">
+                Nhấn nút “Gửi thông báo” để phát hành thông báo tới đối tượng mong muốn.
+              </p>
+            </div>
+          )
         ) : items.length > 0 ? (
           <ul className="nt-list">
             {items.map((item) => {
@@ -366,10 +684,24 @@ export default function NotificationCenter({ role, onReadChange }) {
 
                     <p className="nt-item-preview">{item.message}</p>
 
-                    <span className="nt-item-meta">
-                      <Clock size={12} aria-hidden="true" />
-                      <span>{formatDateTime(item.createdAt)}</span>
-                    </span>
+                    <div className="nt-item-meta-row">
+                      <span className="nt-item-meta">
+                        <Clock size={12} aria-hidden="true" />
+                        <span>{formatDateTime(item.createdAt)}</span>
+                      </span>
+                      {item.senderName && (
+                        <span className="nt-item-meta">
+                          <UserRound size={12} aria-hidden="true" />
+                          <span>Từ: {item.senderName}</span>
+                        </span>
+                      )}
+                      {item.propertyName && (
+                        <span className="nt-item-meta">
+                          <Building2 size={12} aria-hidden="true" />
+                          <span>{item.propertyName}</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="nt-item-side">
@@ -397,7 +729,7 @@ export default function NotificationCenter({ role, onReadChange }) {
             <p className="nt-empty-desc">
               {filter === 'unread'
                 ? 'Bạn đã xem toàn bộ thông báo trong hộp thư.'
-                : 'Các thông báo mới về hóa đơn, hợp đồng và yêu cầu sẽ hiển thị tại đây.'}
+                : 'Các thông báo mới về hóa đơn, hợp đồng, yêu cầu và thông báo hệ thống sẽ hiển thị tại đây.'}
             </p>
           </div>
         )}
@@ -425,6 +757,7 @@ export default function NotificationCenter({ role, onReadChange }) {
         </div>
       </div>
 
+      {/* Received Notification Detail Modal */}
       {selectedNotification && (
         <div
           className="nt-backdrop"
@@ -465,6 +798,18 @@ export default function NotificationCenter({ role, onReadChange }) {
                     <Clock size={13} aria-hidden="true" />
                     <span>{formatDateTime(selectedNotification.createdAt)}</span>
                   </span>
+                  {selectedNotification.senderName && (
+                    <span className="nt-modal-meta-item">
+                      <UserRound size={13} aria-hidden="true" />
+                      <span>Từ: {selectedNotification.senderName}</span>
+                    </span>
+                  )}
+                  {selectedNotification.propertyName && (
+                    <span className="nt-modal-meta-item">
+                      <Building2 size={13} aria-hidden="true" />
+                      <span>{selectedNotification.propertyName}</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -505,153 +850,93 @@ export default function NotificationCenter({ role, onReadChange }) {
         </div>
       )}
 
-      {showComposer && canBroadcast && (
+      {/* Sent Notification Detail Modal */}
+      {selectedSent && (
         <div
           className="nt-backdrop"
           role="presentation"
           onClick={(event) => {
-            if (event.target === event.currentTarget && !sending) {
-              setShowComposer(false)
-              setConfirmingSend(false)
-            }
+            if (event.target === event.currentTarget) setSelectedSent(null)
           }}
         >
           <div
             className="nt-modal"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="nt-compose-title"
+            aria-labelledby="nt-sent-detail-title"
           >
             <div className="nt-modal-header">
               <div className="nt-modal-header-main">
-                <span className="nt-eyebrow">PHÁT HÀNH THÔNG BÁO</span>
-                <h2 id="nt-compose-title" className="nt-modal-title">
-                  Gửi thông báo mới
+                <div className="nt-modal-badges">
+                  <span className={`nt-type-badge ${selectedSentMeta.badgeClass}`}>
+                    {selectedSentMeta.label}
+                  </span>
+                  <span
+                    className={`nt-progress-pill${
+                      selectedSent.totalRecipients > 0 &&
+                      selectedSent.readCount >= selectedSent.totalRecipients
+                        ? ' nt-progress-pill--done'
+                        : ''
+                    }`}
+                  >
+                    Đã đọc {selectedSent.readCount}/{selectedSent.totalRecipients} người
+                  </span>
+                </div>
+
+                <h2 id="nt-sent-detail-title" className="nt-modal-title">
+                  {selectedSent.title}
                 </h2>
+
+                <div className="nt-modal-meta">
+                  <span className="nt-modal-meta-item">
+                    <Users size={13} aria-hidden="true" />
+                    <span>{selectedSent.targetLabel}</span>
+                  </span>
+                  <span className="nt-modal-meta-item">
+                    <Clock size={13} aria-hidden="true" />
+                    <span>{formatDateTime(selectedSent.createdAt)}</span>
+                  </span>
+                </div>
               </div>
+
               <button
                 type="button"
                 className="nt-modal-close"
-                aria-label="Đóng biểu mẫu phát hành thông báo"
-                disabled={sending}
-                onClick={() => {
-                  setShowComposer(false)
-                  setConfirmingSend(false)
-                }}
+                aria-label="Đóng chi tiết thông báo đã gửi"
+                onClick={() => setSelectedSent(null)}
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleComposerSubmit}>
-              <div className="nt-modal-body">
-                <div className="nt-form">
-                  {role === 'Manager' && (
-                    <label className="nt-field">
-                      <span className="nt-label">Khu trọ</span>
-                      <select
-                        className="nt-select"
-                        value={propertyId}
-                        onChange={(e) => {
-                          setPropertyId(e.target.value)
-                          setConfirmingSend(false)
-                        }}
-                        required
-                      >
-                        {properties.map((property) => (
-                          <option key={property.id} value={property.id}>
-                            {property.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
+            <div className="nt-modal-body">
+              <p className="nt-modal-message">{selectedSent.message}</p>
+            </div>
 
-                  <label className="nt-field">
-                    <span className="nt-label">Tiêu đề</span>
-                    <input
-                      className="nt-input"
-                      value={title}
-                      onChange={(e) => {
-                        setTitle(e.target.value)
-                        setConfirmingSend(false)
-                      }}
-                      maxLength={250}
-                      placeholder="Nhập tiêu đề thông báo…"
-                      required
-                    />
-                    <span className="nt-char-hint">{title.length}/250</span>
-                  </label>
-
-                  <label className="nt-field">
-                    <span className="nt-label">Nội dung</span>
-                    <textarea
-                      className="nt-textarea"
-                      value={message}
-                      onChange={(e) => {
-                        setMessage(e.target.value)
-                        setConfirmingSend(false)
-                      }}
-                      maxLength={4000}
-                      placeholder="Nhập nội dung chi tiết thông báo…"
-                      required
-                    />
-                    <span className="nt-char-hint">{message.length}/4000</span>
-                  </label>
-
-                  {confirmingSend && (
-                    <div className="nt-confirm-box">
-                      <span>Phát hành thông báo tới tất cả người nhận trong phạm vi đã chọn?</span>
-                      <div className="nt-confirm-actions">
-                        <button
-                          type="button"
-                          className="nt-btn nt-btn--subtle"
-                          disabled={sending}
-                          onClick={() => setConfirmingSend(false)}
-                        >
-                          Hủy
-                        </button>
-                        <button
-                          type="button"
-                          className="nt-btn nt-btn--primary"
-                          disabled={sending}
-                          onClick={confirmBroadcast}
-                        >
-                          <Send size={14} aria-hidden="true" />
-                          <span>{sending ? 'Đang gửi…' : 'Xác nhận gửi'}</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="nt-modal-footer">
-                <button
-                  type="button"
-                  className="nt-btn nt-btn--subtle"
-                  disabled={sending}
-                  onClick={() => {
-                    setShowComposer(false)
-                    setConfirmingSend(false)
-                  }}
-                >
-                  Đóng
-                </button>
-                {!confirmingSend && (
-                  <button
-                    type="submit"
-                    className="nt-btn nt-btn--primary"
-                    disabled={sending || (role === 'Manager' && !propertyId)}
-                  >
-                    <Send size={15} aria-hidden="true" />
-                    <span>Phát hành</span>
-                  </button>
-                )}
-              </div>
-            </form>
+            <div className="nt-modal-footer">
+              <button
+                type="button"
+                className="nt-btn nt-btn--subtle"
+                onClick={() => setSelectedSent(null)}
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
+      )}
+
+      {canSendNotification && (
+        <NotificationComposerModal
+          open={showComposer}
+          role={role}
+          notify={notify}
+          onClose={() => setShowComposer(false)}
+          onSent={() => {
+            setFilter('sent')
+            load(1, 'sent')
+          }}
+        />
       )}
     </section>
   )

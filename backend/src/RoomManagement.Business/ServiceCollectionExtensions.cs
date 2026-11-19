@@ -22,6 +22,7 @@ public static class ServiceCollectionExtensions
                 services.AddSingleton<TenantLookupRateLimiter>();
                 services.AddScoped<IRequestService, RequestService>();
                 services.AddScoped<RequestService>();
+                services.AddScoped<INotificationService, NotificationService>();
 
                 return services;
         }

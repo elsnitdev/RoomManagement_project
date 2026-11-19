@@ -3,6 +3,16 @@ using RoomManagement.Domain.Entities;
 
 namespace RoomManagement.Business.DTOs;
 
+public sealed record MissingContractMeterPeriod(short Year, byte Month, IReadOnlyList<UtilityType> MissingTypes);
+public sealed record ContractReadingPrerequisites(IReadOnlyList<MissingContractMeterPeriod> MissingPeriods,
+    decimal? ElectricityPreviousValue, decimal? WaterPreviousValue)
+{
+    public string Version { get; init; } = "";
+    public ContractMeterReadingSnapshot? ElectricityReading { get; init; }
+    public ContractMeterReadingSnapshot? WaterReading { get; init; }
+}
+public sealed record ContractMeterReadingSnapshot(Guid Id, decimal PreviousValue, decimal CurrentValue);
+
 public sealed record CreateContractInput(
     Guid RoomId, string ContractCode, DateOnly StartDate, DateOnly? EndDate,
     decimal MonthlyRent, decimal DepositAmount, byte? PaymentDueDay, string? Note,
@@ -48,6 +58,7 @@ public sealed record ContractTenantInfo(Guid Id, Guid TenantId, string? UserId, 
     public bool HasConfirmedCommitment { get; init; }
     public Guid? CurrentRulesVersionId { get; init; }
     public bool HasAcceptedCurrentRules { get; init; }
+    public bool CanRepresent { get; init; }
     public ContractTenantRole Role { get; init; } = ContractTenantRole.ContractParty;
     public DateTime? ResidenceApprovedAt { get; init; }
     public string? ResidenceApprovedByUserId { get; init; }

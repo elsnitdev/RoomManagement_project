@@ -67,4 +67,5 @@ public sealed class AppUser
 
     /// <summary>Thời điểm hoàn tất xác minh danh tính (null nếu chưa xác minh).</summary>
     public DateTime? IdentityVerifiedAt { get; set; }
+    public byte[] ReviewVersion { get; set; } = [];
 }

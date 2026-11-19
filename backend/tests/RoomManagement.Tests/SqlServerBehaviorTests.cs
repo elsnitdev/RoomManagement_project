@@ -1,4 +1,8 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using RoomManagement.API.Controllers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -19,6 +23,54 @@ namespace RoomManagement.Tests;
 
 public sealed class SqlServerBehaviorTests
 {
+    [SqlServerFact]
+    public async Task Admin_review_persists_actor_and_rejects_stale_identity()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var user = CreateUser();
+        user.Role = UserRoles.Landlord;
+        user.ApprovalStatus = ApprovalStatuses.Pending;
+        user.IsActive = false;
+        user.FullName = "Test Landlord";
+        user.PhoneNumber = "0912345678";
+        user.CitizenId = "012345678901";
+        user.DateOfBirth = new DateOnly(1990, 1, 1);
+        context.Add(user);
+        await context.SaveChangesAsync();
+        var controller = new AdminUserReviewsController(context)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "review-admin")], "test"))
+                }
+            }
+        };
+
+        var originalVersion = user.ReviewVersion;
+        Assert.IsType<OkObjectResult>(await controller.Decide(user.Id,
+            new("approve", originalVersion, null, null), default));
+        Assert.Equal(IdentityVerificationStatuses.Unverified, user.IdentityVerificationStatus);
+        Assert.True(user.IsActive);
+        var stale = Assert.IsType<ObjectResult>(await controller.Decide(user.Id,
+            new("start", originalVersion, null, null), default));
+        Assert.Equal(409, stale.StatusCode);
+        Assert.IsType<OkObjectResult>(await controller.Decide(user.Id,
+            new("start", user.ReviewVersion, null, null), default));
+        Assert.IsType<OkObjectResult>(await controller.Decide(user.Id,
+            new("verify", user.ReviewVersion, "Đã đối chiếu", "Giấy tờ gốc"), default));
+
+        user.FullName = "Updated Test Landlord";
+        await context.SaveChangesAsync();
+        Assert.Equal(IdentityVerificationStatuses.Unverified, user.IdentityVerificationStatus);
+        Assert.Null(user.IdentityVerifiedAt);
+        var history = await context.Set<UserReviewHistory>().OrderBy(x => x.Id).ToListAsync();
+        Assert.Equal(new[] { "approve", "start", "verify", "identityChanged" }, history.Select(x => x.Action));
+        Assert.All(history.Take(3), entry => Assert.Equal("review-admin", entry.ActorAdminUserId));
+    }
+
     [SqlServerFact]
     public async Task Profile_migration_preserves_existing_main_accounts()
     {
@@ -307,6 +359,6 @@ public sealed class SqlServerBehaviorTests
             await gate.WaitAsync();
             return user;
         }
-        public Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default) => inner.TryReviewPendingAsync(reviewedUser, cancellationToken);
+        public Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default, string? actorAdminUserId = null) => inner.TryReviewPendingAsync(reviewedUser, cancellationToken, actorAdminUserId);
     }
 }

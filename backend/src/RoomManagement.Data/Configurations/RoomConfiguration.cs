@@ -22,6 +22,8 @@ public sealed class RoomConfiguration : IEntityTypeConfiguration<Room>
         builder.Property(e => e.Floor).HasColumnType("int");
         builder.Property(e => e.Area).HasColumnType("decimal(10,2)");
         builder.Property(e => e.BasePrice).HasColumnType("decimal(18,2)").IsRequired();
+        builder.Property(e => e.OpeningElectricity).HasColumnType("decimal(18,2)");
+        builder.Property(e => e.OpeningWater).HasColumnType("decimal(18,2)");
         builder.Property(e => e.MaxOccupants).HasColumnType("int").IsRequired();
         builder.Property(e => e.Status).HasConversion<string>().HasColumnType("nvarchar(20)").IsRequired().HasDefaultValueSql(@"N'Available'", "DF_Rooms_Status");
         builder.Property(e => e.Description).HasColumnType("nvarchar(1000)");

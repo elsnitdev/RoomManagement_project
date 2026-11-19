@@ -37,7 +37,7 @@ public sealed class MyNotificationsController : ControllerBase
             query = query.Where(n => !n.IsRead);
 
         var total = await query.CountAsync(ct);
-        var items = await query
+        var rawItems = await query
             .OrderByDescending(n => n.CreatedAt)
             .Skip((validPage - 1) * validPageSize)
             .Take(validPageSize)
@@ -59,8 +59,76 @@ public sealed class MyNotificationsController : ControllerBase
             })
             .ToListAsync(ct);
 
+        var actorIds = rawItems
+            .Where(n => !string.IsNullOrWhiteSpace(n.ActorUserId))
+            .Select(n => n.ActorUserId!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var actorRows = actorIds.Length == 0
+            ? []
+            : await _db.Users.AsNoTracking()
+                .Where(u => actorIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.FullName, u.UserName, u.Role })
+                .ToListAsync(ct);
+
+        var actorMap = actorRows.ToDictionary(
+            u => u.Id,
+            u => (
+                Name: !string.IsNullOrWhiteSpace(u.FullName) ? u.FullName! : u.UserName,
+                Role: u.Role
+            ),
+            StringComparer.Ordinal);
+
+        var propertyIds = rawItems
+            .Where(n => n.PropertyId.HasValue)
+            .Select(n => n.PropertyId!.Value)
+            .Distinct()
+            .ToArray();
+
+        var propertyMap = propertyIds.Length == 0
+            ? new Dictionary<Guid, string>()
+            : await _db.Properties.AsNoTracking()
+                .Where(p => propertyIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+
+        var items = rawItems.Select(n =>
+        {
+            string? senderName = null;
+            string? senderRole = null;
+            if (!string.IsNullOrWhiteSpace(n.ActorUserId) &&
+                actorMap.TryGetValue(n.ActorUserId!, out var actor))
+            {
+                senderName = actor.Name;
+                senderRole = actor.Role;
+            }
+
+            var propertyName = n.PropertyId.HasValue
+                ? propertyMap.GetValueOrDefault(n.PropertyId.Value)
+                : null;
+            return new
+            {
+                n.Id,
+                n.Type,
+                n.Title,
+                n.Message,
+                n.ContractId,
+                n.InvoiceId,
+                n.RequestId,
+                n.PropertyId,
+                PropertyName = propertyName,
+                n.ActorUserId,
+                SenderName = senderName,
+                SenderRole = senderRole,
+                n.EmailStatus,
+                n.IsRead,
+                n.ReadAt,
+                n.CreatedAt
+            };
+        }).Cast<object>().ToList();
+
         return Ok(new PageResponse<object>(
-            items.Cast<object>().ToList(),
+            items,
             new PageMeta(validPage, validPageSize, total, (int)Math.Ceiling((double)total / validPageSize))));
     }
 

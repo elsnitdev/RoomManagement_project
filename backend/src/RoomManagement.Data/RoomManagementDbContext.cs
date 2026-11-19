@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using RoomManagement.Domain.Entities;
+using RoomManagement.Domain.Constants;
 
 namespace RoomManagement.Data;
 
@@ -11,6 +12,42 @@ public sealed class RoomManagementDbContext : DbContext
     }
 
     public DbSet<AppUser> Users => Set<AppUser>();
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        InvalidateChangedIdentities();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        InvalidateChangedIdentities();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    private void InvalidateChangedIdentities()
+    {
+        var users = ChangeTracker.Entries<AppUser>()
+            .Where(entry => entry.State == EntityState.Modified &&
+                entry.Entity.IdentityVerificationStatus != IdentityVerificationStatuses.Unverified &&
+                (entry.Property(u => u.FullName).IsModified || entry.Property(u => u.CitizenId).IsModified ||
+                 entry.Property(u => u.PhoneNumber).IsModified || entry.Property(u => u.DateOfBirth).IsModified))
+            .ToList();
+        foreach (var entry in users)
+        {
+            var user = entry.Entity;
+            Add(new UserReviewHistory
+            {
+                TargetUserId = user.Id,
+                Action = "identityChanged",
+                FromStatus = user.IdentityVerificationStatus,
+                ToStatus = IdentityVerificationStatuses.Unverified,
+                CreatedAt = DateTime.UtcNow
+            });
+            user.IdentityVerificationStatus = IdentityVerificationStatuses.Unverified;
+            user.IdentityVerifiedAt = null;
+        }
+    }
     public DbSet<PropertyManagerAssignment> PropertyManagerAssignments => Set<PropertyManagerAssignment>();
     public DbSet<TenantPhoneChallenge> TenantPhoneChallenges => Set<TenantPhoneChallenge>();
 public DbSet<TenantProfile> TenantProfiles => Set<TenantProfile>();

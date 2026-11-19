@@ -2304,6 +2304,20 @@
   display: none;
 }
 
+.ct-tenant-card--editing-leave {
+  flex-wrap: wrap;
+}
+
+.ct-leave-form {
+  flex: 1 1 100%;
+  min-width: 0;
+  border-top: 1px solid #edf2f7;
+}
+
+.ct-leave-form .ct-tenant-actions {
+  margin-top: 12px;
+}
+
 /* Compact button */
 .ct-btn-compact {
   min-height: 32px !important;

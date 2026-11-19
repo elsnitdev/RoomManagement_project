@@ -46,6 +46,15 @@ public sealed class LandlordManagersController : ControllerBase
     public async Task<ActionResult<ApiResponse<ManagerResponse>>> Get(string managerId, CancellationToken ct) =>
         Ok(new ApiResponse<ManagerResponse>(ManagerResponse.From(await _service.GetAsync(managerId, ct))));
 
+    [HttpPut("{managerId}")]
+    [ProducesResponseType(typeof(ApiResponse<ManagerResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ApiResponse<ManagerResponse>>> Update(
+        string managerId,
+        [FromBody] UpdateManagerRequest request,
+        CancellationToken ct) =>
+        Ok(new ApiResponse<ManagerResponse>(ManagerResponse.From(
+            await _service.UpdateAsync(managerId, request.ToInput(), ct))));
+
     [HttpPost("{managerId}/properties")]
     [ProducesResponseType(typeof(ApiResponse<ManagerResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<ApiResponse<ManagerResponse>>> AssignProperties(

@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import { useAuth } from "./contexts/AuthContext";
 import Admin from "./Admin";
+import AdminUserReviews from "./components/AdminUserReviews";
+import { useApiQuery } from "./hooks/useApiQuery";
+import { apiRequest } from "./services/apiClient";
 import Auth from "./Auth";
 import Landlord from "./Landlord";
 import Tenant from "./Tenant";
@@ -38,7 +41,6 @@ import NotificationCenter from "./components/NotificationCenter";
 import NotificationBellDropdown from "./components/NotificationBellDropdown";
 import { notificationApi } from "./services/api/notificationApi";
 import {
-  initialApprovals,
   contracts,
   invoices as initialInvoices,
   invoiceHistory,
@@ -58,8 +60,10 @@ const adminNavGroups = [
     items: [
       { id: "overview", label: "Tổng quan", icon: LayoutDashboard },
       { id: "approvals", label: "Duyệt chủ trọ", icon: Users },
+      { id: "identity", label: "Xác minh danh tính", icon: UserCog },
       { id: "users", label: "Tài khoản", icon: UserCog },
       { id: "services", label: "Dịch vụ", icon: FileText },
+      { id: "notifications", label: "Thông báo", icon: Bell },
     ],
   },
   {
@@ -76,6 +80,7 @@ const landlordNavGroups = [
       { id: "properties", label: "Khu trọ", icon: Building2 },
       { id: "tenants", label: "Người ở", icon: Users },
       { id: "requests", label: "Yêu cầu", icon: MessageSquareText },
+      { id: "notifications", label: "Thông báo", icon: Bell },
     ],
   },
   {
@@ -124,6 +129,7 @@ const tenantNavGroups = [
 const titleMap = {
   overview: "Tổng quan",
   approvals: "Duyệt chủ trọ",
+  identity: "Xác minh danh tính",
   users: "Tài khoản người dùng",
   services: "Danh mục dịch vụ",
   properties: "Khu trọ",
@@ -147,7 +153,8 @@ export default function App() {
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState("");
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [approvals, setApprovals] = useState(initialApprovals);
+  const reviewSummary = useApiQuery("admin:reviews:summary", () => apiRequest("/api/admin/user-reviews/summary"),
+    { enabled: isAuthenticated && user?.role === "Admin", ttlMs: 0 });
   const [users, setUsers] = useState(initialUsers);
   const [properties, setProperties] = useState(initialProperties);
   const [rooms, setRooms] = useState(initialRooms);
@@ -182,7 +189,8 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
   useEffect(() => {
-    const [, page, detailId, section, action] = route.split("/");
+    const [, rawRoutePage, detailId, section, action] = route.split("/");
+    const page = rawRoutePage === "contract" ? "contracts" : rawRoutePage;
     const title =
       page === "properties" && section === "rooms"
         ? action === "new"
@@ -265,7 +273,8 @@ export default function App() {
       </>
     );
   const activeRole = routeRole;
-  const page = titleMap[rawPage] ? rawPage : "overview";
+  const normalizedPage = rawPage === "contract" ? "contracts" : rawPage;
+  const page = titleMap[normalizedPage] ? normalizedPage : "overview";
   const propertyPageTitle =
     propertySection === "rooms"
       ? roomAction === "new"
@@ -282,9 +291,7 @@ export default function App() {
         : user?.role === "Manager"
           ? managerNavGroups
           : landlordNavGroups;
-  const pendingApprovalCount = approvals.filter(
-    (entry) => entry.status === "pending",
-  ).length;
+  const pendingApprovalCount = reviewSummary.data?.data?.pending || 0;
   return (
     <div className="app-shell">
       {/* <button
@@ -353,6 +360,11 @@ export default function App() {
                       {item.id === "approvals" && pendingApprovalCount > 0 && (
                         <span className="nav-count">
                           {pendingApprovalCount}
+                        </span>
+                      )}
+                      {(item.id === "notifications" || item.id === "notices") && unreadNotifications > 0 && (
+                        <span className="nav-count">
+                          {unreadNotifications > 99 ? "99+" : unreadNotifications}
                         </span>
                       )}
                     </button>
@@ -459,9 +471,15 @@ export default function App() {
           className={`main-content${page === "properties" && propertySection === "rooms" && roomAction === "new" ? " main-content--room-batch" : ""}`}
         >
           {page === "notifications" || page === "notices" ? (
-            <NotificationCenter role={user?.role} onReadChange={refreshUnreadNotifications} />
+            <NotificationCenter
+              role={user?.role}
+              initialNotificationId={roomId}
+              navigate={navigate}
+              onReadChange={refreshUnreadNotifications}
+              notify={notify}
+            />
           ) : activeRole === "tenant" && page === "billing" ? (
-            <TenantBilling />
+            <TenantBilling key={roomId || "list"} initialInvoiceId={roomId} />
           ) : activeRole === "tenant" ? (
             <Tenant
               page={page}
@@ -481,11 +499,14 @@ export default function App() {
             <Profile role={activeRole} notify={notify} />
           ) : activeRole === "admin" && page === "services" ? (
             <AdminServices />
+          ) : activeRole === "admin" && (page === "approvals" || page === "identity") ? (
+            <AdminUserReviews key={page + (roomId || "")} initialId={page === "identity" ? roomId : undefined} kind={page === "approvals" ? "approval" : "identity"}
+              notify={notify} onChange={reviewSummary.reload}
+              openIdentity={id => navigate("admin/identity/" + encodeURIComponent(id))} />
           ) : activeRole === "admin" ? (
             <Admin
               page={page}
-              approvals={approvals}
-              setApprovals={setApprovals}
+              reviewSummary={reviewSummary.data?.data}
               users={users}
               setUsers={setUsers}
               navigate={navigate}
@@ -497,11 +518,16 @@ export default function App() {
             <ManagerManagement notify={notify} />
           ) : activeRole === "landlord" && page === "billing" ? (
             <LandlordBilling
-              invoiceId={roomId === "rooms" ? undefined : roomId}
+              invoiceId={roomId === "rooms" || roomId === "status" ? undefined : roomId}
               initialPropertyId={
-                roomId === "rooms" ? propertySection : undefined
+                roomId === "rooms"
+                  ? propertySection
+                  : roomId === "status"
+                    ? roomAction
+                    : undefined
               }
               initialRoomId={roomId === "rooms" ? roomAction : undefined}
+              initialStatus={roomId === "status" ? propertySection : undefined}
               navigate={navigate}
             />
           ) : activeRole === "landlord" && page === "utilities" ? (

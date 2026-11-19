@@ -116,13 +116,19 @@ public sealed class ContractsController : ControllerBase
       [FromBody] ContractMeterReadingRequest request, CancellationToken ct) =>
       StatusCode(201, new ApiResponse<MeterReadingResponse>(MeterReadingResponse.From(
           await _service.RecordContractReadingAsync(propertyId, contractId, request.Type,
-              request.Year, request.Month, request.PreviousValue, request.CurrentValue, ct))));
+              request.Year, request.Month, request.PreviousValue, request.CurrentValue, ct, request.ExpectedVersion))));
 
   [HttpGet("{contractId:guid}/meter-readings")]
   public async Task<IActionResult> ListContractReadings(Guid propertyId, Guid contractId, CancellationToken ct) =>
       Ok(new ApiResponse<IReadOnlyList<MeterReadingResponse>>(
           (await _service.ListContractReadingsAsync(propertyId, contractId, ct))
               .Select(MeterReadingResponse.From).ToList()));
+
+  [HttpGet("{contractId:guid}/meter-reading-prerequisites")]
+  public async Task<IActionResult> ReadingPrerequisites(Guid propertyId, Guid contractId,
+      [FromQuery] short year, [FromQuery] byte month, CancellationToken ct) =>
+      Ok(new ApiResponse<ContractReadingPrerequisites>(
+          await _service.GetReadingPrerequisitesAsync(propertyId, contractId, year, month, ct)));
 
   [HttpPost("{contractId:guid}/complete-settlement")]
   public async Task<IActionResult> CompleteSettlement(Guid propertyId, Guid contractId,
@@ -148,7 +154,7 @@ public sealed class ContractsController : ControllerBase
   public async Task<IActionResult> Leave(Guid propertyId, Guid contractId, Guid linkId,
       [FromBody] LeaveContractRequest request, CancellationToken ct) =>
       Ok(new ApiResponse<ContractTenantResponse>(ContractTenantResponse.From(
-          await _service.LeaveAsync(propertyId, contractId, linkId, request.LeaveDate, ct))));
+          await _service.LeaveAsync(propertyId, contractId, linkId, request.LeaveDate, ct, request.ReplacementLinkId))));
 
   [HttpPost("{contractId:guid}/activate")]
   public async Task<IActionResult> Activate(Guid propertyId, Guid contractId, CancellationToken ct) =>

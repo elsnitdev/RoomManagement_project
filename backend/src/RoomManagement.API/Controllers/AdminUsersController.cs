@@ -170,7 +170,7 @@ public sealed class AdminUsersController : ControllerBase
 
         try
         {
-            var result = await approvalService.ApproveAsync(id, cancellationToken);
+            var result = await approvalService.ApproveAsync(id, cancellationToken, User.FindFirst("sub")?.Value);
             var response = LandlordRegistrationResponse.FromDto(result);
 
             return Ok(new
@@ -242,7 +242,7 @@ public sealed class AdminUsersController : ControllerBase
 
         try
         {
-            var result = await approvalService.RejectAsync(id, request.Reason, cancellationToken);
+            var result = await approvalService.RejectAsync(id, request.Reason, cancellationToken, User.FindFirst("sub")?.Value);
             var response = LandlordRegistrationResponse.FromDto(result);
 
             return Ok(new

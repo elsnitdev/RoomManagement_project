@@ -13,10 +13,10 @@ const params = values => {
   return query.toString()
 }
 const data = response => response.data
-async function allPages(path, signal) {
+async function allPages(path, signal, extraParams = {}) {
   const items = []
   for (let page = 1; ; page += 1) {
-    const response = await apiRequest(`${path}?${params({ page, pageSize: 100 })}`, { signal })
+    const response = await apiRequest(`${path}?${params({ page, pageSize: 100, ...extraParams })}`, { signal })
     items.push(...(response.data || []))
     if (response.meta?.totalPages ? page >= response.meta.totalPages : items.length >= (response.meta?.totalItems ?? response.meta?.total ?? items.length) || !response.data?.length) return { data: items }
   }
@@ -79,7 +79,8 @@ export const billingApi = {
     method: 'POST', headers: version ? { 'If-Match': `"${version}"` } : undefined,
   }).then(data),
   cancel: (invoiceId) => apiRequest(`/api/invoices/${id(invoiceId)}/cancel`, { method: 'POST' }).then(data),
-  myInvoices: (page = 1, signal) => apiRequest(`/api/me/invoices?${params({ page, pageSize: 20 })}`, { signal }),
+  myInvoices: (page = 1, signal, filters = {}) => apiRequest(`/api/me/invoices?${params({ page, pageSize: filters.pageSize || 20, year: filters.year, month: filters.month })}`, { signal }),
+  allMyInvoices: (signal, filters = {}) => allPages('/api/me/invoices', signal, filters),
   myInvoice: (invoiceId, signal) => apiRequest(`/api/me/invoices/${id(invoiceId)}`, { signal }).then(data),
   myPaymentAccount: (invoiceId, signal) => apiRequest(`/api/me/invoices/${id(invoiceId)}/payment-account`, { signal }).then(data),
   myPayments: (invoiceId, signal) => apiRequest(`/api/me/invoices/${id(invoiceId)}/payments`, { signal }).then(data),

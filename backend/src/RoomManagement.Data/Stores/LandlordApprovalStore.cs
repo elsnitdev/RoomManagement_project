@@ -27,7 +27,7 @@ public sealed class LandlordApprovalStore : ILandlordApprovalStore
     {
         return await _dbContext.Users
             .AsNoTracking()
-            .Where(u => u.Role == UserRoles.Landlord && u.ApprovalStatus == ApprovalStatuses.Pending)
+            .Where(u => u.Role == UserRoles.Landlord && u.DeletedAt == null && u.ApprovalStatus == ApprovalStatuses.Pending)
             .OrderBy(u => u.CreatedAt)
             .ToListAsync(cancellationToken);
     }
@@ -40,22 +40,38 @@ public sealed class LandlordApprovalStore : ILandlordApprovalStore
     {
         return await _dbContext.Users
             .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == userId && u.Role == UserRoles.Landlord, cancellationToken);
+            .FirstOrDefaultAsync(u => u.Id == userId && u.Role == UserRoles.Landlord && u.DeletedAt == null, cancellationToken);
     }
 
     /// <summary>
     /// Cập nhật nguyên tử các trường xét duyệt, không ghi đè thông tin hồ sơ.
     /// </summary>
-    public async Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default)
+    public async Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default, string? actorAdminUserId = null)
     {
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         var affected = await _dbContext.Users
             .Where(u => u.Id == reviewedUser.Id && u.Role == UserRoles.Landlord &&
-                        u.ApprovalStatus == ApprovalStatuses.Pending)
+                        u.DeletedAt == null && u.ApprovalStatus == ApprovalStatuses.Pending &&
+                        u.ReviewVersion == reviewedUser.ReviewVersion)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(u => u.ApprovalStatus, reviewedUser.ApprovalStatus)
                 .SetProperty(u => u.IsActive, reviewedUser.IsActive)
                 .SetProperty(u => u.RejectionReason, reviewedUser.RejectionReason)
                 .SetProperty(u => u.ReviewedAt, reviewedUser.ReviewedAt), cancellationToken);
-        return affected == 1;
+        if (affected != 1) return false;
+
+        _dbContext.Add(new UserReviewHistory
+        {
+            TargetUserId = reviewedUser.Id,
+            ActorAdminUserId = actorAdminUserId,
+            Action = reviewedUser.ApprovalStatus == ApprovalStatuses.Approved ? "approve" : "reject",
+            FromStatus = ApprovalStatuses.Pending,
+            ToStatus = reviewedUser.ApprovalStatus,
+            Reason = reviewedUser.RejectionReason,
+            CreatedAt = reviewedUser.ReviewedAt ?? DateTime.UtcNow
+        });
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 }

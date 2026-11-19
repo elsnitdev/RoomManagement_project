@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Droplets, Pencil, Plus, Zap } from "lucide-react";
 import { billingApi } from "../../services/api/billingApi";
 import InvoiceActionDialog from "./InvoiceActionDialog";
+import MoneyInput from "./MoneyInput";
 
 const today = () =>
   new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
@@ -564,15 +565,14 @@ export default function BillingInputs({
             </p>
             <label>
               Đơn giá (₫)
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <MoneyInput
+                allowDecimal
                 required
                 value={rateForm.unitPrice}
-                onChange={(e) =>
-                  setRateForm({ ...rateForm, unitPrice: e.target.value })
+                onValueChange={(val) =>
+                  setRateForm({ ...rateForm, unitPrice: val })
                 }
+                placeholder="0"
               />
             </label>
             <label>
@@ -683,17 +683,13 @@ export default function BillingInputs({
             </label>
             <label>
               Giá mặc định
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <MoneyInput
+                allowDecimal
                 value={serviceForm.defaultPrice}
-                onChange={(e) =>
-                  setServiceForm({
-                    ...serviceForm,
-                    defaultPrice: e.target.value,
-                  })
+                onValueChange={(val) =>
+                  setServiceForm({ ...serviceForm, defaultPrice: val })
                 }
+                placeholder="0"
               />
             </label>
             {serviceForm.id && (
@@ -815,17 +811,16 @@ export default function BillingInputs({
             </label>
             <label>
               Giá riêng (để trống dùng giá mặc định)
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <MoneyInput
+                allowDecimal
                 value={assignmentForm.customPrice}
-                onChange={(e) =>
+                onValueChange={(val) =>
                   setAssignmentForm({
                     ...assignmentForm,
-                    customPrice: e.target.value,
+                    customPrice: val,
                   })
                 }
+                placeholder="Dùng giá mặc định"
               />
             </label>
             <label>

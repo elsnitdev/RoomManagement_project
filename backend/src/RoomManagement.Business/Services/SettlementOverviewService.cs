@@ -53,7 +53,9 @@ public sealed class SettlementOverviewService(ContractService contracts, IInvoic
             if (rows.Any(x => x.Invoice.Status == InvoiceStatus.Draft)) actions.Add("IssueInvoice");
             if (rows.Any(x => x.Invoice.Status == InvoiceStatus.Issued && x.Balance.RemainingAmount > 0))
                 actions.Add("RecordPayment");
-            if (final?.Invoice.Status == InvoiceStatus.Issued && final.Balance.RemainingAmount > 0 && detail.DepositHeld > 0)
+            if (rows.Any(x => x.Invoice.Status == InvoiceStatus.Issued &&
+                x.Invoice.InvoiceType is InvoiceType.Monthly or InvoiceType.Damage or InvoiceType.Other &&
+                x.Balance.RemainingAmount > 0) && detail.DepositHeld > 0)
                 actions.Add("ApplyDeposit");
             if (phase == "Complete") actions.Add("CompleteSettlement");
         }

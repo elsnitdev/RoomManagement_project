@@ -22,16 +22,18 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
     ];
 
     public async Task<MeterImportResult> InspectAsync(Guid propertyId, DateOnly period,
-        IReadOnlyList<MeterImportRowInput>? rows, CancellationToken ct)
+        IReadOnlyList<MeterImportRowInput>? rows, CancellationToken ct, bool includeUnoccupied = false)
     {
-        var snapshot = await LoadAsync(propertyId, period, rows?.Select(x => x.RoomId).ToArray(), ct);
+        var snapshot = await LoadAsync(propertyId, period, rows?.Select(x => x.RoomId).ToArray(), ct, includeUnoccupied);
         var inputs = rows ?? snapshot.Rooms.Values.OrderBy(x => x.RoomNumber, StringComparer.OrdinalIgnoreCase)
             .SelectMany(room => snapshot.Contracts[room.Id].Where(x => Overlaps(x, period) &&
                     !((x.HandoverOn is not null || x.Status == ContractStatus.Terminated) &&
                       snapshot.Invoices[room.Id].Any(invoice => invoice.ContractId == x.Id &&
                           invoice.Status == InvoiceStatus.Issued)))
                 .OrderBy(x => x.StartDate).ThenBy(x => x.Id)
-                .Select(contract => new MeterImportRowInput(room.Id, null, null, ContractId: contract.Id))).ToList();
+                .Select(contract => new MeterImportRowInput(room.Id, null, null, ContractId: contract.Id))
+                .Concat(includeUnoccupied && !snapshot.Contracts[room.Id].Any(x => Overlaps(x, period))
+                    ? [new MeterImportRowInput(room.Id, null, null)] : [])).ToList();
         return new MeterImportResult(propertyId, (short)period.Year, (byte)period.Month,
             inputs.Select(row => Assess(snapshot, period, row, committing: false).Row).ToList());
     }
@@ -62,15 +64,15 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
             var snapshot = await LoadAsync(propertyId, period, [room.Id], ct);
             var (row, contract, invoice) = Assess(snapshot, period, input, committing: true);
             assessed = row;
-            if (contract is null || (row.Electricity.Status != "Ready" && row.Water.Status != "Ready"))
+            if (row.Electricity.Status != "Ready" && row.Water.Status != "Ready")
                 return row;
 
-            var electricity = NewReading(row.Electricity, room.Id, contract.Id, period, UtilityType.Electricity,
+            var electricity = NewReading(row.Electricity, room.Id, contract?.Id, period, UtilityType.Electricity,
                 actor, input.ElectricityManual);
-            var water = NewReading(row.Water, room.Id, contract.Id, period, UtilityType.Water,
+            var water = NewReading(row.Water, room.Id, contract?.Id, period, UtilityType.Water,
                 actor, input.WaterManual);
             var readings = new[] { electricity, water }.OfType<MeterReading>().ToList();
-            if (invoice is not null)
+            if (invoice is not null && readings.Count > 0)
             {
                 var result = await UpdateDraftAsync(invoice.Id, propertyId, period, readings, ct);
                 row = row with
@@ -79,7 +81,16 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
                     Water = ApplyDraftError(row.Water, result, UtilityType.Water),
                 };
             }
-            if (readings.Count == 0) return row;
+            var electricityOpening = IsOpeningOnly(row.Electricity);
+            var waterOpening = IsOpeningOnly(row.Water);
+            if (readings.Count == 0 && !electricityOpening && !waterOpening) return row;
+
+            if (electricityOpening || waterOpening)
+            {
+                db.Rooms.Attach(room);
+                if (electricityOpening) room.OpeningElectricity = row.Electricity.PreviousValue;
+                if (waterOpening) room.OpeningWater = row.Water.PreviousValue;
+            }
 
             foreach (var reading in readings)
             {
@@ -101,8 +112,8 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
                     (reading.MeterType == UtilityType.Electricity ? input.ElectricityManual : input.WaterManual) ? "Manual" : "Excel");
             return row with
             {
-                Electricity = Saved(row.Electricity, electricity),
-                Water = Saved(row.Water, water)
+                Electricity = Saved(row.Electricity, electricity, electricityOpening),
+                Water = Saved(row.Water, water, waterOpening)
             };
         }
         catch (BusinessException ex) when (ex.Code == "INVOICE_BUSY")
@@ -212,14 +223,18 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
         return errors;
     }
 
-    private async Task<Snapshot> LoadAsync(Guid propertyId, DateOnly period, Guid[]? roomIds, CancellationToken ct)
+    private async Task<Snapshot> LoadAsync(Guid propertyId, DateOnly period, Guid[]? roomIds, CancellationToken ct,
+        bool includeUnoccupied = false)
     {
         var periodEnd = period.AddMonths(1).AddDays(-1);
         var roomQuery = db.Rooms.AsNoTracking().Where(x => x.PropertyId == propertyId);
         if (roomIds is null)
             roomQuery = roomQuery.Where(room => db.Contracts.Any(x => x.RoomId == room.Id &&
                 OccupancyStatuses.Contains(x.Status) && x.StartDate <= periodEnd &&
-                (x.HandoverOn ?? x.EndDate ?? DateOnly.MaxValue) >= period));
+                (x.HandoverOn ?? x.EndDate ?? DateOnly.MaxValue) >= period) ||
+                includeUnoccupied && room.Status != RoomStatus.Inactive &&
+                (room.OpeningElectricity == null && !db.MeterReadings.Any(x => x.RoomId == room.Id && x.MeterType == UtilityType.Electricity) ||
+                 room.OpeningWater == null && !db.MeterReadings.Any(x => x.RoomId == room.Id && x.MeterType == UtilityType.Water)));
         else
             roomQuery = roomQuery.Where(x => roomIds.Contains(x.Id));
         var rooms = await roomQuery.OrderBy(x => x.RoomNumber).ThenBy(x => x.Id)
@@ -252,14 +267,13 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
         var current = contracts.Where(x => Overlaps(x, period)).ToList();
         if (input.ContractId == Guid.Empty)
             return (Unavailable(input, room.RoomNumber, "Mã hợp đồng không hợp lệ.", "METER_IMPORT_CONTRACT_INVALID"), null, null);
-        if (current.Count == 0 || input.ContractId is null && current.Count != 1)
-            return (Unavailable(input, room.RoomNumber, current.Count == 0
-                ? "Phòng không có người thuê trong kỳ." : "Phòng có nhiều hợp đồng trong kỳ. Nhập chỉ số theo từng hợp đồng.",
-                current.Count == 0 ? "METER_IMPORT_NOT_OCCUPIED" : "METER_IMPORT_MULTIPLE_CONTRACTS"), null, null);
-        var contract = input.ContractId is { } contractId ? current.SingleOrDefault(x => x.Id == contractId) : current[0];
-        if (contract is null)
+        if (input.ContractId is null && current.Count > 1)
+            return (Unavailable(input, room.RoomNumber, "Phòng có nhiều hợp đồng trong kỳ. Nhập chỉ số theo từng hợp đồng.",
+                "METER_IMPORT_MULTIPLE_CONTRACTS"), null, null);
+        var contract = input.ContractId is { } contractId ? current.SingleOrDefault(x => x.Id == contractId) : current.SingleOrDefault();
+        if (input.ContractId is not null && contract is null)
             return (Unavailable(input, room.RoomNumber, "Hợp đồng không thuộc phòng hoặc không có hiệu lực trong kỳ.", "METER_IMPORT_CONTRACT_INVALID"), null, null);
-        var invoices = snapshot.Invoices[room.Id].Where(x => x.ContractId == contract.Id).ToList();
+        var invoices = snapshot.Invoices[room.Id].Where(x => contract is not null && x.ContractId == contract.Id).ToList();
         var blockedInvoice = invoices.Any(x => x.Status != InvoiceStatus.Draft) || invoices.Count > 1;
         var invoice = blockedInvoice ? null : invoices.SingleOrDefault();
         var readings = snapshot.Readings[room.Id].ToList();
@@ -267,16 +281,20 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
         var currentMonth = new DateOnly(today.Year, today.Month, 1);
         return (new MeterImportRow(room.Id, room.RoomNumber, null,
             Cell(UtilityType.Electricity, input.Electricity, input.ExpectedElectricityPrevious, input.ExpectedElectricityCurrent, input.InitialElectricityPrevious),
-            Cell(UtilityType.Water, input.Water, input.ExpectedWaterPrevious, input.ExpectedWaterCurrent, input.InitialWaterPrevious), contract.Id, contract.ContractCode), contract, invoice);
+            Cell(UtilityType.Water, input.Water, input.ExpectedWaterPrevious, input.ExpectedWaterCurrent, input.InitialWaterPrevious), contract?.Id, contract?.ContractCode), contract, invoice);
 
         MeterImportCell Cell(UtilityType type, decimal? value, decimal? expected, decimal? expectedCurrent, decimal? opening)
         {
             var meter = readings.Where(x => x.MeterType == type).ToList();
-            var existing = At(meter, period, contract.Id, allowCommon: current.Count == 1);
-            if (existing is not null && (value is null || value == existing.CurrentValue))
+            var existing = contract is null ? null : At(meter, period, contract.Id, allowCommon: current.Count == 1);
+            if (existing is not null && opening is null && (value is null || value == existing.CurrentValue))
                 return new MeterImportCell("AlreadyRecorded", existing.PreviousValue, existing.CurrentValue,
                     "METER_IMPORT_ALREADY_RECORDED", "Đã ghi chỉ số cho kỳ này.", existing.Id);
-            var baseline = existing?.PreviousValue ?? StartingReading(meter, contracts, contract, period)?.CurrentValue;
+            var hasHistory = snapshot.MetersWithHistory.Contains((room.Id, type));
+            var storedOpening = room.OpeningMeterValue(type);
+            var baseline = existing?.PreviousValue ??
+                (contract is null ? null : StartingReading(meter, contracts, contract, period)?.CurrentValue) ??
+                (hasHistory ? null : storedOpening);
             var canEnterOpening = false;
             MeterImportCell Result(string status, string? code = null, string? message = null) =>
                 new(status, baseline, value, code, message, existing?.Id, existing?.CurrentValue, canEnterOpening);
@@ -284,11 +302,11 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
             if (blockedInvoice)
                 return Result("NeedsReview", "METER_IMPORT_INVOICE_LOCKED",
                     "Kỳ này có hóa đơn đã phát hành hoặc có hóa đơn cần kiểm tra.");
-            if (contract.Status == ContractStatus.PendingMoveOut && period >= currentMonth)
+            if (contract?.Status == ContractStatus.PendingMoveOut && period >= currentMonth)
                 return Result("NeedsReview", "METER_IMPORT_HANDOVER_PENDING",
                     "Phòng đang chờ bàn giao. Hãy ghi chỉ số cuối trong luồng trả phòng.");
-            canEnterOpening = baseline is null && !snapshot.MetersWithHistory.Contains((room.Id, type)) &&
-                !contracts.Any(x => x.Id != contract.Id && x.StartDate < contract.StartDate);
+            canEnterOpening = baseline is null && !hasHistory && room.Status != RoomStatus.Inactive &&
+                (contract is null || !contracts.Any(x => x.Id != contract.Id && x.StartDate < contract.StartDate));
             if (opening is not null)
             {
                 if (!canEnterOpening)
@@ -299,6 +317,8 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
                         "Số đầu kỳ phải không âm và có tối đa hai chữ số thập phân.");
                 baseline = opening;
             }
+            if (value is null && opening is not null)
+                return Result("Ready", message: "Sẽ lưu chỉ số đầu kỳ. Nhập chỉ số cuối kỳ khi chốt điện nước.");
             if (baseline is null)
                 return canEnterOpening
                     ? Result("NeedsReview", "METER_IMPORT_INITIAL_REQUIRED", "Ghi lần đầu. Nhập số đầu kỳ thực tế.")
@@ -306,6 +326,9 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
                         "Chưa xác định được chỉ số đầu kỳ. Kiểm tra chỉ số kỳ trước hoặc chỉ số bàn giao.");
             if (value is null)
                 return Result("Missing", "METER_IMPORT_VALUE_MISSING", "Chưa nhập.");
+            if (contract is null)
+                return Result("NeedsReview", "METER_IMPORT_NOT_OCCUPIED",
+                    "Phòng chưa có hợp đồng trong kỳ. Chỉ có thể nhập riêng chỉ số đầu kỳ lần đầu.");
             if ((committing || expected is not null) && expected != baseline ||
                 committing && expectedCurrent != existing?.CurrentValue)
                 return Result("Error", "METER_IMPORT_BASELINE_CHANGED",
@@ -393,8 +416,11 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
             (x.ContractId == contractId || allowCommon && x.ContractId is null))
             .OrderByDescending(x => x.ContractId.HasValue).FirstOrDefault();
 
-    private static MeterReading? NewReading(MeterImportCell cell, Guid roomId, Guid contractId, DateOnly period,
-        UtilityType type, OperatorContext actor, bool manual) => cell.Status == "Ready" ? new MeterReading
+    private static bool IsOpeningOnly(MeterImportCell cell) => cell.Status == "Ready" && cell.CurrentValue is null;
+
+    private static MeterReading? NewReading(MeterImportCell cell, Guid roomId, Guid? contractId, DateOnly period,
+        UtilityType type, OperatorContext actor, bool manual) => cell.Status == "Ready" &&
+        cell.CurrentValue is not null && contractId.HasValue ? new MeterReading
         {
             Id = cell.ReadingId ?? Guid.NewGuid(), RoomId = roomId, ContractId = contractId, MeterType = type,
             Year = (short)period.Year, Month = (byte)period.Month,
@@ -415,10 +441,11 @@ public sealed class MeterImportStore(RoomManagementDbContext db, ILandlordStore 
     private static MeterImportCell Fail(MeterImportCell cell, string code, string message) =>
         cell with { Status = "Error", Code = code, Message = message };
 
-    private static MeterImportCell Saved(MeterImportCell cell, MeterReading? reading) =>
-        reading is not null && cell.Status == "Ready" ? cell with
+    private static MeterImportCell Saved(MeterImportCell cell, MeterReading? reading, bool openingOnly) =>
+        cell.Status == "Ready" && (reading is not null || openingOnly) ? cell with
         {
-            Status = "Saved", ReadingId = reading.Id, Message = "Đã lưu chỉ số.", CanEnterOpening = false
+            Status = "Saved", ReadingId = reading?.Id, CanEnterOpening = false,
+            Message = openingOnly ? "Đã lưu chỉ số đầu kỳ." : "Đã lưu chỉ số."
         } : cell;
 
     private sealed record Snapshot(Dictionary<Guid, Room> Rooms, ILookup<Guid, Contract> Contracts,

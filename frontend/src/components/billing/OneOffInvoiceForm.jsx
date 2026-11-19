@@ -3,6 +3,7 @@ import { Building2, FileText, Plus, Trash2 } from 'lucide-react'
 import { billingApi } from '../../services/api/billingApi'
 import { listRoomRows } from '../../services/api/RoomRowApi'
 import { useDialogClose } from './InvoiceActionDialog'
+import MoneyInput from './MoneyInput'
 
 const money = value => new Intl.NumberFormat('vi-VN').format(Number(value || 0)) + ' ₫'
 const today = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
@@ -392,14 +393,12 @@ export default function OneOffInvoiceForm({
                     </label>
                     <label className="bill-oneoff-field">
                       <span>Đơn giá (₫) *</span>
-                      <input
+                      <MoneyInput
                         required
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        allowDecimal
                         disabled={!contractId}
                         value={item.unitPrice}
-                        onChange={event => updateItem(item.key, 'unitPrice', event.target.value)}
+                        onValueChange={val => updateItem(item.key, 'unitPrice', val)}
                         placeholder="0"
                       />
                     </label>

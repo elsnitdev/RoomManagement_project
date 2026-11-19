@@ -12,17 +12,18 @@ public sealed class MeterImportService(ICurrentLandlord current, ILandlordStore 
 
     public async Task<MeterImportResult> TemplateAsync(Guid propertyId, short year, byte month, CancellationToken ct)
     {
-        var result = await ListAsync(propertyId, year, month, ct);
+        var result = await ListAsync(propertyId, year, month, ct, includeUnoccupied: true);
         if (result.Rows.Count == 0)
-            throw Validation("METER_IMPORT_NO_OCCUPIED_ROOMS", "Kỳ này không có phòng đang có người thuê để xuất file.");
+            throw Validation("METER_IMPORT_NO_OCCUPIED_ROOMS", "Kỳ này không có phòng đủ điều kiện để xuất file.");
         return result;
     }
 
-    public async Task<MeterImportResult> ListAsync(Guid propertyId, short year, byte month, CancellationToken ct)
+    public async Task<MeterImportResult> ListAsync(Guid propertyId, short year, byte month, CancellationToken ct,
+        bool includeUnoccupied = false)
     {
         var period = Period(year, month);
         await AuthorizeAsync(propertyId, ct);
-        var result = await store.InspectAsync(propertyId, period, null, ct);
+        var result = await store.InspectAsync(propertyId, period, null, ct, includeUnoccupied);
         if (result.Rows.Count > MaxRows)
             throw Validation("METER_IMPORT_TOO_MANY_ROWS", $"Khu trọ vượt giới hạn {MaxRows} phòng.");
         return result;

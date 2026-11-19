@@ -13,10 +13,15 @@ public sealed class Room
     public int? Floor { get; set; }
     public decimal? Area { get; set; }
     public decimal BasePrice { get; set; }
+    public decimal? OpeningElectricity { get; set; }
+    public decimal? OpeningWater { get; set; }
     public int MaxOccupants { get; set; }
     public RoomStatus Status { get; set; } = RoomStatus.Available;
     public string? Description { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public byte[] RowVersion { get; set; } = [];
+
+    public decimal? OpeningMeterValue(UtilityType type) =>
+        type == UtilityType.Electricity ? OpeningElectricity : OpeningWater;
 }

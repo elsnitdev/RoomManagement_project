@@ -622,3 +622,14 @@
     padding: 9px 10px;
   }
 }
+
+.rules-tenant--embedded {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.rules-tenant--embedded > .rules-tenant-card:first-child {
+  margin-top: 0;
+}

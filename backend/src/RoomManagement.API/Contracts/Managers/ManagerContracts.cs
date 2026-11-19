@@ -17,6 +17,14 @@ public sealed record CreateManagerRequest(
 public sealed record AssignManagerPropertiesRequest(
     [Required, MinLength(1)] IReadOnlyList<Guid> PropertyIds);
 
+public sealed record UpdateManagerRequest(
+    [StringLength(150)] string? FullName,
+    [StringLength(256)] string? Email,
+    [StringLength(20)] string? PhoneNumber)
+{
+    public UpdateManagerInput ToInput() => new(FullName, Email, PhoneNumber);
+}
+
 public sealed record ManagerAssignedPropertyResponse(Guid PropertyId, string PropertyName, DateTime AssignedAt)
 {
     public static ManagerAssignedPropertyResponse From(ManagerAssignedPropertyDto dto) =>

@@ -15,6 +15,14 @@ frontend/src/components/billing/paymentDate.local.test.js
 frontend/src/components/billing/invoiceDisplay.local.test.js
 frontend/src/services/api/uploadWithTimeout.local.test.js
 TestResults/
+# Dữ liệu và báo cáo từ các đợt kiểm thử thủ công cục bộ
+/backend/tests/RoomManagement.Tests/BillingUtilitiesApiReviewTests.cs
+/test-data/manual-november/
+/test-data/ui-review/
+/*-api-results.json
+/*-api-review.md
+/*.log
+/backend/room_image_test.log
 .dotnet-cli/
 landlord-manage-tenant-profiles-plan.md
 architecture_and_workflow_frontend.md
@@ -39,6 +47,7 @@ backend/tools/AutoBillingTestSeeder/.autobill-password
 backend/artifacts/LocalLoginUsers.sql
 backend/artifacts/*.log
 /backend/artifacts/meter-import-check/
+/backend/artifacts/build-check/
 
 # IDE
 .vs/

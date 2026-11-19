@@ -35,7 +35,8 @@ public interface IContractStore
   /// <summary>Tìm liên kết người thuê trong hợp đồng.</summary>
   Task<ContractTenant?> GetTenantAsync(Guid contractId, Guid linkId, CancellationToken ct);
   /// <summary>Ghi ngày rời trong giao dịch sau khi kiểm tra người liên hệ và thành viên còn lại.</summary>
-  Task<ContractTenant> LeaveSafelyAsync(Contract contract, Guid linkId, DateOnly leaveDate, CancellationToken ct);
+  Task<ContractTenant> LeaveSafelyAsync(Contract contract, Guid linkId, DateOnly leaveDate,
+      CancellationToken ct, Guid? replacementLinkId = null);
   /// <summary>Chốt ngày kết thúc cuối tháng cho hợp đồng cũ chưa có EndDate sau khi khóa phòng và kiểm tra dữ liệu liên quan.</summary>
   Task<Contract> SetLegacyEndDateAsync(Contract contract, DateOnly endDate, DateOnly today, CancellationToken ct);
   /// <summary>Tìm phòng theo mã định danh.</summary>
@@ -51,8 +52,9 @@ public interface IContractStore
       ContractStatus newStatus, DateOnly closedOn, string? reason, CancellationToken ct, string? actorUserId = null);
   Task StartEarlyExitAsync(Contract contract, string reason, CancellationToken ct, string? actorUserId = null);
   Task HandoverAsync(Contract contract, DateOnly handoverOn, CancellationToken ct, string? actorUserId = null);
+  Task<ContractReadingPrerequisites> GetReadingPrerequisitesAsync(Contract contract, short year, byte month, CancellationToken ct);
   Task<MeterReading> RecordContractReadingAsync(Contract contract, UtilityType type, short year, byte month,
-      decimal previousValue, decimal currentValue, CancellationToken ct);
+      decimal previousValue, decimal currentValue, CancellationToken ct, string? expectedVersion = null);
   Task<IReadOnlyList<MeterReading>> ListContractReadingsAsync(Guid contractId, CancellationToken ct);
   Task CompleteSettlementAsync(Contract contract, string disposition, decimal refundAmount, string? note, CancellationToken ct, string? actorUserId = null);
   Task<ContractSettlement?> GetSettlementAsync(Guid contractId, CancellationToken ct);
@@ -101,7 +103,8 @@ public interface IContractStore
       int offerVersion, string termsHash, CancellationToken ct)
       => throw new NotSupportedException();
 
-  Task<Contract> RejectOfferByTenantAsync(Guid contractId, string tenantUserId,
+  Task ExpireOfferResponsesAsync(DateTime utcNow, CancellationToken ct);
+  Task<Contract> RejectOfferByTenantAsync(Guid contractId, string tenantUserId, int? offerVersion,
       string reason, CancellationToken ct)
       => throw new NotSupportedException();
 

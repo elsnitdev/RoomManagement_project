@@ -69,7 +69,7 @@ public sealed class MeterReadingImportController(MeterImportService service) : C
         new(await service.CommitAsync(propertyId, request.Year, request.Month, request.Rows, ct));
 
     private static MeterImportCell WithExcelError(MeterImportCell cell, string? error) =>
-        error is null || (!cell.CanEnterOpening && cell.Status is not ("Missing" or "Ready" or "AlreadyRecorded")) ? cell : cell with
+        error is null ? cell : cell with
         {
             RecordedValue = cell.Status == "AlreadyRecorded" ? cell.CurrentValue : cell.RecordedValue,
             CurrentValue = null,

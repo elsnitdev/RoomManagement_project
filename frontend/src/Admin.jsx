@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { todayLabel } from "./mockData";
-import { Badge, Button, Empty, Field, Heading, Icon, Info, Stat } from "./ui";
+import { Button, Empty, Heading, Icon, Stat } from "./ui";
 import { useApiQuery } from "./hooks/useApiQuery";
 import {
   createUser as createAdminUser,
@@ -54,18 +54,12 @@ function Person({ name, email }) {
 
 export default function Admin({
   page,
-  approvals,
-  setApprovals,
+  reviewSummary,
   users,
   setUsers,
   navigate,
   notify,
 }) {
-  const [selectedId, setSelectedId] = useState(null);
-  const [filter, setFilter] = useState("pending");
-  const [search, setSearch] = useState("");
-  const [rejecting, setRejecting] = useState(false);
-  const [reason, setReason] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [draft, setDraft] = useState({
     userName: "",
@@ -74,6 +68,9 @@ export default function Admin({
     role: "Landlord",
   });
   const [userRoleFilter, setUserRoleFilter] = useState("");
+  const [userActiveFilter, setUserActiveFilter] = useState("");
+  const [userVerifyFilter, setUserVerifyFilter] = useState("");
+  const [userPage, setUserPage] = useState(1);
   const [userKeyword, setUserKeyword] = useState("");
   const [userBusy, setUserBusy] = useState(false);
   const [userFormError, setUserFormError] = useState("");
@@ -85,11 +82,9 @@ export default function Admin({
     citizenId: "",
     dateOfBirth: "",
     address: "",
-    identityVerificationStatus: "Unverified",
   });
   const [editError, setEditError] = useState("");
   const [editBusy, setEditBusy] = useState(false);
-  const detailRef = useRef(null);
 
   const {
     data: adminUsersRes,
@@ -97,54 +92,39 @@ export default function Admin({
     isLoading: adminUsersLoading,
     reload: reloadAdminUsers,
   } = useApiQuery(
-    `admin:users:${userRoleFilter}:${userKeyword.trim()}`,
+    `admin:users:${userRoleFilter}:${userKeyword.trim()}:${userPage}`,
     () =>
       listAdminUsers({
         role: userRoleFilter,
         keyword: userKeyword.trim(),
-        page: 1,
+        page: userPage,
         pageSize: 50,
       }),
     { enabled: page === "users" },
   );
   const apiUsers = Array.isArray(adminUsersRes?.data) ? adminUsersRes.data : [];
-  const pending = approvals.filter((item) => item.status === "pending");
-  const selected = approvals.find((item) => item.id === selectedId);
-  const filtered = approvals.filter(
-    (item) =>
-      (filter === "all" || item.status === filter) &&
-      `${item.name} ${item.email}`.toLowerCase().includes(search.toLowerCase()),
+  const adminUsersMeta = adminUsersRes?.meta;
+  const filteredUsers = useMemo(() => {
+    return apiUsers.filter((u) => {
+      if (userActiveFilter === "active" && !u.isActive) return false;
+      if (userActiveFilter === "locked" && u.isActive) return false;
+      if (userVerifyFilter) {
+        if (u.role !== "Tenant") return false;
+        const status = u.identityVerificationStatus || "Unverified";
+        if (status !== userVerifyFilter) return false;
+      }
+      return true;
+    });
+  }, [apiUsers, userActiveFilter, userVerifyFilter]);
+  const hasActiveFilters = Boolean(
+    userRoleFilter || userActiveFilter || userVerifyFilter || userKeyword.trim()
   );
-  function openDetail(id) {
-    setSelectedId(id);
-    setRejecting(false);
-    setReason("");
-    requestAnimationFrame(() =>
-      detailRef.current?.scrollIntoView({
-        block: "nearest",
-        behavior: "smooth",
-      }),
-    );
-  }
-  function updateApproval(status) {
-    if (status === "rejected" && !reason.trim()) return;
-    setApprovals((current) =>
-      current.map((item) =>
-        item.id === selectedId
-          ? {
-              ...item,
-              status,
-              reason: status === "rejected" ? reason.trim() : undefined,
-            }
-          : item,
-      ),
-    );
-    setSelectedId(null);
-    setRejecting(false);
-    setReason("");
-    notify(
-      status === "approved" ? "Đã duyệt hồ sơ mẫu." : "Đã từ chối hồ sơ mẫu.",
-    );
+  function resetUserFilters() {
+    setUserRoleFilter("");
+    setUserActiveFilter("");
+    setUserVerifyFilter("");
+    setUserKeyword("");
+    setUserPage(1);
   }
   async function addUser(event) {
     event.preventDefault();
@@ -178,7 +158,6 @@ export default function Admin({
       citizenId: u.citizenId || "",
       dateOfBirth: u.dateOfBirth ? String(u.dateOfBirth).split("T")[0] : "",
       address: u.address || "",
-      identityVerificationStatus: u.identityVerificationStatus || "Unverified",
     });
   }
 
@@ -201,7 +180,6 @@ export default function Admin({
         citizenId: editForm.citizenId.trim() || null,
         dateOfBirth: editForm.dateOfBirth ? editForm.dateOfBirth : null,
         address: editForm.address.trim() || null,
-        identityVerificationStatus: editForm.identityVerificationStatus,
       });
       notify(`Đã cập nhật thông tin tài khoản ${editingUser.userName}.`);
       closeEditUser();
@@ -273,171 +251,6 @@ export default function Admin({
       setUserBusy(false);
     }
   }
-  if (page === "approvals")
-    return (
-      <>
-        <Heading
-          eyebrow="QUẢN TRỊ HỆ THỐNG"
-          title="Duyệt hồ sơ chủ trọ"
-          description="Xem thông tin đăng ký và xử lý từng yêu cầu."
-        />
-        <section className="content-card">
-          <div className="card-toolbar">
-            <div
-              className="segmented"
-              role="group"
-              aria-label="Lọc trạng thái hồ sơ"
-            >
-              <button
-                type="button"
-                className={filter === "pending" ? "selected" : ""}
-                onClick={() => setFilter("pending")}
-              >
-                Chờ duyệt <span>{pending.length}</span>
-              </button>
-              <button
-                type="button"
-                className={filter === "all" ? "selected" : ""}
-                onClick={() => setFilter("all")}
-              >
-                Tất cả
-              </button>
-            </div>
-            <div className="search-box">
-              <Icon name="search" size={18} />
-              <input
-                aria-label="Tìm theo tên hoặc email"
-                placeholder="Tìm tên hoặc email..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-          </div>
-          {filtered.length ? (
-            <div className="responsive-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Người đăng ký</th>
-                    <th>Ngày gửi</th>
-                    <th>Trạng thái</th>
-                    <th>
-                      <span className="sr-only">Thao tác</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((item) => (
-                    <tr key={item.id}>
-                      <td>
-                        <Person name={item.name} email={item.email} />
-                      </td>
-                      <td>{item.submitted}</td>
-                      <td>
-                        <Badge kind={item.status}>
-                          {item.status === "pending"
-                            ? "Chờ duyệt"
-                            : item.status === "approved"
-                              ? "Đã duyệt"
-                              : "Từ chối"}
-                        </Badge>
-                      </td>
-                      <td className="align-right">
-                        <button
-                          className="table-link"
-                          type="button"
-                          onClick={() => openDetail(item.id)}
-                        >
-                          Xem hồ sơ <Icon name="chevron" size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <Empty
-              title="Không tìm thấy hồ sơ"
-              description="Thử một từ khóa khác hoặc đổi bộ lọc trạng thái."
-            />
-          )}
-        </section>
-        {selected && (
-          <section
-            className="content-card detail-panel"
-            ref={detailRef}
-            aria-label={`Hồ sơ ${selected.name}`}
-          >
-            <div className="detail-header">
-              <div>
-                <span className="eyebrow">HỒ SƠ {selected.id}</span>
-                <h2>{selected.name}</h2>
-                <p>Gửi ngày {selected.submitted}</p>
-              </div>
-              <button
-                className="icon-button"
-                type="button"
-                aria-label="Đóng chi tiết hồ sơ"
-                onClick={() => setSelectedId(null)}
-              >
-                <Icon name="close" />
-              </button>
-            </div>
-            <div className="detail-grid">
-              <Info label="Email" value={selected.email} />
-              <Info label="Số điện thoại" value={selected.phone} />
-              <Info label="Số CCCD" value={selected.citizenId} />
-              <Info label="Ngày sinh" value={selected.birthDate} />
-              <Info label="Địa chỉ thường trú" value={selected.address} wide />
-            </div>
-            {selected.status === "pending" ? (
-              <>
-                <div className="detail-actions">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setRejecting(!rejecting)}
-                  >
-                    Từ chối
-                  </Button>
-                  <Button
-                    icon="check"
-                    onClick={() => updateApproval("approved")}
-                  >
-                    Duyệt hồ sơ
-                  </Button>
-                </div>
-                {rejecting && (
-                  <div className="reject-box">
-                    <Field label="Lý do từ chối" required>
-                      <textarea
-                        rows="3"
-                        required
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                        placeholder="Nêu rõ lý do để người đăng ký biết cần bổ sung gì"
-                      />
-                    </Field>
-                    <Button
-                      variant="danger"
-                      disabled={!reason.trim()}
-                      onClick={() => updateApproval("rejected")}
-                    >
-                      Xác nhận từ chối
-                    </Button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="notice">
-                Hồ sơ đã được xử lý.{" "}
-                {selected.reason && `Lý do từ chối: ${selected.reason}`}
-              </div>
-            )}
-          </section>
-        )}
-      </>
-    );
   if (page === "users")
     return (
       <div className="admin-users-page">
@@ -554,7 +367,7 @@ export default function Admin({
                   key={val || "all"}
                   type="button"
                   className={`admin-role-pill ${userRoleFilter === val ? "is-active" : ""}`}
-                  onClick={() => setUserRoleFilter(val)}
+                  onClick={() => { setUserRoleFilter(val); setUserPage(1); }}
                 >
                   <span>{label}</span>
                   <span className="admin-pill-badge">{count}</span>
@@ -570,7 +383,7 @@ export default function Admin({
                   aria-label="Tìm tài khoản người dùng"
                   placeholder="Tìm tên, username, email, CCCD, SĐT..."
                   value={userKeyword}
-                  onChange={(e) => setUserKeyword(e.target.value)}
+                  onChange={(e) => { setUserKeyword(e.target.value); setUserPage(1); }}
                 />
                 {userKeyword && (
                   <button
@@ -596,6 +409,45 @@ export default function Admin({
               </button>
             </div>
           </div>
+          <div className="admin-toolbar-filters">
+            <div className="admin-filter-group">
+              <label htmlFor="admin-user-active-filter">Trạng thái tài khoản</label>
+              <select
+                id="admin-user-active-filter"
+                className="admin-filter-select"
+                value={userActiveFilter}
+                onChange={(e) => setUserActiveFilter(e.target.value)}
+              >
+                <option value="">Tất cả</option>
+                <option value="active">Đang hoạt động</option>
+                <option value="locked">Đã khóa</option>
+              </select>
+            </div>
+            <div className="admin-filter-group">
+              <label htmlFor="admin-user-verify-filter">Xác minh danh tính</label>
+              <select
+                id="admin-user-verify-filter"
+                className="admin-filter-select"
+                value={userVerifyFilter}
+                onChange={(e) => setUserVerifyFilter(e.target.value)}
+              >
+                <option value="">Tất cả</option>
+                <option value="Verified">Đã xác minh</option>
+                <option value="Pending">Chờ duyệt</option>
+                <option value="Unverified">Chưa xác minh</option>
+              </select>
+            </div>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                className="admin-filter-clear"
+                onClick={resetUserFilters}
+              >
+                <X size={14} />
+                <span>Xóa bộ lọc</span>
+              </button>
+            )}
+          </div>
         </section>
 
         {/* 3. Redesigned User Data Table */}
@@ -610,7 +462,7 @@ export default function Admin({
                 {adminUsersError.message || "Không thể tải danh sách tài khoản."}
               </p>
             </div>
-          ) : apiUsers.length ? (
+          ) : filteredUsers.length ? (
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
@@ -625,7 +477,7 @@ export default function Admin({
                   </tr>
                 </thead>
                 <tbody>
-                  {apiUsers.map((u) => (
+                  {filteredUsers.map((u) => (
                     <tr key={u.id}>
                       <td>
                         <div className="admin-user-cell">
@@ -815,6 +667,31 @@ export default function Admin({
               />
             </div>
           )}
+          {adminUsersMeta && adminUsersMeta.totalPages > 1 && (
+            <div className="admin-pagination">
+              <span>
+                Trang {userPage} / {adminUsersMeta.totalPages} · {adminUsersMeta.totalItems ?? filteredUsers.length} tài khoản
+              </span>
+              <div className="admin-pagination__controls">
+                <button
+                  type="button"
+                  className="admin-pagination__btn"
+                  disabled={adminUsersLoading || userPage <= 1}
+                  onClick={() => setUserPage((p) => Math.max(1, p - 1))}
+                >
+                  Trang trước
+                </button>
+                <button
+                  type="button"
+                  className="admin-pagination__btn"
+                  disabled={adminUsersLoading || userPage >= adminUsersMeta.totalPages}
+                  onClick={() => setUserPage((p) => p + 1)}
+                >
+                  Trang sau
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* 4. Edit User Modal */}
@@ -933,24 +810,10 @@ export default function Admin({
                       />
                     </div>
 
-                    {editingUser.role === "Tenant" && (
-                      <div className="admin-field admin-field--wide">
-                        <label htmlFor="edit-verify">Trạng thái xác minh danh tính</label>
-                        <select
-                          id="edit-verify"
-                          value={editForm.identityVerificationStatus}
-                          onChange={(e) =>
-                            setEditForm({
-                              ...editForm,
-                              identityVerificationStatus: e.target.value,
-                            })
-                          }
-                        >
-                          <option value="Unverified">Chưa xác minh (Unverified)</option>
-                          <option value="Pending">Chờ duyệt (Pending)</option>
-                          <option value="Verified">Đã xác minh (Verified)</option>
-                        </select>
-                      </div>
+                    {["Tenant", "Landlord"].includes(editingUser.role) && (
+                      <Button type="button" onClick={() => navigate("admin/identity/" + editingUser.id)}>
+                        Mở xác minh danh tính
+                      </Button>
                     )}
                   </div>
 
@@ -1141,7 +1004,7 @@ export default function Admin({
         <Stat
           icon="clock"
           label="Hồ sơ chờ duyệt"
-          value={pending.length.toString()}
+          value={reviewSummary ? String(reviewSummary.pending) : "—"}
           note="Cần xem xét"
           tint="amber"
         />
@@ -1154,9 +1017,7 @@ export default function Admin({
         <Stat
           icon="check"
           label="Đã duyệt"
-          value={approvals
-            .filter((item) => item.status === "approved")
-            .length.toString()}
+          value={reviewSummary ? String(reviewSummary.approved) : "—"}
           note="Hồ sơ chủ trọ"
           tint="green"
         />
@@ -1176,32 +1037,7 @@ export default function Admin({
               Xem tất cả <Icon name="arrow" size={16} />
             </button>
           </div>
-          {pending.length ? (
-            <div className="list-rows">
-              {pending.slice(0, 3).map((item) => (
-                <button
-                  className="list-row"
-                  type="button"
-                  key={item.id}
-                  onClick={() => navigate("admin/approvals")}
-                >
-                  <span className="person-avatar">{initials(item.name)}</span>
-                  <span className="list-row-main">
-                    <strong>{item.name}</strong>
-                    <small>{item.email}</small>
-                  </span>
-                  <span className="list-row-date">{item.submitted}</span>
-                  <Icon name="chevron" size={17} />
-                </button>
-              ))}
-            </div>
-          ) : (
-            <Empty
-              title="Đã xử lý hết hồ sơ"
-              description="Các yêu cầu mới sẽ xuất hiện tại đây."
-              icon="check"
-            />
-          )}
+          <p>Xem danh sách để xử lý hồ sơ đang chờ.</p>
         </section>
         <section className="content-card quick-card">
           <span className="quick-card-icon">

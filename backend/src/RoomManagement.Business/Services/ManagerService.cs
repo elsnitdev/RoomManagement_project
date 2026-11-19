@@ -191,6 +191,38 @@ public sealed class ManagerService : IManagerService
             ?? throw new BusinessException(BusinessErrorType.NotFound, "MANAGER_NOT_FOUND", "Không tìm thấy tài khoản quản lý.");
     }
 
+    public async Task<ManagerDto> UpdateAsync(string managerId, UpdateManagerInput input, CancellationToken ct = default)
+    {
+        var context = await OperatorAccessGuard.RequireLandlordAsync(_current, _landlords, ct);
+        var landlordId = context.OwnerLandlordUserId;
+        var manager = await _store.FindManagerAsync(landlordId, managerId, asNoTracking: false, ct)
+            ?? throw new BusinessException(BusinessErrorType.NotFound, "MANAGER_NOT_FOUND", "Không tìm thấy tài khoản quản lý.");
+
+        var trimmedEmail = string.IsNullOrWhiteSpace(input.Email) ? null : input.Email.Trim();
+        if (trimmedEmail is not null)
+        {
+            try { UserAccountRules.EnsureValidEmail(trimmedEmail); }
+            catch (Exception ex)
+            {
+                throw new BusinessException(BusinessErrorType.Validation, "EMAIL_INVALID", ex.Message, ex);
+            }
+        }
+
+        var normalizedEmail = trimmedEmail?.ToUpperInvariant();
+        if (normalizedEmail is not null && await _store.IsEmailTakenByOtherAsync(normalizedEmail, manager.Id, ct))
+            throw new BusinessException(BusinessErrorType.Conflict, "EMAIL_EXISTS", $"Email '{trimmedEmail}' đã được sử dụng.");
+
+        manager.FullName = string.IsNullOrWhiteSpace(input.FullName) ? null : input.FullName.Trim();
+        manager.Email = trimmedEmail;
+        manager.NormalizedEmail = normalizedEmail;
+        manager.PhoneNumber = string.IsNullOrWhiteSpace(input.PhoneNumber) ? null : input.PhoneNumber.Trim();
+
+        await _store.SaveChangesAsync(ct);
+
+        return await _store.GetManagerDetailsAsync(landlordId, manager.Id, ct)
+            ?? throw new BusinessException(BusinessErrorType.NotFound, "MANAGER_NOT_FOUND", "Không tìm thấy tài khoản quản lý.");
+    }
+
     public async Task DeleteAsync(string managerId, CancellationToken ct = default)
     {
         var context = await OperatorAccessGuard.RequireLandlordAsync(_current, _landlords, ct);

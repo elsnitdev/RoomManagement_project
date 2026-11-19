@@ -21,4 +21,9 @@ public sealed record CreateManagerInput(
     string? PhoneNumber,
     IReadOnlyList<Guid>? PropertyIds);
 
+public sealed record UpdateManagerInput(
+    string? FullName,
+    string? Email,
+    string? PhoneNumber);
+
 public sealed record ManagerFilter(int Page, int PageSize, string? Search, bool? IsActive);

@@ -2,22 +2,18 @@ import { useState } from "react";
 import MonthlyBillingActions from "./MonthlyBillingActions";
 import {
   AlertCircle,
+  ArrowRight,
   Check,
   ChevronRight,
   Clock,
   Receipt,
+  Search,
+  X,
   Zap,
 } from "lucide-react";
 
 const money = (value) =>
   new Intl.NumberFormat("vi-VN").format(Number(value || 0)) + " ₫";
-
-const missingLabel = {
-  ElectricityReading: "Chỉ số điện",
-  WaterReading: "Chỉ số nước",
-  ElectricityRate: "Giá điện",
-  WaterRate: "Giá nước",
-};
 
 const workPriority = {
   MissingInputs: 0,
@@ -26,7 +22,7 @@ const workPriority = {
   Draft: 3,
   Issued: 4,
 };
-const debtPriority = { Overdue: 0, Partial: 1, Unpaid: 2 };
+
 const lastClosedMonth = () => {
   const current = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 7);
   const [year, month] = current.split("-").map(Number);
@@ -45,9 +41,13 @@ export default function BillingPriorityBoard({
   attentionError,
   attentionLoading,
   roomName,
-  onWorkItem,
+  onOpenMeters,
+  onOpenUtilityInputs,
+  onFocusUnpaid,
   onOpenInvoice,
 }) {
+  const [paymentQuery, setPaymentQuery] = useState("");
+
   const work = [...worklist].sort(
     (a, b) =>
       (workPriority[a.status] ?? 5) - (workPriority[b.status] ?? 5) ||
@@ -62,21 +62,39 @@ export default function BillingPriorityBoard({
       item.status !== "NeedsAttention" &&
       item.status !== "Issued"
   );
-  const pending = attention?.pendingPayments || [];
-  const unpaid = [...(attention?.unpaid || [])]
-    .filter((item) => Number(item.amountDue) > 0)
-    .sort(
-      (a, b) =>
-        (debtPriority[a.displayStatus] ?? 3) -
-          (debtPriority[b.displayStatus] ?? 3) ||
-        String(a.dueDate).localeCompare(String(b.dueDate))
-    );
 
-  const [activePaymentTab, setActivePaymentTab] = useState("pending");
-  const currentPaymentTab =
-    activePaymentTab === "pending" && !pending.length && unpaid.length
-      ? "unpaid"
-      : activePaymentTab;
+  const missingReadingCount = needsInput.filter((item) =>
+    item.missingInputs?.some(
+      (code) => code === "ElectricityReading" || code === "WaterReading"
+    )
+  ).length;
+  const missingRateOrOtherCount = needsInput.length - missingReadingCount;
+
+  const pending = attention?.pendingPayments || [];
+  const totalPendingAmount = pending.reduce(
+    (sum, item) => sum + Number(item.claimedAmount || 0),
+    0
+  );
+
+  const normalizedQuery = paymentQuery.trim().toLowerCase();
+  const filteredPending = normalizedQuery
+    ? pending.filter((payment) => {
+        const roomText = String(roomName(payment.roomId) || "").toLowerCase();
+        const codeText = String(payment.invoiceCode || "").toLowerCase();
+        const submitterText = String(payment.submittedByName || "").toLowerCase();
+        return (
+          roomText.includes(normalizedQuery) ||
+          codeText.includes(normalizedQuery) ||
+          submitterText.includes(normalizedQuery)
+        );
+      })
+    : pending;
+
+  const unpaid = (attention?.unpaid || []).filter(
+    (item) => Number(item.amountDue) > 0
+  );
+
+  const formattedMonth = month ? month.split("-").reverse().join("/") : "này";
 
   return (
     <div className="bill-priority-board">
@@ -116,9 +134,7 @@ export default function BillingPriorityBoard({
             </strong>
           </div>
           <div className="bill-stat-card__footer">
-            <span>
-              Kỳ {month ? month.split("-").reverse().join("/") : "này"}
-            </span>
+            <span>Kỳ {formattedMonth}</span>
             <ChevronRight size={14} className="bill-stat-card__arrow" />
           </div>
         </button>
@@ -132,7 +148,6 @@ export default function BillingPriorityBoard({
               : "bill-stat-card--success"
           }`}
           onClick={() => {
-            setActivePaymentTab("pending");
             const el = document.getElementById("bill-payment-hub");
             el?.scrollIntoView({ behavior: "smooth", block: "start" });
           }}
@@ -167,7 +182,7 @@ export default function BillingPriorityBoard({
           </div>
         </button>
 
-        {/* Thẻ 3: Hóa đơn còn phải thu */}
+        {/* Thẻ 3: Hóa đơn còn phải thu -> cuộn xuống Danh sách hóa đơn */}
         <button
           type="button"
           className={`bill-stat-card ${
@@ -178,9 +193,13 @@ export default function BillingPriorityBoard({
               : "bill-stat-card--success"
           }`}
           onClick={() => {
-            setActivePaymentTab("unpaid");
-            const el = document.getElementById("bill-payment-hub");
-            el?.scrollIntoView({ behavior: "smooth", block: "start" });
+            if (onFocusUnpaid) {
+              onFocusUnpaid();
+            } else {
+              document
+                .getElementById("bill-invoices-list")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
           }}
         >
           <div className="bill-stat-card__top">
@@ -210,7 +229,7 @@ export default function BillingPriorityBoard({
           <div className="bill-stat-card__footer">
             <span>
               {unpaid.length > 0
-                ? "Bao gồm nợ và quá hạn"
+                ? "Xem tại danh sách bên dưới"
                 : "Tất cả đã thanh toán"}
             </span>
             <ChevronRight size={14} className="bill-stat-card__arrow" />
@@ -218,9 +237,9 @@ export default function BillingPriorityBoard({
         </button>
       </div>
 
-      {/* Tầng 2: Trung tâm Xử lý Khẩn cấp (Action Hub - Bố cục 2 Cột Bento) */}
+      {/* Tầng 2: Trung tâm Xử lý (Bố cục 2 Cột Bento gọn) */}
       <div className="bill-priority-bento">
-        {/* Cột trái: Cần nhập điện nước */}
+        {/* Cột trái: Chốt số điện nước (Tóm tắt + Link sang trang nhập chỉ số) */}
         <section
           className="bill-priority-card bill-priority-card--meters"
           id="bill-meters-hub"
@@ -230,7 +249,7 @@ export default function BillingPriorityBoard({
             <div className="bill-bento-title">
               <h2 id="bill-worklist-title">Chốt số điện nước</h2>
               <p>
-                Kỳ {month?.split("-").reverse().join("/")} để lập hóa đơn đầu tháng.
+                Kỳ {formattedMonth} để lập hóa đơn đầu tháng.
               </p>
             </div>
             <div className="bill-month-picker-compact">
@@ -253,92 +272,97 @@ export default function BillingPriorityBoard({
             </p>
           )}
           {worklistLoading && <p role="status">Đang tải việc cần chốt…</p>}
-          <MonthlyBillingActions propertyId={propertyId} month={month}
-            work={work} loading={worklistLoading} onChanged={onBillingChanged} />
-          {!worklistLoading && !worklistError && !needsInput.length && (
-            <p className="bill-empty">
-              Không có phòng thiếu dữ liệu điện nước trong kỳ này.
-            </p>
-          )}
 
-          {!!needsInput.length && (
-            <ul className="bill-action-list">
-              {needsInput.map((item) => (
-                <li className="bill-action-row" key={item.contractId}>
-                  <div className="bill-action-row__main">
-                    <strong>
-                      Phòng {item.roomNumber || roomName(item.roomId)}
-                    </strong>
-                    <small>{item.contractCode}</small>
-                  </div>
-                  <div className="bill-action-row__center">
-                    <span
-                      className={`bill-badge ${
-                        item.status === "NeedsAttention"
-                          ? "bill-badge--pending"
-                          : "bill-badge--urgent"
-                      }`}
-                    >
-                      {item.status === "NeedsAttention"
-                        ? "Cần kiểm tra"
-                        : "Thiếu dữ liệu"}
-                    </span>
-                    <p className="bill-action-row__desc">
-                      {item.missingInputs
-                        ?.map((code) => missingLabel[code] || code)
-                        .join(", ") || "Dữ liệu tính tiền cần kiểm tra"}
-                    </p>
-                  </div>
+          {!worklistLoading && (
+            <div
+              className={`bill-meters-summary ${
+                needsInput.length > 0
+                  ? "bill-meters-summary--attention"
+                  : "bill-meters-summary--success"
+              }`}
+            >
+              <div className="bill-meters-summary__top">
+                <strong className="bill-meters-summary__count">
+                  {needsInput.length > 0
+                    ? `${needsInput.length} phòng cần xử lý`
+                    : `Đã đủ dữ liệu kỳ ${formattedMonth}`}
+                </strong>
+                {needsInput.length > 0 ? (
+                  <span className="bill-badge bill-badge--urgent">
+                    Chưa chốt đủ
+                  </span>
+                ) : (
+                  <span className="bill-badge bill-badge--ready">
+                    Sẵn sàng
+                  </span>
+                )}
+              </div>
+
+              <p className="bill-meters-summary__breakdown">
+                {needsInput.length > 0 ? (
+                  <>
+                    {missingReadingCount > 0 && (
+                      <span>{missingReadingCount} phòng thiếu chỉ số</span>
+                    )}
+                    {missingReadingCount > 0 && missingRateOrOtherCount > 0 && " · "}
+                    {missingRateOrOtherCount > 0 && (
+                      <span>{missingRateOrOtherCount} phòng thiếu đơn giá/dữ liệu khác</span>
+                    )}
+                    {otherWork.length > 0 && (
+                      <span> · {otherWork.length} phòng sẵn sàng/nháp</span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    Không có phòng thiếu chỉ số điện nước.
+                    {otherWork.length > 0 && ` (${otherWork.length} phòng sẵn sàng/nháp)`}
+                  </>
+                )}
+              </p>
+
+              <div className="bill-meters-cta">
+                <button
+                  type="button"
+                  className={`bill-button bill-btn-compact ${
+                    needsInput.length > 0
+                      ? "bill-button--primary"
+                      : "bill-button--ghost"
+                  }`}
+                  disabled={!propertyId || !month}
+                  onClick={() => onOpenMeters?.()}
+                >
+                  <span>
+                    {needsInput.length > 0
+                      ? "Nhập chỉ số điện nước"
+                      : "Xem / sửa chỉ số"}
+                  </span>
+                  <ArrowRight size={14} />
+                </button>
+                {missingRateOrOtherCount > 0 && onOpenUtilityInputs && (
                   <button
-                    className="bill-button bill-button--primary bill-btn-compact"
                     type="button"
-                    onClick={() => onWorkItem(item)}
+                    className="bill-button bill-button--ghost bill-btn-compact"
+                    onClick={() => onOpenUtilityInputs()}
                   >
-                    {item.missingInputs?.some((code) => code === "ElectricityReading" || code === "WaterReading")
-                      ? "Nhập chỉ số"
-                      : "Kiểm tra dữ liệu"}
+                    Kiểm tra đơn giá
                   </button>
-                </li>
-              ))}
-            </ul>
+                )}
+              </div>
+            </div>
           )}
 
-          {!!otherWork.length && (
-            <details className="bill-secondary-work">
-              <summary>
-                {otherWork.length} phòng đã có dữ liệu hoặc hóa đơn nháp
-              </summary>
-              <ul className="bill-action-list">
-                {otherWork.map((item) => (
-                  <li className="bill-action-row" key={item.contractId}>
-                    <div className="bill-action-row__main">
-                      <strong>
-                        Phòng {item.roomNumber || roomName(item.roomId)}
-                      </strong>
-                      <small>{item.contractCode}</small>
-                    </div>
-                    <div className="bill-action-row__center">
-                      <span className="bill-badge bill-badge--ready">
-                        {item.status === "Draft"
-                          ? "Nháp chờ phát hành"
-                          : "Sẵn sàng xem trước"}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      className="bill-button bill-button--ghost bill-btn-compact"
-                      onClick={() => onWorkItem(item)}
-                    >
-                      {item.invoiceId ? "Xem hóa đơn" : "Xem trước"}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
+          <div className="bill-meters-actions">
+            <MonthlyBillingActions
+              propertyId={propertyId}
+              month={month}
+              work={work}
+              loading={worklistLoading}
+              onChanged={onBillingChanged}
+            />
+          </div>
         </section>
 
-        {/* Cột phải: Thanh toán & Thu nợ */}
+        {/* Cột phải: Thanh toán chờ xác nhận (Compact & có scroll khi nhiều) */}
         <section
           className="bill-priority-card bill-priority-card--payments"
           id="bill-payment-hub"
@@ -346,47 +370,19 @@ export default function BillingPriorityBoard({
         >
           <div className="bill-bento-head">
             <div className="bill-bento-title">
-              <h2 id="bill-payment-queue-title">Thanh toán & Thu nợ</h2>
-              <p>Chứng từ chờ đối chiếu và các hóa đơn còn tồn đọng.</p>
+              <h2 id="bill-payment-queue-title">Thanh toán chờ xác nhận</h2>
+              <p>Chứng từ người thuê đã gửi, đang chờ đối chiếu.</p>
             </div>
-            <div className="bill-subtab-pills" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={currentPaymentTab === "pending"}
-                className={`bill-subtab-pill ${
-                  currentPaymentTab === "pending" ? "is-active" : ""
-                }`}
-                onClick={() => setActivePaymentTab("pending")}
-              >
-                Chờ xác nhận
+            {!attentionLoading && !attentionError && (
+              <div className="bill-queue-summary" aria-label="Tổng hợp chờ duyệt">
+                <span className="bill-pill-badge">{pending.length} khoản</span>
                 {pending.length > 0 && (
-                  <span className="bill-pill-badge">{pending.length}</span>
+                  <strong className="bill-amount-tabular">
+                    {money(totalPendingAmount)}
+                  </strong>
                 )}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={currentPaymentTab === "unpaid"}
-                className={`bill-subtab-pill ${
-                  currentPaymentTab === "unpaid" ? "is-active" : ""
-                }`}
-                onClick={() => setActivePaymentTab("unpaid")}
-              >
-                Còn phải thu
-                {unpaid.length > 0 && (
-                  <span
-                    className={`bill-pill-badge ${
-                      unpaid.some((i) => i.displayStatus === "Overdue")
-                        ? "bill-pill-badge--danger"
-                        : ""
-                    }`}
-                  >
-                    {unpaid.length}
-                  </span>
-                )}
-              </button>
-            </div>
+              </div>
+            )}
           </div>
 
           {attentionError && (
@@ -400,93 +396,73 @@ export default function BillingPriorityBoard({
 
           {!attentionLoading && !attentionError && (
             <>
-              {currentPaymentTab === "pending" && (
+              {!pending.length ? (
+                <p className="bill-empty">
+                  Không có chứng từ thanh toán nào đang chờ xác nhận.
+                </p>
+              ) : (
                 <>
-                  {!pending.length ? (
-                    <p className="bill-empty">
-                      Không có chứng từ thanh toán nào đang chờ xác nhận.
-                    </p>
+                  {pending.length > 5 && (
+                    <div className="bill-queue-search">
+                      <Search size={14} className="bill-queue-search__icon" />
+                      <input
+                        type="text"
+                        value={paymentQuery}
+                        onChange={(event) => setPaymentQuery(event.target.value)}
+                        placeholder="Tìm phòng, mã hóa đơn hoặc người nộp…"
+                        aria-label="Tìm kiếm yêu cầu thanh toán"
+                      />
+                      {paymentQuery && (
+                        <button
+                          type="button"
+                          className="bill-queue-search__clear"
+                          aria-label="Xóa từ khóa tìm kiếm"
+                          onClick={() => setPaymentQuery("")}
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {!filteredPending.length ? (
+                    <div className="bill-queue-empty-filter">
+                      <p>Không tìm thấy thanh toán khớp với "{paymentQuery}".</p>
+                      <button
+                        type="button"
+                        className="bill-button bill-button--ghost bill-btn-compact"
+                        onClick={() => setPaymentQuery("")}
+                      >
+                        Xóa bộ lọc
+                      </button>
+                    </div>
                   ) : (
-                    <ul className="bill-action-list">
-                      {pending.map((payment) => (
+                    <ul className="bill-action-list bill-action-list--compact">
+                      {filteredPending.map((payment) => (
                         <li
-                          className="bill-action-row"
+                          className="bill-action-row bill-action-row--compact"
                           key={payment.paymentId}
                         >
                           <div className="bill-action-row__main">
-                            <strong>{payment.invoiceCode}</strong>
-                            <small>Phòng {roomName(payment.roomId)}</small>
-                          </div>
-                          <div className="bill-action-row__center">
-                            <span className="bill-badge bill-badge--pending">
-                              Chờ đối chiếu
-                            </span>
-                            <p className="bill-action-row__desc">
-                              {payment.submittedByName || "Người thuê"} khai{" "}
-                              <strong className="bill-amount-tabular">
-                                {money(payment.claimedAmount)}
-                              </strong>
-                            </p>
-                          </div>
-                          <button
-                            className="bill-button bill-button--ghost bill-btn-compact"
-                            type="button"
-                            onClick={() => onOpenInvoice(payment.invoiceId)}
-                          >
-                            Xem hóa đơn
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              )}
-
-              {currentPaymentTab === "unpaid" && (
-                <>
-                  {!unpaid.length ? (
-                    <p className="bill-empty">
-                      Tất cả hóa đơn đã được thanh toán đầy đủ.
-                    </p>
-                  ) : (
-                    <ul className="bill-action-list">
-                      {unpaid.map((invoice) => (
-                        <li className="bill-action-row" key={invoice.id}>
-                          <div className="bill-action-row__main">
-                            <strong>{invoice.code}</strong>
+                            <strong>
+                              Phòng {roomName(payment.roomId)} · {payment.invoiceCode}
+                            </strong>
                             <small>
-                              Phòng {roomName(invoice.roomId)} · Hạn{" "}
-                              {invoice.dueDate}
+                              {payment.submittedByName || "Người thuê"} nộp chứng từ
                             </small>
                           </div>
-                          <div className="bill-action-row__center">
-                            <span
-                              className={`bill-badge ${
-                                invoice.displayStatus === "Overdue"
-                                  ? "bill-badge--urgent"
-                                  : "bill-badge--pending"
-                              }`}
+                          <div className="bill-action-row__right">
+                            <strong className="bill-amount-tabular">
+                              {money(payment.claimedAmount)}
+                            </strong>
+                            <button
+                              className="bill-button bill-button--ghost bill-btn-compact"
+                              type="button"
+                              onClick={() => onOpenInvoice(payment.invoiceId)}
                             >
-                              {({
-                                Overdue: "Quá hạn",
-                                Partial: "Đã thu 1 phần",
-                                Unpaid: "Chưa thanh toán",
-                              })[invoice.displayStatus] || invoice.displayStatus}
-                            </span>
-                            <p className="bill-action-row__desc">
-                              Còn nợ:{" "}
-                              <strong className="bill-amount-tabular bill-amount-tabular--debt">
-                                {money(invoice.amountDue)}
-                              </strong>
-                            </p>
+                              Đối chiếu
+                            </button>
                           </div>
-                          <button
-                            className="bill-button bill-button--ghost bill-btn-compact"
-                            type="button"
-                            onClick={() => onOpenInvoice(invoice.id)}
-                          >
-                            Xem hóa đơn
-                          </button>
                         </li>
                       ))}
                     </ul>

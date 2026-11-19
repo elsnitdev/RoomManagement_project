@@ -13,7 +13,13 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
     public TestUserStore Store { get; } = new();
     public TestTenantProfileStore TenantProfileStore { get; } = new();
     public TestRequestStore RequestStore { get; } = new();
+    public TestNotificationStore NotificationStore { get; }
     public Dictionary<string, string?> Overrides { get; } = new();
+
+    public ApiFactory()
+    {
+        NotificationStore = new TestNotificationStore(Store);
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -37,11 +43,13 @@ internal sealed class ApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<ITenantProfileStore>();
             services.RemoveAll<ILandlordStore>();
             services.RemoveAll<IRequestStore>();
+            services.RemoveAll<INotificationStore>();
             services.AddSingleton<IUserStore>(Store);
             services.AddSingleton<ILandlordApprovalStore>(Store);
             services.AddSingleton<ITenantProfileStore>(TenantProfileStore);
             services.AddSingleton<ILandlordStore>(Store);
             services.AddSingleton<IRequestStore>(RequestStore);
+            services.AddSingleton<INotificationStore>(NotificationStore);
         });
     }
 }

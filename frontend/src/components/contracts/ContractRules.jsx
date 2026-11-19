@@ -636,7 +636,11 @@ export function PropertyRules({ propertyId, navigate, embedded = false }) {
   );
 }
 
-export function TenantRules() {
+export function TenantRules({
+  filterContractId = "",
+  embedded = false,
+  onAccepted,
+} = {}) {
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -667,6 +671,7 @@ export function TenantRules() {
         item.versionId,
       );
       setRevision((x) => x + 1);
+      onAccepted?.(item);
     } catch (cause) {
       setError(
         cause.status === 409
@@ -677,22 +682,34 @@ export function TenantRules() {
       setBusy("");
     }
   }
+  const visibleRules = filterContractId
+    ? (rules || []).filter((item) => item.contractId === filterContractId)
+    : rules || [];
   return (
-    <section className="rules-tenant" aria-labelledby="tenant-rules-title">
-      <div className="rules-heading">
-        <div>
-          <span className="rules-kicker">THỎA THUẬN CỦA BẠN</span>
-          <h2 id="tenant-rules-title">Nội quy & điều khoản</h2>
-          <p>Đọc và chấp thuận nội quy gắn với hợp đồng của bạn.</p>
+    <section
+      className={`rules-tenant${embedded ? " rules-tenant--embedded" : ""}`}
+      aria-labelledby="tenant-rules-title"
+    >
+      {!embedded && (
+        <div className="rules-heading">
+          <div>
+            <span className="rules-kicker">THỎA THUẬN CỦA BẠN</span>
+            <h2 id="tenant-rules-title">Nội quy & điều khoản</h2>
+            <p>Đọc và chấp thuận nội quy gắn với hợp đồng của bạn.</p>
+          </div>
+          <ShieldCheck size={26} aria-hidden="true" />
         </div>
-        <ShieldCheck size={26} aria-hidden="true" />
-      </div>
+      )}
       {loading ? (
         <p role="status">Đang tải nội quy…</p>
-      ) : error ? null : !rules?.length ? (
-        <p>Bạn chưa có nội quy hợp đồng cần xem.</p>
+      ) : error ? null : !visibleRules.length ? (
+        <p>
+          {filterContractId
+            ? "Hợp đồng này chưa có nội quy khu trọ cần xem."
+            : "Bạn chưa có nội quy hợp đồng cần xem."}
+        </p>
       ) : (
-        rules.map((item) => (
+        visibleRules.map((item) => (
           <article className="rules-tenant-card" key={item.contractTenantId}>
             <div className="rules-heading">
               <div>

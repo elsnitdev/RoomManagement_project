@@ -1,79 +1,132 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using RoomManagement.API.Contracts.Common;
-using RoomManagement.Data;
+using RoomManagement.API.Contracts.Notifications;
+using RoomManagement.Business.DTOs;
+using RoomManagement.Business.Interfaces;
 using RoomManagement.Domain;
-using RoomManagement.Domain.Entities;
 using RoomManagement.Domain.Enums;
 
 namespace RoomManagement.API.Controllers;
 
 [ApiController]
 [Authorize]
-public sealed class BroadcastNotificationsController(RoomManagementDbContext db) : ControllerBase
+public sealed class BroadcastNotificationsController : ControllerBase
 {
-    public sealed record BroadcastInput(string Title, string Message, Guid IdempotencyKey);
+    private readonly INotificationService _service;
+
+    public BroadcastNotificationsController(INotificationService service)
+    {
+        _service = service;
+    }
+
+    private string CurrentUserId => User.FindFirst("sub")?.Value ?? string.Empty;
+
+    [HttpGet("api/admin/notifications/targets")]
+    [Authorize(Roles = UserRoles.Admin)]
+    public async Task<IActionResult> GetAdminTargets(
+        [FromQuery] string? search = null,
+        CancellationToken ct = default)
+    {
+        var result = await _service.GetAdminTargetsAsync(CurrentUserId, search, ct);
+        return Ok(new ApiResponse<AdminNotificationTargetsDto>(result));
+    }
+
+    [HttpPost("api/admin/notifications/send")]
+    [Authorize(Roles = UserRoles.Admin)]
+    public async Task<IActionResult> SendAdminNotification(
+        [FromBody] SendAdminNotificationRequest request,
+        CancellationToken ct = default)
+    {
+        var result = await _service.SendAdminNotificationAsync(CurrentUserId, request.ToInput(), ct);
+        return Ok(new ApiResponse<SendNotificationResultDto>(result));
+    }
 
     [HttpPost("api/admin/notifications/broadcast")]
     [Authorize(Roles = UserRoles.Admin)]
-    public async Task<IActionResult> AdminBroadcast([FromBody] BroadcastInput input, CancellationToken ct)
+    public async Task<IActionResult> AdminBroadcast(
+        [FromBody] LegacyBroadcastRequest input,
+        CancellationToken ct = default)
     {
-        if (!Valid(input)) return BadRequest("Tiêu đề, nội dung hoặc khóa gửi không hợp lệ.");
-        var actor = User.FindFirst("sub")?.Value;
-        if (string.IsNullOrEmpty(actor)) return Forbid();
-        var key = $"admin:{input.IdempotencyKey:N}";
-        if (await db.UserNotifications.AnyAsync(n => n.EventKey == key, ct))
-            return Ok(new ApiResponse<object>(new { duplicate = true }));
-        var ids = await db.Users.AsNoTracking().Where(u => u.IsActive && u.DeletedAt == null)
-            .Select(u => u.Id).ToListAsync(ct);
-        var now = DateTime.UtcNow;
-        db.UserNotifications.AddRange(ids.Select(id => NewNotification(id, actor, "SystemBroadcast", input, key, now)));
-        await db.SaveChangesAsync(ct);
-        return Ok(new ApiResponse<object>(new { recipients = ids.Count }));
+        var result = await _service.SendAdminNotificationAsync(
+            CurrentUserId,
+            new SendAdminNotificationInput(
+                AdminNotificationTargetScope.AllSystem,
+                TargetUserId: null,
+                input.Title,
+                input.Message,
+                input.IdempotencyKey),
+            ct);
+
+        return Ok(new ApiResponse<object>(new
+        {
+            recipients = result.RecipientCount,
+            duplicate = result.Duplicate,
+            eventKey = result.EventKey,
+            type = result.Type
+        }));
+    }
+
+    [HttpGet("api/operator/notifications/targets")]
+    [Authorize(Roles = UserRoles.LandlordOrManager)]
+    public async Task<IActionResult> GetOperatorTargets(
+        [FromQuery] string? search = null,
+        CancellationToken ct = default)
+    {
+        var result = await _service.GetOperatorTargetsAsync(search, ct);
+        return Ok(new ApiResponse<OperatorNotificationTargetsDto>(result));
+    }
+
+    [HttpPost("api/operator/notifications/send")]
+    [Authorize(Roles = UserRoles.LandlordOrManager)]
+    public async Task<IActionResult> SendOperatorNotification(
+        [FromBody] SendOperatorNotificationRequest request,
+        CancellationToken ct = default)
+    {
+        var result = await _service.SendOperatorNotificationAsync(request.ToInput(), ct);
+        return Ok(new ApiResponse<SendNotificationResultDto>(result));
     }
 
     [HttpPost("api/properties/{propertyId:guid}/manager-announcements")]
-    [Authorize(Roles = UserRoles.Manager)]
-    public async Task<IActionResult> ManagerBroadcast(Guid propertyId, [FromBody] BroadcastInput input, CancellationToken ct)
+    [Authorize(Roles = UserRoles.LandlordOrManager)]
+    public async Task<IActionResult> ManagerBroadcast(
+        Guid propertyId,
+        [FromBody] LegacyBroadcastRequest input,
+        CancellationToken ct = default)
     {
-        if (!Valid(input)) return BadRequest("Tiêu đề, nội dung hoặc khóa gửi không hợp lệ.");
-        var actor = User.FindFirst("sub")?.Value;
-        if (string.IsNullOrEmpty(actor)) return Forbid();
-        var allowed = await db.PropertyManagerAssignments.AsNoTracking()
-            .AnyAsync(a => a.PropertyId == propertyId && a.ManagerUserId == actor && a.RevokedAt == null, ct);
-        if (!allowed) return Forbid();
-        var key = $"manager:{propertyId:N}:{input.IdempotencyKey:N}";
-        if (await db.UserNotifications.AnyAsync(n => n.EventKey == key, ct))
-            return Ok(new ApiResponse<object>(new { duplicate = true }));
-        var ids = await (from link in db.ContractTenants.AsNoTracking()
-                         join profile in db.TenantProfiles.AsNoTracking() on link.TenantId equals profile.Id
-                         join contract in db.Contracts.AsNoTracking() on link.ContractId equals contract.Id
-                         join room in db.Rooms.AsNoTracking() on contract.RoomId equals room.Id
-                         join user in db.Users.AsNoTracking() on profile.UserId equals user.Id
-                         where room.PropertyId == propertyId && contract.Status == ContractStatus.Active &&
-                               link.LeaveDate == null && user.IsActive && user.DeletedAt == null
-                         select user.Id).Distinct().ToListAsync(ct);
-        var now = DateTime.UtcNow;
-        db.UserNotifications.AddRange(ids.Select(id =>
+        var result = await _service.SendOperatorNotificationAsync(
+            new SendOperatorNotificationInput(
+                OperatorNotificationTargetScope.SpecificProperty,
+                propertyId,
+                TargetUserId: null,
+                input.Title,
+                input.Message,
+                input.IdempotencyKey),
+            ct);
+
+        return Ok(new ApiResponse<object>(new
         {
-            var notification = NewNotification(id, actor, "ManagerAnnouncement", input, key, now);
-            notification.PropertyId = propertyId;
-            return notification;
+            recipients = result.RecipientCount,
+            duplicate = result.Duplicate,
+            eventKey = result.EventKey,
+            type = result.Type
         }));
-        await db.SaveChangesAsync(ct);
-        return Ok(new ApiResponse<object>(new { recipients = ids.Count }));
     }
 
-    private static bool Valid(BroadcastInput input) => input.IdempotencyKey != Guid.Empty &&
-        !string.IsNullOrWhiteSpace(input.Title) && input.Title.Trim().Length <= 250 &&
-        !string.IsNullOrWhiteSpace(input.Message) && input.Message.Trim().Length <= 4000;
-
-    private static UserNotification NewNotification(string id, string actor, string type,
-        BroadcastInput input, string key, DateTime now) => new()
+    [HttpGet("api/me/notifications/sent")]
+    [Authorize(Roles = $"{UserRoles.Admin},{UserRoles.LandlordOrManager}")]
+    public async Task<IActionResult> ListSentNotifications(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
     {
-        Id = Guid.NewGuid(), UserId = id, ActorUserId = actor, Type = type,
-        Title = input.Title.Trim(), Message = input.Message.Trim(), EventKey = key,
-        CreatedAt = now
-    };
+        var result = await _service.ListSentNotificationsAsync(CurrentUserId, page, pageSize, ct);
+        return Ok(new PageResponse<SentNotificationItemDto>(
+            result.Items,
+            new PageMeta(
+                result.Page,
+                result.PageSize,
+                result.TotalItems,
+                (int)Math.Ceiling((double)result.TotalItems / result.PageSize))));
+    }
 }

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Identity;
+using RoomManagement.Business.DTOs;
 using RoomManagement.Business.Interfaces;
 using RoomManagement.Domain;
 using RoomManagement.Domain.Constants;
@@ -18,6 +19,34 @@ internal sealed class TestUserStore : IUserStore, ILandlordApprovalStore, ILandl
         var user = Users.GetValueOrDefault(userId);
         return Task.FromResult(user != null && user.IsActive && user.DeletedAt == null &&
             (user.Role == UserRoles.Landlord || user.Role == UserRoles.Manager));
+    }
+
+    public Task<OperatorContext?> GetOperatorContextAsync(string userId, CancellationToken cancellationToken)
+    {
+        var user = Users.GetValueOrDefault(userId);
+        if (user is null || !user.IsActive || user.DeletedAt != null || user.MustChangePassword ||
+            user.ApprovalStatus != ApprovalStatuses.Approved)
+        {
+            return Task.FromResult<OperatorContext?>(null);
+        }
+
+        if (user.Role == UserRoles.Landlord)
+            return Task.FromResult<OperatorContext?>(new OperatorContext(user.Id, user.Id, UserRoles.Landlord, IsManager: false));
+
+        if (user.Role == UserRoles.Manager && !string.IsNullOrWhiteSpace(user.LandlordUserId))
+        {
+            var owner = Users.GetValueOrDefault(user.LandlordUserId);
+            if (owner is null || owner.Role != UserRoles.Landlord || !owner.IsActive ||
+                owner.DeletedAt != null || owner.ApprovalStatus != ApprovalStatuses.Approved)
+            {
+                return Task.FromResult<OperatorContext?>(null);
+            }
+
+            return Task.FromResult<OperatorContext?>(
+                new OperatorContext(user.Id, user.LandlordUserId, UserRoles.Manager, IsManager: true));
+        }
+
+        return Task.FromResult<OperatorContext?>(null);
     }
 
     public AppUser AddUser(string role = UserRoles.Tenant, string status = ApprovalStatuses.Approved, bool active = true)
@@ -60,5 +89,5 @@ internal sealed class TestUserStore : IUserStore, ILandlordApprovalStore, ILandl
     public Task<IReadOnlyList<AppUser>> GetPendingLandlordsAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<AppUser>>(Users.Values.Where(u => u.Role == UserRoles.Landlord && u.ApprovalStatus == ApprovalStatuses.Pending).ToList());
     public Task<AppUser?> FindLandlordByIdAsync(string userId, CancellationToken cancellationToken = default) => FindByIdAsync(userId, cancellationToken);
-    public Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default) => Task.FromResult(true);
+    public Task<bool> TryReviewPendingAsync(AppUser reviewedUser, CancellationToken cancellationToken = default, string? actorAdminUserId = null) => Task.FromResult(true);
 }

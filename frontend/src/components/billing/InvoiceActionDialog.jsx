@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef } from 'react'
 
 const DialogCloseContext = createContext(null)
 
@@ -9,14 +9,22 @@ export function useDialogClose() {
 export default function InvoiceActionDialog({ title, onClose, footer = null, children }) {
   const closeButton = useRef(null)
   const dialog = useRef(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
+  const handleClose = useCallback(() => {
+    onCloseRef.current?.()
+  }, [])
 
   useEffect(() => {
     const previousFocus = document.activeElement
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    closeButton.current?.focus()
+    if (!dialog.current?.contains(document.activeElement)) {
+      closeButton.current?.focus()
+    }
     const onKeyDown = event => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') onCloseRef.current?.()
       if (event.key !== 'Tab') return
       const focusable = [...dialog.current.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]')]
       if (!focusable.length) return
@@ -31,11 +39,11 @@ export default function InvoiceActionDialog({ title, onClose, footer = null, chi
       window.removeEventListener('keydown', onKeyDown)
       previousFocus?.focus?.()
     }
-  }, [onClose])
+  }, [])
 
   return (
-    <DialogCloseContext.Provider value={onClose}>
-      <div className="bill-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <DialogCloseContext.Provider value={handleClose}>
+      <div className="bill-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) handleClose() }}>
         <div
           ref={dialog}
           className={`bill-dialog${footer ? ' bill-dialog--with-footer' : ''}`}
@@ -45,7 +53,7 @@ export default function InvoiceActionDialog({ title, onClose, footer = null, chi
         >
           <header className="bill-dialog__header">
             <h2 id="bill-dialog-title">{title}</h2>
-            <button ref={closeButton} className="bill-dialog__close" type="button" aria-label="Đóng cửa sổ" onClick={onClose}>×</button>
+            <button ref={closeButton} className="bill-dialog__close" type="button" aria-label="Đóng cửa sổ" onClick={handleClose}>×</button>
           </header>
           <div className="bill-dialog__body">{children}</div>
           {footer && <footer className="bill-dialog__footer">{footer}</footer>}

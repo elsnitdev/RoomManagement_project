@@ -404,3 +404,118 @@
     gap: 14px;
   }
 }
+
+/* Lịch sử điện nước & cảnh báo tháng vừa qua chưa nhập */
+.rd-meters-card--alert {
+  border-color: #e7b863;
+}
+
+.rd-meters-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rd-meter-link-btn {
+  border: 1px solid #b9d6ef;
+  background: #eff6fd;
+  color: #1b609f;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rd-meter-link-btn:hover {
+  background: #e4f1fc;
+}
+
+.rd-meter-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 13px 15px;
+  border-radius: 10px;
+  background: #fff8eb;
+  border: 1px solid #ecc98a;
+  color: #80520b;
+}
+
+.rd-meter-warning svg {
+  flex: none;
+  color: #b36c16;
+}
+
+.rd-meter-warning__text {
+  flex: 1;
+  min-width: 200px;
+  display: grid;
+  gap: 3px;
+}
+
+.rd-meter-warning__text strong {
+  font-size: 13px;
+}
+
+.rd-meter-warning__text span {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #745114;
+}
+
+.rd-meter-warning__btn {
+  border: 1px solid #2167aa;
+  background: #2167aa;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 8px 13px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.rd-meter-warning__btn:hover {
+  background: #164f83;
+}
+
+.rd-meter-table-wrap {
+  overflow-x: auto;
+  margin-top: 14px;
+}
+
+.rd-meter-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.rd-meter-table th {
+  padding: 9px 10px;
+  background: #f5f8fb;
+  color: #5c7086;
+  font-weight: 750;
+  border-bottom: 1px solid #e2eaf3;
+}
+
+.rd-meter-table td {
+  padding: 10px;
+  border-bottom: 1px solid #eef2f6;
+  color: #1d2d44;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rd-meter-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: #2167aa;
+}

@@ -16,7 +16,9 @@ public sealed class NotificationEmailWorker(
     private static readonly string[] EmailTypes =
     [
         "InvoiceIssued", "PaymentConfirmed", "ContractOfferSent", "ContractActivated",
-        "ContractCancelled", "ContractTerminated", "ContractMoveOut", "ContractSettled"
+        "ContractCancelled", "ContractTerminated", "ContractMoveOut", "ContractSettled",
+        "ContractOfferResent", "ContractOfferWithdrawn", "ContractOfferConfirmed",
+        "ContractOfferRejected", "ContractOfferTimedOut", "ContractOfferApproved", "ContractOfferCancelRequested"
     ];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -596,6 +598,13 @@ public static class NotificationEmailRenderer
             "Bạn vừa nhận được đề nghị hợp đồng thuê phòng mới. Vui lòng xem kỹ các điều khoản tóm tắt dưới đây và xác nhận trên hệ thống.",
             "Xem & xác nhận hợp đồng",
             "#/tenant/contracts"),
+        "ContractOfferResent" => (
+            "Đề nghị hợp đồng gửi lại", "Vui lòng xem phiên bản mới và phản hồi trong thời hạn bên dưới.",
+            "Xem đề nghị hợp đồng", "#/tenant/contracts"),
+        "ContractOfferWithdrawn" or "ContractOfferConfirmed" or "ContractOfferRejected" or
+        "ContractOfferTimedOut" or "ContractOfferApproved" or "ContractOfferCancelRequested" => (
+            "Cập nhật đề nghị hợp đồng", "",
+            "Xem hợp đồng của tôi", "#/tenant/contracts"),
         "ContractActivated" => (
             "Hợp đồng hiệu lực",
             "Hợp đồng thuê phòng của bạn đã chính thức được kích hoạt. Chúc bạn có thời gian lưu trú thoải mái.",

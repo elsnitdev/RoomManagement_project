@@ -28,27 +28,18 @@ const PENDING_CONTRACT_STATUSES = new Set([
   "PendingOperatorConfirmation",
 ]);
 
-const INVOICE_STATUS_META = {
-  Draft: { label: "Bản nháp", tone: "neutral" },
-  Issued: { label: "Đã phát hành", tone: "info" },
-  Unpaid: { label: "Chưa thanh toán", tone: "warning" },
-  Partial: { label: "Thu một phần", tone: "warning" },
-  Overdue: { label: "Quá hạn", tone: "danger" },
-  Paid: { label: "Đã thanh toán", tone: "success" },
-  Cancelled: { label: "Đã hủy", tone: "neutral" },
-  Credit: { label: "Dư tiền", tone: "success" },
-};
-
-const INVOICE_PRIORITY = {
-  Overdue: 0,
-  Partial: 1,
-  Unpaid: 2,
-  Issued: 3,
-  Draft: 4,
-  Paid: 5,
-  Credit: 6,
-  Cancelled: 7,
-};
+async function fetchAllRooms(propertyId, signal) {
+  const items = [];
+  for (let page = 1; ; page += 1) {
+    const res = await listRooms(propertyId, { page, pageSize: 100 }, { signal });
+    const rows = res?.data || [];
+    items.push(...rows);
+    const totalPages = res?.meta?.totalPages;
+    if (!rows.length || (totalPages ? page >= totalPages : rows.length < 100)) {
+      return items;
+    }
+  }
+}
 
 function formatCurrency(value) {
   return (
@@ -117,7 +108,6 @@ const INITIAL_DATA = {
   rooms: [],
   pendingPayments: [],
   unpaidInvoices: [],
-  recentInvoices: [],
   contracts: [],
   openRequestsCount: 0,
   partialError: false,
@@ -175,9 +165,8 @@ export default function LandlordOverview({
           Promise.allSettled(
             targetProperties.map((prop) =>
               Promise.allSettled([
-                listRooms(prop.id, { page: 1, pageSize: 200 }, { signal }),
+                fetchAllRooms(prop.id, signal),
                 billingApi.invoiceAttention(prop.id, signal),
-                billingApi.invoices(prop.id, 1, signal),
                 contractApi.list(prop.id, signal),
               ]),
             ),
@@ -185,7 +174,7 @@ export default function LandlordOverview({
           getLandlordRequests({
             propertyId: requestPropertyId,
             page: 1,
-            pageSize: 20,
+            pageSize: 100,
             signal,
           })
             .then((res) => ({ status: "fulfilled", value: res }))
@@ -197,7 +186,6 @@ export default function LandlordOverview({
         const rooms = [];
         const pendingPayments = [];
         const unpaidInvoices = [];
-        const allInvoices = [];
         const contracts = [];
         let partialError = false;
 
@@ -207,11 +195,11 @@ export default function LandlordOverview({
             partialError = true;
             return;
           }
-          const [roomsRes, attentionRes, invoicesRes, contractsRes] =
+          const [roomsRes, attentionRes, contractsRes] =
             bundleResult.value;
 
           if (roomsRes.status === "fulfilled") {
-            const propRooms = roomsRes.value?.data || [];
+            const propRooms = Array.isArray(roomsRes.value) ? roomsRes.value : (roomsRes.value?.data || []);
             propRooms.forEach((room) =>
               rooms.push({
                 ...room,
@@ -235,18 +223,6 @@ export default function LandlordOverview({
             partialError = true;
           }
 
-          if (invoicesRes.status === "fulfilled") {
-            const invList = invoicesRes.value?.data || [];
-            invList.forEach((inv) =>
-              allInvoices.push({
-                ...inv,
-                propertyName: inv.propertyName || prop.name,
-              }),
-            );
-          } else if (invoicesRes.reason?.name !== "AbortError") {
-            partialError = true;
-          }
-
           if (contractsRes.status === "fulfilled") {
             contracts.push(...(contractsRes.value?.data || []));
           } else if (contractsRes.reason?.name !== "AbortError") {
@@ -264,22 +240,11 @@ export default function LandlordOverview({
           partialError = true;
         }
 
-        // Deduplicate & sort top 5 recent/urgent invoices
-        const sortedInvoices = [...allInvoices].sort((a, b) => {
-          const pA = INVOICE_PRIORITY[a.displayStatus] ?? 9;
-          const pB = INVOICE_PRIORITY[b.displayStatus] ?? 9;
-          if (pA !== pB) return pA - pB;
-          const dateA = a.issuedAt || a.createdAt || a.dueDate || "";
-          const dateB = b.issuedAt || b.createdAt || b.dueDate || "";
-          return String(dateB).localeCompare(String(dateA));
-        });
-
         setData({
           properties: allProperties,
           rooms,
           pendingPayments,
           unpaidInvoices,
-          recentInvoices: sortedInvoices.slice(0, 5),
           contracts,
           openRequestsCount,
           partialError,
@@ -310,17 +275,18 @@ export default function LandlordOverview({
       (r) => r.status === "Maintenance",
     ).length;
 
-    const occupancyPct =
-      totalRooms > 0 ? Math.round((occupied / totalRooms) * 100) : 0;
+
 
     const totalAmountDue = data.unpaidInvoices.reduce(
       (sum, inv) => sum + (Number(inv.amountDue) || 0),
       0,
     );
 
-    const overdueCount = data.unpaidInvoices.filter(
+    const overdueInvoices = data.unpaidInvoices.filter(
       (inv) => inv.displayStatus === "Overdue",
-    ).length;
+    );
+    const overdueCount = overdueInvoices.length;
+    const firstOverdueId = overdueInvoices[0]?.id || null;
 
     const pendingPaymentCount = data.pendingPayments.length;
 
@@ -338,17 +304,26 @@ export default function LandlordOverview({
       data.openRequestsCount + pendingContracts + expiringContracts;
 
     const roomsById = new Map();
-    data.rooms.forEach((r) => roomsById.set(r.id, r));
+    const roomCountsByProperty = new Map();
+    data.rooms.forEach((r) => {
+      roomsById.set(r.id, r);
+      const entry = roomCountsByProperty.get(r.propertyId) || { total: 0, occupied: 0, available: 0 };
+      entry.total += 1;
+      if (r.status === "Occupied") entry.occupied += 1;
+      if (r.status === "Available") entry.available += 1;
+      roomCountsByProperty.set(r.propertyId, entry);
+    });
 
     return {
       totalRooms,
       occupied,
       vacant,
       maintenance,
-      occupancyPct,
       vacantRooms: vacantRooms.slice(0, 4),
       totalAmountDue,
       overdueCount,
+      firstOverdueId,
+      roomCountsByProperty,
       pendingPaymentCount,
       pendingContracts,
       expiringContracts,
@@ -361,6 +336,7 @@ export default function LandlordOverview({
 
   const displayName = user?.fullName || user?.userName || "bạn";
   const isManager = user?.role === "Manager";
+  const isAllProperties = !selectedProperty || selectedProperty === "all";
   const todayLabel = useMemo(() => getTodayLabel(), []);
   const greetingPrefix = useMemo(() => getGreetingPrefix(), []);
 
@@ -536,7 +512,7 @@ export default function LandlordOverview({
             <button
               type="button"
               className="lo-btn lo-btn--primary"
-              onClick={() => navigate("landlord/contracts/new")}
+              onClick={() => navigate(`landlord/contracts/new/${room.propertyId}/${room.id}`)}
             >
               <Plus size={16} aria-hidden="true" />
               Tạo hợp đồng
@@ -586,11 +562,11 @@ export default function LandlordOverview({
               <DoorOpen size={19} aria-hidden="true" />
             </span>
             <span className="lo-kpi-pill lo-kpi-pill--blue">
-              {metrics.occupancyPct}% lấp đầy
+              {metrics.vacant} trống
             </span>
           </div>
           <div className="lo-kpi-card__body">
-            <span className="lo-kpi-label">Công suất phòng</span>
+            <span className="lo-kpi-label">Tổng số phòng</span>
             <strong className="lo-kpi-value">
               {metrics.occupied}/{metrics.totalRooms} <span>phòng</span>
             </strong>
@@ -604,7 +580,13 @@ export default function LandlordOverview({
         <button
           type="button"
           className="lo-kpi-card"
-          onClick={() => navigate("landlord/billing")}
+          onClick={() =>
+            navigate(
+              selectedProperty && selectedProperty !== "all"
+                ? `landlord/billing/status/Unpaid/${selectedProperty}`
+                : "landlord/billing/status/Unpaid",
+            )
+          }
         >
           <div className="lo-kpi-card__top">
             <span className="lo-kpi-icon lo-kpi-icon--amber">
@@ -733,99 +715,65 @@ export default function LandlordOverview({
             </button>
           </div>
 
-          <div className="lo-occupancy-summary">
-            <span>Tỷ lệ lấp đầy</span>
-            <strong>
-              {metrics.occupied}/{metrics.totalRooms} phòng ({metrics.occupancyPct}
-              %)
-            </strong>
-          </div>
-
-          <div
-            className="lo-progress-track"
-            role="progressbar"
-            aria-label="Tỷ lệ tình trạng phòng"
-            aria-valuenow={metrics.occupied}
-            aria-valuemin={0}
-            aria-valuemax={Math.max(metrics.totalRooms, 1)}
-          >
-            {metrics.totalRooms > 0 && (
-              <>
-                <span
-                  className="lo-progress-seg lo-progress-seg--occupied"
-                  style={{
-                    width: `${(metrics.occupied / metrics.totalRooms) * 100}%`,
-                  }}
-                />
-                <span
-                  className="lo-progress-seg lo-progress-seg--vacant"
-                  style={{
-                    width: `${(metrics.vacant / metrics.totalRooms) * 100}%`,
-                  }}
-                />
-                <span
-                  className="lo-progress-seg lo-progress-seg--maintenance"
-                  style={{
-                    width: `${(metrics.maintenance / metrics.totalRooms) * 100}%`,
-                  }}
-                />
-              </>
-            )}
-          </div>
-
-          <div className="lo-legend">
-            <span>
-              <i className="lo-dot lo-dot--occupied" />
-              Đã thuê <strong>{metrics.occupied}</strong>
-            </span>
-            <span>
-              <i className="lo-dot lo-dot--vacant" />
-              Còn trống <strong>{metrics.vacant}</strong>
-            </span>
-            <span>
-              <i className="lo-dot lo-dot--maintenance" />
-              Bảo trì <strong>{metrics.maintenance}</strong>
-            </span>
-          </div>
-
-          <div className="lo-vacant-list">
-            <div className="lo-subhead">
-              <span>Phòng trống sẵn sàng</span>
-              <small>Tối đa 4 phòng</small>
+          <div className="lo-room-stats-strip">
+            <div className="lo-room-stat">
+              <span>Đã thuê</span>
+              <strong>{metrics.occupied}</strong>
             </div>
-            {metrics.vacantRooms.length > 0 ? (
-              metrics.vacantRooms.map((room) => (
-                <div className="lo-vacant-item" key={room.id}>
-                  <div className="lo-vacant-item__info">
-                    <span className="lo-vacant-icon">
-                      <DoorOpen size={17} aria-hidden="true" />
-                    </span>
-                    <div>
-                      <strong>Phòng {room.roomNumber}</strong>
-                      <small>
-                        {room.propertyName || "—"} ·{" "}
-                        {room.basePrice != null
-                          ? `${formatCurrency(room.basePrice)}/tháng`
-                          : "Chưa đặt giá"}
-                      </small>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="lo-mini-btn"
-                    onClick={() => navigate("landlord/contracts/new")}
-                  >
-                    <FilePlus2 size={14} aria-hidden="true" />
-                    Tạo HĐ
-                  </button>
-                </div>
-              ))
-            ) : (
-              <p className="lo-empty-inline">
-                Hiện không có phòng trống nào sẵn sàng.
-              </p>
-            )}
+            <div className="lo-room-stat lo-room-stat--vacant">
+              <span>Còn trống</span>
+              <strong>{metrics.vacant}</strong>
+            </div>
+            <div className="lo-room-stat lo-room-stat--maint">
+              <span>Bảo trì</span>
+              <strong>{metrics.maintenance}</strong>
+            </div>
           </div>
+
+          {!isAllProperties ? (
+            <div className="lo-vacant-list">
+              <div className="lo-subhead">
+                <span>Phòng trống sẵn sàng</span>
+                <small>Tối đa 4 phòng</small>
+              </div>
+              {metrics.vacantRooms.length > 0 ? (
+                metrics.vacantRooms.map((room) => (
+                  <div className="lo-vacant-item" key={room.id}>
+                    <div className="lo-vacant-item__info">
+                      <span className="lo-vacant-icon">
+                        <DoorOpen size={17} aria-hidden="true" />
+                      </span>
+                      <div>
+                        <strong>Phòng {room.roomNumber}</strong>
+                        <small>
+                          {room.propertyName || "—"} ·{" "}
+                          {room.basePrice != null
+                            ? `${formatCurrency(room.basePrice)}/tháng`
+                            : "Chưa đặt giá"}
+                        </small>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="lo-mini-btn"
+                      onClick={() => navigate(`landlord/contracts/new/${room.propertyId}/${room.id}`)}
+                    >
+                      <FilePlus2 size={14} aria-hidden="true" />
+                      Tạo HĐ
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="lo-empty-inline">
+                  Hiện không có phòng trống nào sẵn sàng.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="lo-empty-inline">
+              Đang xem số liệu chung của tất cả khu trọ. Chọn một khu trọ cụ thể để xem danh sách phòng trống chi tiết.
+            </p>
+          )}
         </article>
 
         {/* Cột phải: Việc cần xử lý ngay (Action Inbox) */}
@@ -841,7 +789,15 @@ export default function LandlordOverview({
             <button
               type="button"
               className="lo-inbox-row"
-              onClick={() => navigate("landlord/billing")}
+              onClick={() => {
+                if (metrics.pendingPaymentCount === 1 && data.pendingPayments[0]?.invoiceId) {
+                  navigate(`landlord/billing/${data.pendingPayments[0].invoiceId}`);
+                } else if (selectedProperty && selectedProperty !== "all") {
+                  navigate(`landlord/billing/rooms/${selectedProperty}`);
+                } else {
+                  navigate("landlord/billing");
+                }
+              }}
             >
               <span className="lo-inbox-icon lo-inbox-icon--blue">
                 <CreditCard size={18} aria-hidden="true" />
@@ -863,7 +819,15 @@ export default function LandlordOverview({
             <button
               type="button"
               className="lo-inbox-row"
-              onClick={() => navigate("landlord/billing")}
+              onClick={() => {
+                if (metrics.overdueCount === 1 && metrics.firstOverdueId) {
+                  navigate(`landlord/billing/${metrics.firstOverdueId}`);
+                } else if (selectedProperty && selectedProperty !== "all") {
+                  navigate(`landlord/billing/status/Overdue/${selectedProperty}`);
+                } else {
+                  navigate("landlord/billing/status/Overdue");
+                }
+              }}
             >
               <span className="lo-inbox-icon lo-inbox-icon--danger">
                 <Clock size={18} aria-hidden="true" />
@@ -885,7 +849,15 @@ export default function LandlordOverview({
             <button
               type="button"
               className="lo-inbox-row"
-              onClick={() => navigate("landlord/contracts")}
+              onClick={() => {
+                if (metrics.pendingSettlement > 0 && metrics.expiringContracts === 0) {
+                  navigate("landlord/contracts/settlement");
+                } else if (metrics.expiringContracts > 0) {
+                  navigate("landlord/contracts/expiring");
+                } else {
+                  navigate("landlord/contracts");
+                }
+              }}
             >
               <span className="lo-inbox-icon lo-inbox-icon--amber">
                 <FileText size={18} aria-hidden="true" />
@@ -932,138 +904,57 @@ export default function LandlordOverview({
         </article>
       </section>
 
-      {/* Tầng 4 — Danh sách Hóa đơn gần đây / Cần thu */}
-      <section className="lo-card lo-recent-card">
-        <div className="lo-card__head">
-          <div>
-            <h2>Hóa đơn gần đây / Cần thu</h2>
-            <p>Ưu tiên hiển thị hóa đơn quá hạn, chưa thanh toán đủ hoặc mới phát hành.</p>
+      {/* Tầng 4 — Danh sách Khu trọ (dành cho Chủ trọ) */}
+      {!isManager && data.properties.length > 0 && (
+        <section className="lo-card" aria-label="Khu trọ của bạn">
+          <div className="lo-card__head">
+            <div>
+              <h2>Khu trọ của bạn</h2>
+              <p>Chọn khu trọ để xem chi tiết phòng, hợp đồng và cấu hình thanh toán.</p>
+            </div>
+            <button
+              type="button"
+              className="lo-text-link"
+              onClick={() => navigate("landlord/properties")}
+            >
+              Quản lý khu trọ
+              <ChevronRight size={15} aria-hidden="true" />
+            </button>
           </div>
-          <button
-            type="button"
-            className="lo-text-link"
-            onClick={() => navigate("landlord/billing")}
-          >
-            Xem tất cả
-            <ChevronRight size={15} aria-hidden="true" />
-          </button>
-        </div>
-
-        {data.recentInvoices.length > 0 ? (
-          <>
-            {/* Desktop Table */}
-            <div className="lo-table-wrap">
-              <table className="lo-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Mã hóa đơn</th>
-                    <th scope="col">Phòng</th>
-                    <th scope="col">Hạn thanh toán</th>
-                    <th scope="col">Trạng thái</th>
-                    <th scope="col" className="is-right">
-                      Còn phải thu
-                    </th>
-                    <th scope="col" className="is-right">
-                      <span className="sr-only">Thao tác</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.recentInvoices.map((item) => {
-                    const room = metrics.roomsById.get(item.roomId);
-                    const roomLabel = room?.roomNumber
-                      ? `Phòng ${room.roomNumber}`
-                      : item.roomNumber
-                        ? `Phòng ${item.roomNumber}`
-                        : "—";
-                    const status = INVOICE_STATUS_META[item.displayStatus] || {
-                      label: item.displayStatus || "—",
-                      tone: "neutral",
-                    };
-                    return (
-                      <tr key={item.id}>
-                        <td>
-                          <strong>{item.code || item.invoiceNumber || item.id}</strong>
-                          <small>{item.propertyName || "—"}</small>
-                        </td>
-                        <td>{roomLabel}</td>
-                        <td className="lo-tabular">{formatDate(item.dueDate)}</td>
-                        <td>
-                          <span className={`lo-status lo-status--${status.tone}`}>
-                            {status.label}
-                          </span>
-                        </td>
-                        <td className="is-right lo-tabular">
-                          <strong>{formatCurrency(item.amountDue)}</strong>
-                        </td>
-                        <td className="is-right">
-                          <button
-                            type="button"
-                            className="lo-row-link"
-                            onClick={() => navigate(`landlord/billing/${item.id}`)}
-                          >
-                            Chi tiết
-                            <ChevronRight size={14} aria-hidden="true" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Card List */}
-            <div className="lo-mobile-invoices">
-              {data.recentInvoices.map((item) => {
-                const room = metrics.roomsById.get(item.roomId);
-                const roomLabel = room?.roomNumber
-                  ? `Phòng ${room.roomNumber}`
-                  : item.roomNumber
-                    ? `Phòng ${item.roomNumber}`
-                    : "—";
-                const status = INVOICE_STATUS_META[item.displayStatus] || {
-                  label: item.displayStatus || "—",
-                  tone: "neutral",
-                };
-                return (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className="lo-mobile-inv-card"
-                    onClick={() => navigate(`landlord/billing/${item.id}`)}
-                  >
-                    <div className="lo-mobile-inv-card__top">
-                      <div>
-                        <strong>{item.code || item.invoiceNumber || item.id}</strong>
-                        <small>
-                          {roomLabel} · Hạn {formatDate(item.dueDate)}
-                        </small>
-                      </div>
-                      <span className={`lo-status lo-status--${status.tone}`}>
-                        {status.label}
-                      </span>
-                    </div>
-                    <div className="lo-mobile-inv-card__foot">
-                      <span>Còn phải thu</span>
-                      <div className="lo-mobile-inv-card__right">
-                        <strong className="lo-tabular">
-                          {formatCurrency(item.amountDue)}
-                        </strong>
-                        <ChevronRight size={15} aria-hidden="true" />
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        ) : (
-          <p className="lo-empty-inline">
-            Chưa có hóa đơn nào trong khu trọ đã chọn.
-          </p>
-        )}
-      </section>
+          <div className="lo-properties-grid">
+            {data.properties.slice(0, 6).map((prop) => {
+              const counts = metrics.roomCountsByProperty.get(prop.id);
+              return (
+                <button
+                  type="button"
+                  key={prop.id}
+                  className="lo-property-item"
+                  onClick={() => navigate(`landlord/properties/${prop.id}`)}
+                >
+                  <div className="lo-property-item__top">
+                    <span className="lo-property-icon">
+                      <Building2 size={17} aria-hidden="true" />
+                    </span>
+                    <span className={`lo-status ${prop.isActive ? "lo-status--success" : "lo-status--neutral"}`}>
+                      {prop.isActive ? "Hoạt động" : "Tạm ngừng"}
+                    </span>
+                  </div>
+                  <strong>{prop.name}</strong>
+                  <small className="lo-property-item__addr">{prop.address || "Chưa cập nhật địa chỉ"}</small>
+                  <div className="lo-property-item__foot">
+                    <span>
+                      {counts
+                        ? `${counts.occupied}/${counts.total} phòng đã thuê · ${counts.available} trống`
+                        : "Xem chi tiết khu trọ"}
+                    </span>
+                    <ChevronRight size={14} aria-hidden="true" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

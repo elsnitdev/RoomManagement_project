@@ -27,6 +27,15 @@ export async function createManager(payload) {
   return result
 }
 
+export async function updateManager(managerId, payload) {
+  const result = await apiRequest(`${BASE_PATH}/${encodeURIComponent(managerId)}`, {
+    method: 'PUT',
+    body: payload,
+  })
+  invalidateApiCache('landlord:managers')
+  return result
+}
+
 export async function assignManagerProperties(managerId, propertyIds) {
   const result = await apiRequest(`${BASE_PATH}/${encodeURIComponent(managerId)}/properties`, {
     method: 'POST',

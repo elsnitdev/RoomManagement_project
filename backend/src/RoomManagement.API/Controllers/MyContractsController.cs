@@ -47,7 +47,7 @@ public sealed class MyContractsController : ControllerBase
         CancellationToken ct)
     {
         var userId = User.FindFirst("sub")?.Value ?? "";
-        var updated = await _service.RejectOfferByTenantAsync(contractId, userId, request.Reason ?? string.Empty, ct);
+        var updated = await _service.RejectOfferByTenantAsync(contractId, userId, request.Reason ?? string.Empty, ct, request.OfferVersion);
         return Ok(new ApiResponse<ContractResponse>(ContractResponse.From(updated)));
     }
 

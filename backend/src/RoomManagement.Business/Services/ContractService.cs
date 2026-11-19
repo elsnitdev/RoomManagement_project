@@ -41,6 +41,9 @@ public sealed class ContractService
     if (!await _store.RoomOwnedAsync(propertyId, input.RoomId, owner, ct))
       throw new BusinessException(BusinessErrorType.NotFound,
           "ROOM_NOT_FOUND", "Không tìm thấy phòng trong khu trọ.");
+    if (input.EndDate is { } endDate && endDate < VietnamDate.Today)
+      throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_END_DATE_INVALID",
+          "Ngày kết thúc hợp đồng không được trước hôm nay theo giờ Việt Nam.");
     var code = input.ContractCode?.Trim().ToUpperInvariant() ?? "";
     if (!Regex.IsMatch(code, "^[A-Z0-9._-]{1,50}$") ||
         input.EndDate is not { } end || end < input.StartDate ||
@@ -244,16 +247,15 @@ public sealed class ContractService
   }
 
   public async Task<MeterReading> RecordContractReadingAsync(Guid propertyId, Guid contractId,
-      UtilityType type, short year, byte month, decimal previousValue, decimal currentValue, CancellationToken ct)
+      UtilityType type, short year, byte month, decimal previousValue, decimal currentValue, CancellationToken ct,
+      string? expectedVersion = null)
   {
     var contract = await GetAsync(propertyId, contractId, ct);
     if (contract.Status is not (ContractStatus.Active or ContractStatus.PendingMoveOut or ContractStatus.PendingSettlement) ||
         type is not (UtilityType.Electricity or UtilityType.Water) || year is < 2000 or > 2100 ||
-        month is < 1 or > 12 || previousValue < 0 || currentValue < previousValue ||
-        (contract.Status == ContractStatus.PendingSettlement &&
-         (contract.HandoverOn?.Year != year || contract.HandoverOn?.Month != month)))
+        month is < 1 or > 12 || previousValue < 0 || currentValue < previousValue)
       throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_READING_INVALID", "Chỉ số điện nước không hợp lệ.");
-    return await _store.RecordContractReadingAsync(contract, type, year, month, previousValue, currentValue, ct);
+    return await _store.RecordContractReadingAsync(contract, type, year, month, previousValue, currentValue, ct, expectedVersion);
   }
 
   public async Task<IReadOnlyList<MeterReading>> ListContractReadingsAsync(Guid propertyId,
@@ -261,6 +263,15 @@ public sealed class ContractService
   {
     await GetAsync(propertyId, contractId, ct);
     return await _store.ListContractReadingsAsync(contractId, ct);
+  }
+
+  public async Task<ContractReadingPrerequisites> GetReadingPrerequisitesAsync(Guid propertyId, Guid contractId,
+      short year, byte month, CancellationToken ct)
+  {
+    var contract = await GetAsync(propertyId, contractId, ct);
+    if (year is < 2000 or > 2100 || month is < 1 or > 12)
+      throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_READING_PERIOD_INVALID", "Kỳ chỉ số không hợp lệ.");
+    return await _store.GetReadingPrerequisitesAsync(contract, year, month, ct);
   }
 
   public async Task<Contract> CompleteSettlementAsync(Guid propertyId, Guid contractId,
@@ -299,16 +310,17 @@ public sealed class ContractService
       throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_END_DATE_NOT_EDITABLE",
           "Chỉ hợp đồng cũ chưa có ngày kết thúc mới được chốt ngày.");
     if (endDate < contract.StartDate || endDate.Day != DateTime.DaysInMonth(endDate.Year, endDate.Month) ||
-        contract.Status == ContractStatus.Active && endDate < today)
+        endDate < today)
       throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_END_DATE_INVALID",
           "Ngày kết thúc phải là cuối tháng và không trước thời gian hợp đồng đang hiệu lực.");
     return await _store.SetLegacyEndDateAsync(contract, endDate, today, ct);
   }
 
-  public async Task<ContractTenant> LeaveAsync(Guid propertyId, Guid contractId, Guid linkId, DateOnly leaveDate, CancellationToken ct)
+  public async Task<ContractTenant> LeaveAsync(Guid propertyId, Guid contractId, Guid linkId,
+      DateOnly leaveDate, CancellationToken ct, Guid? replacementLinkId = null)
   {
     var contract = await GetAsync(propertyId, contractId, ct);
-    return await _store.LeaveSafelyAsync(contract, linkId, leaveDate, ct);
+    return await _store.LeaveSafelyAsync(contract, linkId, leaveDate, ct, replacementLinkId);
   }
 
   public async Task<PageResult<Contract>> ListAsync(Guid propertyId, ContractFilter filter, CancellationToken ct)
@@ -394,9 +406,14 @@ public sealed class ContractService
   {
     var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
-    if (input.EndDate is { } end && end < input.StartDate ||
-        input.MonthlyRent < 0 || input.DepositAmount < 0 ||
-        input.PaymentDueDay is < 1 or > 31 ||
+    if (input.EndDate is not { } end || end < input.StartDate || end < VietnamDate.Today ||
+        end.Day != DateTime.DaysInMonth(end.Year, end.Month))
+      throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_END_DATE_INVALID",
+          "Ngày kết thúc phải là ngày cuối tháng, từ hôm nay trở đi và không trước ngày bắt đầu.");
+    if (input.MonthlyRent < 0 || input.DepositAmount < 0 ||
+        decimal.Round(input.MonthlyRent, 2) != input.MonthlyRent ||
+        decimal.Round(input.DepositAmount, 2) != input.DepositAmount ||
+        input.Note is { Length: > 1000 } || input.PaymentDueDay is < 1 or > 31 ||
         !Enum.IsDefined(input.TenancyMode))
       throw new BusinessException(BusinessErrorType.Validation, "CONTRACT_INVALID", "Thông tin hợp đồng không hợp lệ.");
     return await _store.UpdateOfferTermsSafelyAsync(contract, input, context.ActorUserId, ct);
@@ -420,11 +437,11 @@ public sealed class ContractService
   }
 
   public Task<Contract> RejectOfferByTenantAsync(Guid contractId, string tenantUserId,
-      string reason, CancellationToken ct)
+      string reason, CancellationToken ct, int? offerVersion = null)
   {
     if (string.IsNullOrWhiteSpace(tenantUserId) || reason is { Length: > 1000 })
       throw new BusinessException(BusinessErrorType.Validation, "REJECTION_INVALID", "Lý do từ chối không hợp lệ.");
-    return _store.RejectOfferByTenantAsync(contractId, tenantUserId, reason, ct);
+    return _store.RejectOfferByTenantAsync(contractId, tenantUserId, offerVersion, reason, ct);
   }
 
   public async Task<Contract> ActivateAsync(Guid propertyId, Guid contractId, CancellationToken ct)
@@ -432,7 +449,7 @@ public sealed class ContractService
     await _store.ExpireDueAsync(VietnamDate.Today, ct);
     var context = await PropertyOperatorAsync(propertyId, ct);
     var contract = await GetAsync(propertyId, contractId, ct);
-    if (contract.Workflow == ContractWorkflow.Invitation)
+    if (contract.Workflow == ContractWorkflow.Invitation && contract.OfferResponseDeadline is null)
       throw new BusinessException(BusinessErrorType.InvalidOperation, "CONTRACT_AUTO_ACTIVATION",
           "Hợp đồng theo luồng lời mời tự có hiệu lực sau khi người đại diện xác nhận.");
     var room = await _store.GetRoomAsync(contract.RoomId, ct);

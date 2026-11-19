@@ -831,6 +831,46 @@ public sealed class BillingInvoiceStoreTests(ITestOutputHelper output)
         Assert.Single(await context.MeterReadings.ToListAsync());
     }
 
+    [SqlServerFact]
+    public async Task Meter_import_saves_a_vacant_rooms_opening_once_and_reuses_it_for_the_first_closing()
+    {
+        await using var database = await SqlServerDatabase.CreateAsync();
+        var (ownerId, propertyId, roomId, contractId) = await SeedAsync(database);
+        await using var context = database.CreateContext();
+        await context.Contracts.Where(x => x.Id == contractId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, ContractStatus.Draft));
+        var store = ImportStore(context);
+        var actor = new OperatorContext(ownerId, ownerId, UserRoles.Landlord, false);
+        var period = new DateOnly(2026, 1, 1);
+        var input = new MeterImportRowInput(roomId, null, null, InitialElectricityPrevious: 20.5m,
+            InitialWaterPrevious: 0m);
+
+        var template = await store.InspectAsync(propertyId, period, null, default, includeUnoccupied: true);
+        Assert.Null(Assert.Single(template.Rows).ContractId);
+        var preview = await store.InspectAsync(propertyId, period, [input], default);
+        Assert.Equal("Ready", Assert.Single(preview.Rows).Electricity.Status);
+        var saved = await store.SaveAsync(propertyId, period, actor, input, default);
+        Assert.Equal("Saved", saved.Electricity.Status);
+        Assert.Equal("Saved", saved.Water.Status);
+        Assert.Null(saved.Electricity.CurrentValue);
+        Assert.False(await context.MeterReadings.AnyAsync());
+
+        var repeated = await store.SaveAsync(propertyId, period, actor, input, default);
+        Assert.Equal("METER_IMPORT_INITIAL_NOT_ALLOWED", repeated.Electricity.Code);
+        Assert.Equal("METER_IMPORT_INITIAL_NOT_ALLOWED", repeated.Water.Code);
+
+        await context.Contracts.Where(x => x.Id == contractId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, ContractStatus.Active));
+        var closing = await store.SaveAsync(propertyId, period, actor,
+            new MeterImportRowInput(roomId, 31m, null, ExpectedElectricityPrevious: 20.5m,
+                ContractId: contractId), default);
+        Assert.Equal("Saved", closing.Electricity.Status);
+        Assert.Equal(10.5m, closing.Electricity.Consumption);
+        var reading = await context.MeterReadings.SingleAsync();
+        Assert.Equal(20.5m, reading.PreviousValue);
+        Assert.Equal(31m, reading.CurrentValue);
+    }
+
     private static MeterImportStore ImportStore(RoomManagementDbContext context) =>
         new(context, new LandlordStore(context), NullLogger<MeterImportStore>.Instance);
 

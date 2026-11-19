@@ -40,6 +40,9 @@ public sealed class ManagerServiceTests
         public Task<bool> IsEmailTakenAsync(string normalizedEmail, CancellationToken ct = default) =>
             Task.FromResult(Users.Any(u => u.NormalizedEmail == normalizedEmail));
 
+        public Task<bool> IsEmailTakenByOtherAsync(string normalizedEmail, string excludeUserId, CancellationToken ct = default) =>
+            Task.FromResult(Users.Any(u => u.NormalizedEmail == normalizedEmail && u.Id != excludeUserId));
+
         public Task<IReadOnlyList<Property>> GetOwnedPropertiesAsync(string landlordId, IReadOnlyCollection<Guid> propertyIds, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<Property>>(Properties.Where(p => p.OwnerUserId == landlordId && propertyIds.Contains(p.Id)).ToList());
 

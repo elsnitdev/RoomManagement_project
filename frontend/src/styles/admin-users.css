@@ -81,8 +81,8 @@
 }
 
 .admin-stat-icon--manager {
-  background: #faf5ff;
-  color: #6b21a8;
+  background: #f1f5f9;
+  color: #334155;
 }
 
 .admin-stat-card__value {
@@ -422,9 +422,9 @@
 }
 
 .admin-badge--role-manager {
-  background: #faf5ff;
-  color: #6b21a8;
-  border: 1px solid #e9d5ff;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
 }
 
 .admin-badge--role-admin {
@@ -800,5 +800,344 @@
 
   .admin-modal__footer {
     padding: 12px 16px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   6. Status Filter Controls, Pagination & Review Modal/Timeline
+   -------------------------------------------------------------------------- */
+.admin-toolbar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.admin-filter-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-filter-group label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.admin-filter-select {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.admin-filter-select:focus {
+  outline: none;
+  border-color: #2167aa;
+  box-shadow: 0 0 0 3px rgba(33, 103, 170, 0.12);
+}
+
+.admin-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.admin-filter-clear:hover {
+  background: #eff6fd;
+  border-color: #93c5fd;
+  color: #2167aa;
+}
+
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 12.5px;
+  color: #475569;
+}
+
+.admin-pagination__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-pagination__btn {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #243b53;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.admin-pagination__btn:hover:not(:disabled) {
+  background: #eff6fd;
+  border-color: #93c5fd;
+  color: #2167aa;
+}
+
+.admin-pagination__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Review Detail Modal & Timeline */
+.admin-modal--wide {
+  width: min(100%, 700px);
+}
+
+.admin-review-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-review-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.admin-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.admin-review-field {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.admin-review-field--wide {
+  grid-column: 1 / -1;
+}
+
+.admin-review-field span {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: #64748b;
+}
+
+.admin-review-field strong {
+  font-size: 13px;
+  font-weight: 650;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.admin-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.admin-btn--approve {
+  background: #176a49;
+  border-color: #176a49;
+  color: #ffffff;
+}
+
+.admin-btn--approve:hover:not(:disabled) {
+  background: #12543a;
+}
+
+.admin-btn--reject {
+  background: #fff1f0;
+  border-color: #e9b8b4;
+  color: #9e302a;
+}
+
+.admin-btn--reject:hover:not(:disabled) {
+  background: #fce4e2;
+}
+
+.admin-decision-box {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #cbd9e6;
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+}
+
+.admin-decision-box__note {
+  margin: 0;
+  font-size: 13px;
+  color: #243b53;
+}
+
+.admin-decision-box__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-timeline-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.admin-timeline-section h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #102a43;
+}
+
+.admin-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 14px;
+  border-left: 2px solid #e2e8f0;
+  display: grid;
+  gap: 14px;
+}
+
+.admin-timeline__item {
+  position: relative;
+  padding-left: 12px;
+}
+
+.admin-timeline__dot {
+  position: absolute;
+  left: -20px;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2167aa;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 2px #dbeafe;
+}
+
+.admin-timeline__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: #475569;
+}
+
+.admin-timeline__head strong {
+  color: #0f172a;
+}
+
+.admin-timeline__meta {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.admin-timeline__note {
+  margin: 4px 0 0;
+  padding: 7px 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: #334155;
+}
+
+@media (max-width: 640px) {
+  .admin-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .admin-role-pills {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .admin-role-pill {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .admin-toolbar-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-filter-group {
+    justify-content: space-between;
+  }
+
+  .admin-filter-select {
+    flex: 1;
+    max-width: 65%;
+  }
+
+  .admin-filter-clear {
+    margin-left: 0;
+    justify-content: center;
+  }
+
+  .admin-review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-pagination {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .admin-pagination__controls {
+    justify-content: center;
+  }
+}
+
+.mgr-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 760px) {
+  .mgr-stats-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 }

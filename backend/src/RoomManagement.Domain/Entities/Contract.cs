@@ -28,6 +28,8 @@ public sealed class Contract
     public Guid? OfferRulesVersionId { get; set; }
     public DateTime? OfferSentAt { get; set; }
     public string? OfferSentByUserId { get; set; }
+    public DateTime? OfferResponseDeadline { get; set; }
+    public DateTime? OfferResponseTimedOutAt { get; set; }
 
     public DateTime? TenantConfirmedAt { get; set; }
     public string? TenantConfirmedByUserId { get; set; }

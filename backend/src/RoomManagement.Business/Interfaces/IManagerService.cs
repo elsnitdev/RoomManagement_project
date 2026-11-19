@@ -8,6 +8,7 @@ public interface IManagerService
     Task<ManagerDto> CreateAsync(CreateManagerInput input, CancellationToken ct = default);
     Task<PageResult<ManagerDto>> ListAsync(ManagerFilter filter, CancellationToken ct = default);
     Task<ManagerDto> GetAsync(string managerId, CancellationToken ct = default);
+    Task<ManagerDto> UpdateAsync(string managerId, UpdateManagerInput input, CancellationToken ct = default);
     Task<ManagerDto> AssignPropertiesAsync(string managerId, IReadOnlyList<Guid> propertyIds, CancellationToken ct = default);
     Task RevokePropertyAsync(string managerId, Guid propertyId, CancellationToken ct = default);
     Task<ManagerDto> SetLockStateAsync(string managerId, bool isActive, CancellationToken ct = default);

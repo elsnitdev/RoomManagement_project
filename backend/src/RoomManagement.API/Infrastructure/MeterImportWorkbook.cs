@@ -15,6 +15,8 @@ public static class MeterImportWorkbook
     private const int HeaderRow = 4;
     private const string ContractIdHeader = "Mã định danh hợp đồng";
     private const string ContractCodeHeader = "Hợp đồng";
+    private const string ElectricityReferenceHeader = "Điện đầu kỳ khi xuất";
+    private const string WaterReferenceHeader = "Nước đầu kỳ khi xuất";
     private const int MaxExpandedBytes = 16 * 1024 * 1024;
     private static readonly string[] Headers = [
         "Phòng", "Mã phòng", "Điện đầu kỳ (kWh)", "Điện cuối kỳ (kWh)",
@@ -27,11 +29,11 @@ public static class MeterImportWorkbook
         var sheet = book.Worksheets.Add(DataSheet);
         sheet.Cell("A1").Value = $"Nhập chỉ số điện nước kỳ {result.Month:D2}/{result.Year}";
         sheet.Cell("A2").Value = $"Mã khu trọ: {result.PropertyId}";
-        sheet.Cell("A3").Value = "Giữ mã phòng, mã hợp đồng và tiêu đề. Mỗi dòng ứng với một hợp đồng; điền chỉ số cuối kỳ.";
+        sheet.Cell("A3").Value = "Giữ mã phòng, mã hợp đồng và tiêu đề. Ô đầu kỳ màu vàng có thể nhập riêng cho công tơ chưa có chỉ số; để trống ô cuối kỳ cho đến khi chốt điện nước.";
         sheet.Range("A1:G1").Merge().Style.Font.SetBold().Font.SetFontSize(14);
         sheet.Range("A2:G2").Merge();
         sheet.Range("A3:G3").Merge().Style.Alignment.SetWrapText();
-        sheet.Row(3).Height = 28;
+        sheet.Row(3).Height = 36;
         for (var c = 0; c < Headers.Length; c++)
             sheet.Cell(HeaderRow, c + 1).Value = Headers[c];
         sheet.Range(HeaderRow, 1, HeaderRow, Headers.Length).Style.Font.SetBold();
@@ -44,6 +46,9 @@ public static class MeterImportWorkbook
         sheet.Cell(HeaderRow, 10).Value = ContractIdHeader;
         sheet.Column(9).Width = 25;
         sheet.Column(10).Hide();
+        sheet.Cell(HeaderRow, 11).Value = ElectricityReferenceHeader;
+        sheet.Cell(HeaderRow, 12).Value = WaterReferenceHeader;
+        sheet.Columns(11, 12).Hide();
 
         for (var i = 0; i < result.Rows.Count; i++)
         {
@@ -53,8 +58,8 @@ public static class MeterImportWorkbook
             sheet.Cell(index, 2).Value = row.RoomId.ToString("D");
             if (row.ContractId is { } contractId) sheet.Cell(index, 10).Value = contractId.ToString("D");
             sheet.Cell(index, 9).Value = row.ContractCode ?? "";
-            WriteReference(sheet, index, 3, row.Electricity);
-            WriteReference(sheet, index, 5, row.Water);
+            WriteReference(sheet, index, 3, 11, row.Electricity, row.ContractId.HasValue);
+            WriteReference(sheet, index, 5, 12, row.Water, row.ContractId.HasValue);
             sheet.Cell(index, 7).Value = string.Join(" • ", StatusText("Điện", row.Electricity)
                 .Concat(StatusText("Nước", row.Water)));
             sheet.Cell(index, 7).Style.Alignment.WrapText = true;
@@ -87,10 +92,13 @@ public static class MeterImportWorkbook
             var roomColumn = FindColumn(sheet, Headers[1]);
             var electricityColumn = FindColumn(sheet, Headers[3]);
             var waterColumn = FindColumn(sheet, Headers[5]);
-            var electricityReferenceColumn = FindColumn(sheet, Headers[2], required: false);
-            var waterReferenceColumn = FindColumn(sheet, Headers[4], required: false);
+            var electricityOpeningColumn = FindColumn(sheet, Headers[2], required: false);
+            var waterOpeningColumn = FindColumn(sheet, Headers[4], required: false);
+            var electricityReferenceColumn = FindColumn(sheet, ElectricityReferenceHeader, required: false);
+            var waterReferenceColumn = FindColumn(sheet, WaterReferenceHeader, required: false);
             var contractColumn = FindColumn(sheet, ContractIdHeader, required: false);
-            var inputColumns = new[] { roomColumn, electricityColumn, waterColumn };
+            var inputColumns = new[] { roomColumn, electricityColumn, waterColumn, electricityOpeningColumn, waterOpeningColumn }
+                .Where(c => c > 0).ToArray();
             var lastRow = inputColumns.Max(c => sheet.Column(c).LastCellUsed()?.Address.RowNumber ?? HeaderRow);
             if (lastRow - HeaderRow > MeterImportService.MaxRows)
                 throw Validation("METER_IMPORT_LIMIT", "File vượt giới hạn số dòng.");
@@ -119,13 +127,22 @@ public static class MeterImportWorkbook
 
                 var (electricity, electricError) = ReadValue(sheet.Cell(row, electricityColumn));
                 var (water, waterError) = ReadValue(sheet.Cell(row, waterColumn));
-                var electricityReference = electricityReferenceColumn > 0 ? ReadValue(sheet.Cell(row, electricityReferenceColumn)).Value : null;
-                var waterReference = waterReferenceColumn > 0 ? ReadValue(sheet.Cell(row, waterReferenceColumn)).Value : null;
+                var (electricityReference, electricityOpening, electricOpeningError) = ReadOpening(row, electricityOpeningColumn, electricityReferenceColumn);
+                var (waterReference, waterOpening, waterOpeningError) = ReadOpening(row, waterOpeningColumn, waterReferenceColumn);
                 result.Add(new ParsedMeterImportRow(
-                    new MeterImportRowInput(roomId, electricity, water, electricityReference, waterReference, ContractId: contractId),
-                    row, electricError, waterError));
+                    new MeterImportRowInput(roomId, electricity, water, electricityReference, waterReference,
+                        InitialElectricityPrevious: electricityOpening, InitialWaterPrevious: waterOpening, ContractId: contractId),
+                    row, electricError ?? electricOpeningError, waterError ?? waterOpeningError));
             }
             return result;
+
+            (decimal? Reference, decimal? Opening, string? Error) ReadOpening(int row, int openingColumn, int referenceColumn)
+            {
+                if (openingColumn == 0) return (null, null, null);
+                var (opening, error) = ReadValue(sheet.Cell(row, openingColumn));
+                var original = referenceColumn > 0 ? ReadValue(sheet.Cell(row, referenceColumn)).Value : opening;
+                return opening == original ? (opening, null, error) : (null, opening, error);
+            }
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or XmlException or FormatException or ArgumentException or
             InvalidOperationException or OverflowException or KeyNotFoundException or NotSupportedException or
@@ -192,14 +209,22 @@ public static class MeterImportWorkbook
             ? (number, null) : (null, "Ô chỉ số phải là số.");
     }
 
-    private static void WriteReference(IXLWorksheet sheet, int row, int referenceColumn, MeterImportCell cell)
+    private static void WriteReference(IXLWorksheet sheet, int row, int openingColumn, int referenceColumn,
+        MeterImportCell cell, bool hasContract)
     {
+        var opening = sheet.Cell(row, openingColumn);
+        opening.Style.NumberFormat.Format = "0.##";
         if (cell.PreviousValue is { } previous)
+        {
+            opening.Value = previous;
             sheet.Cell(row, referenceColumn).Value = previous;
-        var input = sheet.Cell(row, referenceColumn + 1);
+        }
+        if (cell.CanEnterOpening)
+            opening.Style.Fill.BackgroundColor = XLColor.LightGoldenrodYellow;
+        var input = sheet.Cell(row, openingColumn + 1);
         if (cell.Status == "AlreadyRecorded" && cell.CurrentValue is { } current)
             input.Value = current;
-        if (cell.CanEnterOpening || cell.Status is "Missing" or "AlreadyRecorded")
+        if (hasContract && (cell.CanEnterOpening || cell.Status is "Missing" or "AlreadyRecorded"))
             input.Style.Fill.BackgroundColor = XLColor.LightGoldenrodYellow;
         input.Style.NumberFormat.Format = "0.##";
     }

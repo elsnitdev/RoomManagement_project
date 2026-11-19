@@ -1070,3 +1070,139 @@
     font-size: 14px;
   }
 }
+
+/* Compact room stats strip (no progress bar) */
+.lo-room-stats-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.lo-room-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #eff6fd;
+  border: 1px solid #d5e3f1;
+}
+
+.lo-room-stat span {
+  font-size: 12px;
+  font-weight: 650;
+  color: #475569;
+}
+
+.lo-room-stat strong {
+  font-size: 20px;
+  font-weight: 700;
+  color: #2167aa;
+  font-variant-numeric: tabular-nums;
+}
+
+.lo-room-stat--vacant {
+  background: #eaf8f1;
+  border-color: #c2e6d3;
+}
+
+.lo-room-stat--vacant strong {
+  color: #176a49;
+}
+
+.lo-room-stat--maint {
+  background: #fff8eb;
+  border-color: #f0ddbd;
+}
+
+.lo-room-stat--maint strong {
+  color: #855012;
+}
+
+/* Landlord properties grid */
+.lo-properties-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.lo-property-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 15px 16px;
+  border: 1px solid #dce5ef;
+  border-radius: 12px;
+  background: #ffffff;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.lo-property-item:hover {
+  border-color: #93c5fd;
+  background: #f8fbff;
+}
+
+.lo-property-item__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.lo-property-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: #eff6fd;
+  color: #2167aa;
+  display: grid;
+  place-items: center;
+}
+
+.lo-property-item strong {
+  font-size: 14px;
+  color: #102a43;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lo-property-item__addr {
+  font-size: 12px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lo-property-item__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid #edf2f7;
+  font-size: 12px;
+  font-weight: 650;
+  color: #2167aa;
+}
+
+@media (max-width: 960px) {
+  .lo-properties-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .lo-properties-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

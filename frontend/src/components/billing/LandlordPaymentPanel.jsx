@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { billingApi } from "../../services/api/billingApi";
 import { formatVietnamDate } from "./paymentDate";
 import { EvidenceManager, EvidenceSelector } from "./PaymentEvidence";
+import MoneyInput from "./MoneyInput";
 
 const money = (value) =>
   new Intl.NumberFormat("vi-VN").format(Number(value || 0)) + " ₫";
@@ -71,13 +72,12 @@ function ReviewPayment({ payment, amountDue, busy, onReview }) {
       <form className="bill-form bill-payment-form" onSubmit={submit}>
         <label>
           Số tiền thực nhận *
-          <input
-            type="number"
-            min="0.01"
-            step="any"
+          <MoneyInput
+            allowDecimal
             required
             value={amount}
-            onChange={(event) => setAmount(event.target.value)}
+            onValueChange={setAmount}
+            placeholder="0"
           />
         </label>
         <label>
@@ -368,13 +368,12 @@ export default function LandlordPaymentPanel({
             <form className="bill-form bill-payment-form" onSubmit={record}>
               <label>
                 Số tiền thực nhận *
-                <input
-                  type="number"
-                  min="0.01"
-                  step="any"
+                <MoneyInput
+                  allowDecimal
                   required
                   value={receipt.amount}
-                  onChange={(event) => update("amount", event.target.value)}
+                  onValueChange={(val) => update("amount", val)}
+                  placeholder="0"
                 />
               </label>
               <label>

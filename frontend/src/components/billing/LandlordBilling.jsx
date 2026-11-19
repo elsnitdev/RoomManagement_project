@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { billingApi } from "../../services/api/billingApi";
 import BillingPriorityBoard from "./BillingPriorityBoard";
+import InvoiceCodeBox, { invoiceTitle } from "./InvoiceCodeBox";
+import MoneyInput from "./MoneyInput";
 import OneOffInvoiceForm from "./OneOffInvoiceForm";
 import {
   DraftItemsEditor,
@@ -48,6 +50,7 @@ export default function LandlordBilling({
   invoiceId,
   initialPropertyId,
   initialRoomId,
+  initialStatus,
   navigate,
 }) {
   return invoiceId ? (
@@ -58,20 +61,23 @@ export default function LandlordBilling({
     />
   ) : (
     <LandlordBillingList
-      key={`${initialPropertyId || ""}:${initialRoomId || ""}`}
+      key={`${initialPropertyId || ""}:${initialRoomId || ""}:${initialStatus || ""}`}
       initialPropertyId={initialPropertyId}
       initialRoomId={initialRoomId}
+      initialStatus={initialStatus}
       navigate={navigate}
     />
   );
 }
 
-function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
+function LandlordBillingList({ initialPropertyId, initialRoomId, initialStatus, navigate }) {
   const [properties, setProperties] = useState([]);
   const [propertyId, setPropertyId] = useState(initialPropertyId || "");
   const [rooms, setRooms] = useState([]);
   const [roomId, setRoomId] = useState(initialRoomId || "");
-  const [listStatus, setListStatus] = useState("Unpaid");
+  const [listStatus, setListStatus] = useState(
+    initialStatus !== undefined ? initialStatus : initialRoomId ? "" : "Unpaid",
+  );
   const [listPeriod, setListPeriod] = useState("");
   const [contractLookup, setContractLookup] = useState(null);
   const [month, setMonth] = useState(previousBillingMonth);
@@ -122,6 +128,14 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
   const contractsLoaded = contractLookup?.propertyId === propertyId;
   const contracts = contractsLoaded ? contractLookup.rows : [];
   const contractError = contractsLoaded ? contractLookup.error : "";
+
+  useEffect(() => {
+    if (!initialRoomId && !initialStatus) return;
+    const timer = setTimeout(() => {
+      document.getElementById("bill-invoices-list")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [initialRoomId, initialStatus]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -435,6 +449,19 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
             attentionLoading={attentionLoading}
             roomName={roomName}
             onWorkItem={openWorkItem}
+            onOpenMeters={() =>
+              navigate(`landlord/utilities/${propertyId}/meters/${month}`)
+            }
+            onOpenUtilityInputs={() =>
+              navigate(`landlord/utilities/${propertyId}/inputs`)
+            }
+            onFocusUnpaid={() => {
+              setListStatus("Unpaid");
+              setPage(1);
+              document
+                .getElementById("bill-invoices-list")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
             onOpenInvoice={(id) => navigate(`landlord/billing/${id}`)}
           />
           {/* Quick Action Bar for Manual Invoicing */}
@@ -548,13 +575,10 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
                   </label>
                   <label>
                     Giảm trừ thủ công (₫)
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
+                    <MoneyInput
                       value={discountAmount}
-                      onChange={(event) => {
-                        setDiscountAmount(event.target.value);
+                      onValueChange={(val) => {
+                        setDiscountAmount(val);
                         setPreview(null);
                       }}
                       placeholder="0"
@@ -704,7 +728,7 @@ function LandlordBillingList({ initialPropertyId, initialRoomId, navigate }) {
             </InvoiceActionDialog>
           )}
 
-          <section className="bill-card">
+          <section className="bill-card" id="bill-invoices-list">
             <div className="bill-card-head">
               <div className="bill-card-head__title">
                 <h2>Danh sách hóa đơn</h2>
@@ -1057,10 +1081,10 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
       >
         ← Danh sách hóa đơn
       </button>
-      <header className="bill-header">
+      <header className="bill-header bill-header--detail">
         <div>
           <span>CHI TIẾT HÓA ĐƠN</span>
-          <h1>{summary ? summary.code : "Hóa đơn"}</h1>
+          <h1>{summary ? invoiceTitle(summary) : "Hóa đơn"}</h1>
           <p>
             {summary
               ? `${location?.property.name || "Khu trọ"} · Phòng ${location?.room.roomNumber || summary.roomId.slice(0, 8)} · ${monthLabel(summary)}`
@@ -1068,12 +1092,15 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
           </p>
         </div>
         {summary && (
-          <strong
-            className="bill-detail-status"
-            data-status={summary.displayStatus}
-          >
-            {statusLabel[summary.displayStatus] || summary.displayStatus}
-          </strong>
+          <div className="bill-header-meta">
+            <InvoiceCodeBox code={summary.code} />
+            <strong
+              className="bill-detail-status"
+              data-status={summary.displayStatus}
+            >
+              {statusLabel[summary.displayStatus] || summary.displayStatus}
+            </strong>
+          </div>
         )}
       </header>
       {loading && (
@@ -1148,17 +1175,32 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
             <div className="bill-detail-head">
               <h2 id="bill-detail-title">Thông tin hóa đơn</h2>
               {location && (
-                <button
-                  className="bill-link"
-                  type="button"
-                  onClick={() =>
-                    navigate(
-                      `landlord/billing/rooms/${location.property.id}/${location.room.id}`,
-                    )
-                  }
-                >
-                  Xem hóa đơn của phòng này
-                </button>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center" }}>
+                  {summary?.contractId && (
+                    <button
+                      className="bill-link"
+                      type="button"
+                      onClick={() =>
+                        navigate(
+                          `landlord/contracts/${location.property.id}/${summary.contractId}`,
+                        )
+                      }
+                    >
+                      Xem hợp đồng
+                    </button>
+                  )}
+                  <button
+                    className="bill-link"
+                    type="button"
+                    onClick={() =>
+                      navigate(
+                        `landlord/billing/rooms/${location.property.id}/${location.room.id}`,
+                      )
+                    }
+                  >
+                    Xem hóa đơn của phòng này
+                  </button>
+                </div>
               )}
             </div>
             {Number(summary.creditToRefund) > 0 ? (
@@ -1223,7 +1265,7 @@ function InvoiceDetailPage({ invoiceId, navigate }) {
               </div>
             </dl>
           </section>
-          <section className="bill-card">
+          <section className="bill-card" id="bill-invoices-list">
             <h2>Các khoản trên hóa đơn</h2>
             <MeterReadingSummary preview={detail} />
             <InvoiceItems items={detail.items} />

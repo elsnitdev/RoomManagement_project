@@ -29,7 +29,11 @@ public sealed class ContractInvitationSqlServerTests
     public Task Representative_confirmation_activates_immediately_and_counts_only_accepted_members() =>
         RunInvitationScenarioAsync(0);
 
-    private static async Task RunInvitationScenarioAsync(int startOffsetDays)
+    [SqlServerFact]
+    public Task Resent_invitation_rejection_blocks_timeout_and_silence_requires_operator_approval() =>
+        RunInvitationScenarioAsync(2, testResend: true);
+
+    private static async Task RunInvitationScenarioAsync(int startOffsetDays, bool testResend = false)
     {
         await using var database = await SqlServerDatabase.CreateAsync();
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -169,6 +173,89 @@ public sealed class ContractInvitationSqlServerTests
             Assert.Equal(HttpStatusCode.OK, rulesChanged.StatusCode);
         }
 
+        if (testResend)
+        {
+            var path = $"/api/properties/{propertyId}/contracts/{contractId}";
+            var updated = await client.PutAsJsonAsync(path, new
+            {
+                startDate = start, endDate = end, monthlyRent = 3100000, depositAmount = 0,
+                tenancyMode = "CoTenancy"
+            });
+            Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+            Assert.Equal("Draft", (await updated.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("data").GetProperty("status").GetString());
+
+            var resend = await client.PostAsync(path + "/send-offer", null);
+            Assert.Equal(HttpStatusCode.OK, resend.StatusCode);
+            var revised = (await resend.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+            var revisedVersion = revised.GetProperty("offerVersion").GetInt32();
+            var deadline = revised.GetProperty("offerResponseDeadline").GetDateTime();
+            Assert.Equal(version + 1, revisedVersion);
+            Assert.InRange(deadline, DateTime.UtcNow.AddDays(3).AddMinutes(-1), DateTime.UtcNow.AddDays(3));
+
+            await SignInAsync(client, tenantAccounts[0].Phone, "Password123!");
+            var rejectPath = $"/api/me/contracts/{contractId}/reject";
+            var staleReject = await client.PostAsJsonAsync(rejectPath, new { offerVersion = version });
+            Assert.Equal(HttpStatusCode.Conflict, staleReject.StatusCode);
+            var rejection = await client.PostAsJsonAsync(rejectPath, new { offerVersion = revisedVersion, reason = "Cần trao đổi lại" });
+            Assert.Equal(HttpStatusCode.OK, rejection.StatusCode);
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<IContractStore>();
+                var db = scope.ServiceProvider.GetRequiredService<RoomManagementDbContext>();
+                await store.ExpireOfferResponsesAsync(deadline, CancellationToken.None);
+                var rejected = await db.Contracts.AsNoTracking().SingleAsync(x => x.Id == contractId);
+                Assert.Equal(ContractStatus.Draft, rejected.Status);
+                Assert.Equal("Cần trao đổi lại", rejected.TenantRejectionReason);
+                Assert.Null(rejected.OfferResponseTimedOutAt);
+            }
+
+            await SignInAsync(client, "invitationOwner", "Pass123!");
+            var unchanged = await client.PostAsync(path + "/send-offer", null);
+            Assert.Equal(HttpStatusCode.Conflict, unchanged.StatusCode);
+            var revisedAgain = await client.PutAsJsonAsync(path, new
+            {
+                startDate = start, endDate = end, monthlyRent = 3050000, depositAmount = 0,
+                tenancyMode = "CoTenancy"
+            });
+            Assert.Equal(HttpStatusCode.OK, revisedAgain.StatusCode);
+            var sentAgain = await client.PostAsync(path + "/send-offer", null);
+            Assert.Equal(HttpStatusCode.OK, sentAgain.StatusCode);
+            var current = (await sentAgain.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+            var nextDeadline = current.GetProperty("offerResponseDeadline").GetDateTime();
+            var nextVersion = current.GetProperty("offerVersion").GetInt32();
+            Assert.Equal(revisedVersion + 1, nextVersion);
+            using (var scope = factory.Services.CreateScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<IContractStore>();
+                var db = scope.ServiceProvider.GetRequiredService<RoomManagementDbContext>();
+                await store.ExpireOfferResponsesAsync(nextDeadline.AddTicks(-1), CancellationToken.None);
+                Assert.Equal(ContractStatus.PendingTenantConfirmation,
+                    await db.Contracts.Where(x => x.Id == contractId).Select(x => x.Status).SingleAsync());
+                await store.ExpireOfferResponsesAsync(nextDeadline, CancellationToken.None);
+                await store.ExpireOfferResponsesAsync(nextDeadline.AddMinutes(1), CancellationToken.None);
+                var timedOut = await db.Contracts.AsNoTracking().SingleAsync(x => x.Id == contractId);
+                Assert.Equal(ContractStatus.PendingOperatorConfirmation, timedOut.Status);
+                Assert.Null(timedOut.TenantConfirmedAt);
+                Assert.NotNull(timedOut.OfferResponseTimedOutAt);
+                Assert.Equal(1, await db.ContractOfferEvents.CountAsync(x => x.ContractId == contractId &&
+                    x.Action == "TenantResponseTimedOut" && x.OfferVersion == nextVersion));
+                var types = await db.UserNotifications.Where(x => x.ContractId == contractId)
+                    .Select(x => x.Type).Distinct().ToListAsync();
+                foreach (var type in new[] { "ContractOfferResent", "ContractOfferRejected", "ContractOfferTimedOut" })
+                {
+                    Assert.Contains(type, types);
+                    Assert.Contains(type + "Operator", types);
+                }
+            }
+            var approval = await client.PostAsync(path + "/activate", null);
+            Assert.Equal(HttpStatusCode.OK, approval.StatusCode);
+            Assert.Equal("PendingStart", (await approval.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("data").GetProperty("status").GetString());
+            return;
+        }
+
         await SignInAsync(client, tenantAccounts[1].Phone, "Password123!");
         var tenantDocuments = await client.GetFromJsonAsync<JsonElement>($"/api/me/contracts/{contractId}/documents");
         Assert.Equal(signedDocumentId is null ? 0 : 1,
@@ -219,6 +306,48 @@ public sealed class ContractInvitationSqlServerTests
             Assert.Equal(2, links.Count(x => x.InvitationAcceptedOfferVersion == version));
             Assert.Single(links, x => x.InvitationAcceptedOfferVersion == null);
             Assert.Empty(await db.ContractRulesAcceptances.Where(x => links.Select(link => link.Id).Contains(x.ContractTenantId)).ToListAsync());
+        }
+
+        if (startOffsetDays == 0)
+        {
+            var path = $"/api/properties/{propertyId}/contracts/{contractId}";
+            var members = detailData.GetProperty("tenants").EnumerateArray().ToList();
+            var representativeIndex = members.FindIndex(x => x.GetProperty("isContactPerson").GetBoolean());
+            Assert.True(representativeIndex >= 0);
+            var representativeId = members[representativeIndex].GetProperty("id").GetGuid();
+            var unconfirmed = Assert.Single(members, x => !x.GetProperty("canRepresent").GetBoolean());
+            var leavePath = $"{path}/tenants/{representativeId}/leave";
+            using var invalid = await client.PostAsJsonAsync(leavePath, new
+            {
+                leaveDate = start, replacementLinkId = unconfirmed.GetProperty("id").GetGuid()
+            });
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+            await AssertRepresentativeAsync(representativeId);
+
+            await SignInAsync(client, tenantAccounts[2].Phone, "Password123!");
+            using var join = await client.PostAsJsonAsync($"/api/me/contracts/{contractId}/join", new
+            { offerVersion = version, termsHash = hash });
+            Assert.Equal(HttpStatusCode.OK, join.StatusCode);
+            await SignInAsync(client, "invitationOwner", "Pass123!");
+
+            var nextId = members[(representativeIndex + 1) % members.Count].GetProperty("id").GetGuid();
+            var selectedId = members[(representativeIndex + 2) % members.Count].GetProperty("id").GetGuid();
+            using var selected = await client.PostAsJsonAsync(leavePath, new { leaveDate = start, replacementLinkId = selectedId });
+            Assert.Equal(HttpStatusCode.OK, selected.StatusCode);
+            await AssertRepresentativeAsync(selectedId);
+
+            using var automatic = await client.PostAsJsonAsync($"{path}/tenants/{selectedId}/leave", new { leaveDate = start });
+            Assert.Equal(HttpStatusCode.OK, automatic.StatusCode);
+            await AssertRepresentativeAsync(nextId);
+
+            async Task AssertRepresentativeAsync(Guid expectedId)
+            {
+                var updated = await client.GetFromJsonAsync<JsonElement>(path);
+                var tenants = updated.GetProperty("data").GetProperty("tenants").EnumerateArray();
+                var representative = Assert.Single(tenants, x => x.GetProperty("isContactPerson").GetBoolean());
+                Assert.Equal(expectedId, representative.GetProperty("id").GetGuid());
+                Assert.Equal(JsonValueKind.Null, representative.GetProperty("leaveDate").ValueKind);
+            }
         }
     }
 

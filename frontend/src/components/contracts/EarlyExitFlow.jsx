@@ -91,6 +91,8 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
   const [step, setStep] = useState(1)
   const [handoverOn, setHandoverOn] = useState(contract.handoverOn || today())
   const [readings, setReadings] = useState([])
+  const [prerequisitesSnapshot, setPrerequisitesSnapshot] = useState(null)
+  const [entryPrerequisitesSnapshot, setEntryPrerequisitesSnapshot] = useState(null)
   const [rateSnapshot, setRateSnapshot] = useState(null)
   const [rateError, setRateError] = useState('')
   const [rateInputs, setRateInputs] = useState({ Electricity: { price: '', unit: '' }, Water: { price: '', unit: '' } })
@@ -128,6 +130,11 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
   const [method, setMethod] = useState('BankTransfer')
   const [transactionCode, setTransactionCode] = useState('')
   const [paymentKey, setPaymentKey] = useState(() => crypto.randomUUID())
+  const [depositInvoiceId, setDepositInvoiceId] = useState('')
+  const [depositAmount, setDepositAmount] = useState('')
+  const [depositReason, setDepositReason] = useState('Cấn trừ cọc khi tất toán')
+  const [depositKey, setDepositKey] = useState(() => crypto.randomUUID())
+  const [adjustmentType, setAdjustmentType] = useState('Discount')
   const [discountInvoiceId, setDiscountInvoiceId] = useState('')
   const [discountAmount, setDiscountAmount] = useState('')
   const [discountReason, setDiscountReason] = useState('')
@@ -145,6 +152,33 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
   const pendingSettlement = (overview?.contractStatus || contract.status) === 'PendingSettlement'
   const fallbackPeriod = periodOf((contract.status === 'PendingSettlement' ? contract.handoverOn : handoverOn) || today())
   const period = overview?.periodYear && overview?.periodMonth ? { year: overview.periodYear, month: overview.periodMonth } : fallbackPeriod
+  const prerequisiteKey = `${contract.id}:${dataKey}:${period.year}:${period.month}`
+  const prerequisites = prerequisitesSnapshot?.key === prerequisiteKey ? prerequisitesSnapshot : null
+  const previousPeriodsBlocked = !prerequisites || prerequisites.error || prerequisites.value.missingPeriods.length > 0
+  useEffect(() => {
+    if (!open) return
+    const controller = new AbortController()
+    contractApi.readingPrerequisites(propertyId, contract.id, { year: period.year, month: period.month }, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setPrerequisitesSnapshot({ key: prerequisiteKey, value }) })
+      .catch(cause => { if (!controller.signal.aborted) setPrerequisitesSnapshot({ key: prerequisiteKey, error: cause.message }) })
+    return () => controller.abort()
+  }, [open, propertyId, contract.id, period.year, period.month, prerequisiteKey])
+  const readingPeriod = prerequisites?.value?.missingPeriods[0] || period
+  const entryKey = `${prerequisiteKey}:${readingPeriod.year}:${readingPeriod.month}`
+  const entryPrerequisites = entryPrerequisitesSnapshot?.key === entryKey ? entryPrerequisitesSnapshot : null
+  const entryBlocked = !prerequisites || prerequisites.error || !entryPrerequisites || entryPrerequisites.error || entryPrerequisites.value.missingPeriods.length > 0
+  const entryReadingFor = type => type === 'Electricity'
+    ? entryPrerequisites?.value?.electricityReading : entryPrerequisites?.value?.waterReading
+  const openingValue = readingType === 'Electricity'
+    ? entryPrerequisites?.value?.electricityPreviousValue : entryPrerequisites?.value?.waterPreviousValue
+  useEffect(() => {
+    if (!open || !prerequisites?.value) return
+    const controller = new AbortController()
+    contractApi.readingPrerequisites(propertyId, contract.id, { year: readingPeriod.year, month: readingPeriod.month }, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setEntryPrerequisitesSnapshot({ key: entryKey, value }) })
+      .catch(cause => { if (!controller.signal.aborted) setEntryPrerequisitesSnapshot({ key: entryKey, error: cause.message }) })
+    return () => controller.abort()
+  }, [open, propertyId, contract.id, readingPeriod.year, readingPeriod.month, entryKey, prerequisites])
   const periodStart = `${period.year}-${String(period.month).padStart(2, '0')}-01`
   const allowed = action => Boolean(overview?.allowedActions?.includes(action))
   const inCollect = overview?.phase === 'Collect' || overview?.phase === 'Complete'
@@ -175,8 +209,9 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
   const projectedTotal = monthly?.status === 'Issued' ? Number(monthly.effectiveTotal ?? monthly.baseTotal ?? 0) : baseTotal + (wantsExtra && !extraSaved && extraValid ? extra : 0)
   const maxOffset = Math.max(0, Math.min(held, monthly?.status === 'Issued' ? Number(monthly.amountDue || 0) : projectedTotal))
   const paymentInvoice = invoices.find(row => row.id === paymentInvoiceId && row.status === 'Issued' && Number(row.amountDue) > 0) || invoices.find(row => row.status === 'Issued' && Number(row.amountDue) > 0)
-  const settlementTotal = projectedTotal + [...oneOffs, ...oldUnpaid].reduce((sum, row) => sum + Number(row.effectiveTotal ?? row.baseTotal ?? 0), 0)
-  const projectedDue = (monthly?.status === 'Issued' ? Number(monthly.amountDue || 0) : projectedTotal) + [...oneOffs, ...oldUnpaid].reduce((sum, row) => sum + Number(row.amountDue || 0), 0)
+  const otherSettlementInvoices = invoices.filter(row => row.id !== monthly?.id && ['Monthly', 'Damage', 'Other'].includes(row.type) && ['Draft', 'Issued'].includes(row.status))
+  const settlementTotal = projectedTotal + otherSettlementInvoices.reduce((sum, row) => sum + Number(row.effectiveTotal ?? row.baseTotal ?? 0), 0)
+  const projectedDue = (monthly?.status === 'Issued' ? Number(monthly.amountDue || 0) : projectedTotal) + otherSettlementInvoices.reduce((sum, row) => sum + Number(row.status === 'Draft' ? row.baseTotal : row.amountDue || 0), 0)
   const unsettledInvoices = invoices.filter(row => row.status === 'Draft' || (row.status === 'Issued' && Number(row.amountDue) > 0))
   const refundAmount = refundMode === 'full' ? held : refundMode === 'none' ? 0 : Number(refund)
   const refundValid = held <= 0 || refundMode === 'full' || refundMode === 'none' && Boolean(note.trim()) ||
@@ -192,23 +227,31 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
     ...(held > 0 && ['partial', 'none'].includes(refundMode) && !note.trim() ? ['Nhập lý do giữ lại tiền cọc.'] : []),
     ...(!allowed('CompleteSettlement') && !missingMonthlyPeriods.length && monthly?.status === 'Issued' && !overview?.hasDraftInvoices && outstanding <= 0 ? ['Trạng thái tất toán chưa sẵn sàng; hãy làm mới dữ liệu.'] : []),
   ]
-  const discountInvoices = invoices.filter(row => ['Monthly', 'Damage', 'Other'].includes(row.type) && (row.status === 'Draft' && row.type === 'Monthly' || row.status === 'Issued' && Number(row.amountDue) > 0))
+  const isAdditionalCharge = adjustmentType === 'AdditionalCharge'
+  const depositInvoices = invoices.filter(row => row.status === 'Issued' && ['Monthly', 'Damage', 'Other'].includes(row.type) && Number(row.amountDue) > 0)
+  const depositInvoice = depositInvoices.find(row => row.id === depositInvoiceId) || depositInvoices[0]
+  const depositLimit = Math.max(0, Math.min(held, Number(depositInvoice?.amountDue || 0)))
+  const depositAmountValid = /^\d+(?:\.\d{1,2})?$/.test(depositAmount) && Number(depositAmount) > 0 && Number(depositAmount) <= depositLimit
+  const discountInvoices = invoices.filter(row => ['Monthly', 'Damage', 'Other'].includes(row.type) && (row.status === 'Draft' && row.type === 'Monthly' || row.status === 'Issued' && (isAdditionalCharge || Number(row.amountDue) > 0)))
   const discountInvoice = discountInvoices.find(row => row.id === discountInvoiceId) || discountInvoices[0]
   const discountLimit = discountInvoice?.status === 'Draft' ? Number(discountInvoice.baseTotal || 0) : Number(discountInvoice?.amountDue || 0)
-  const previewInvoices = invoices.filter(row => row.status === 'Draft' || row.status === 'Issued')
+  useEffect(() => { setDepositAmount(''); setDepositKey(crypto.randomUUID()) }, [depositInvoice?.id])
+  useEffect(() => { setDiscountAmount(''); setDiscountKey(crypto.randomUUID()) }, [discountInvoice?.id, adjustmentType])
+  const previewInvoices = invoices.filter(row => row.type !== 'Deposit' && (row.status === 'Draft' || row.status === 'Issued'))
   const draftDiscount = monthly?.status === 'Draft' ? (currentDetail?.items || []).filter(row => row.type === 'Discount').reduce((sum, row) => sum + Math.abs(Number(row.amount || 0)), 0) : 0
   const previewBase = previewInvoices.reduce((sum, row) => sum + Number(row.baseTotal || 0), 0) + draftDiscount
   const previewEffective = previewInvoices.reduce((sum, row) => sum + Number(row.effectiveTotal ?? row.baseTotal ?? 0), 0)
   const previewPaid = previewInvoices.reduce((sum, row) => sum + Number(row.totalPaid || 0) - Number(row.totalRefunded || 0), 0)
   const previewApplied = previewInvoices.reduce((sum, row) => sum + Number(row.totalDepositApplied || 0), 0)
   const discountForm = discountInvoices.length > 0 && <form className="ct-exit-form" onSubmit={saveDiscount}>
-    <h3>Miễn hoặc giảm tiền</h3>
+    <h3>Phụ thu và giảm trừ</h3>
+    <label>Loại điều chỉnh<select value={adjustmentType} disabled={busy} onChange={event => { setAdjustmentType(event.target.value); setDiscountAmount(''); setDiscountKey(crypto.randomUUID()) }}><option value="AdditionalCharge">Phụ thu</option><option value="Discount">Giảm trừ</option></select></label>
     <label>Hóa đơn<select value={discountInvoice?.id || ''} onChange={event => { setDiscountInvoiceId(event.target.value); setDiscountAmount(''); setDiscountKey(crypto.randomUUID()) }}>{discountInvoices.map(row => <option key={row.id} value={row.id}>{row.code} · {row.status === 'Draft' ? 'Nháp' : 'Đã phát hành'}</option>)}</select></label>
-    <label>Số tiền giảm<input type="number" min="0.01" max={discountLimit} step="0.01" required value={discountAmount} onChange={event => { setDiscountAmount(event.target.value); setDiscountKey(crypto.randomUUID()) }} /></label>
-    <button type="button" className="contract-button contract-button--ghost" disabled={busy || discountLimit <= 0} onClick={() => { setDiscountAmount(String(discountLimit)); setDiscountKey(crypto.randomUUID()) }}>Giảm toàn bộ số còn phải thu ({money(discountLimit)})</button>
+    <label>{isAdditionalCharge ? 'Số tiền phụ thu' : 'Số tiền giảm trừ'}<input type="number" min="0.01" max={isAdditionalCharge ? undefined : discountLimit} step="0.01" required value={discountAmount} onChange={event => { setDiscountAmount(event.target.value); setDiscountKey(crypto.randomUUID()) }} /></label>
+    {!isAdditionalCharge && <button type="button" className="contract-button contract-button--ghost" disabled={busy || discountLimit <= 0} onClick={() => { setDiscountAmount(String(discountLimit)); setDiscountKey(crypto.randomUUID()) }}>Giảm toàn bộ số còn phải thu ({money(discountLimit)})</button>}
     <label>Lý do<input required maxLength="255" value={discountReason} onChange={event => { setDiscountReason(event.target.value); setDiscountKey(crypto.randomUUID()) }} /></label>
-    <p>Khoản giảm được lưu vào hóa đơn đã chọn, không phải khoản thanh toán.</p>
-    <button className="contract-button contract-button--secondary" disabled={busy}>Lưu khoản giảm</button>
+    <p>Điều chỉnh được lưu vào hóa đơn đã chọn cùng lý do và cập nhật số còn phải thu.</p>
+    <button className="contract-button contract-button--secondary" disabled={busy}>{isAdditionalCharge ? 'Lưu phụ thu' : 'Lưu giảm trừ'}</button>
   </form>
   const settlementPreview = <section className="ct-exit-invoice-card" aria-label="Xem trước tất toán">
     <h3>Xem trước tất toán</h3>
@@ -225,9 +268,10 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
 
   useEffect(() => { setHandoverOn(contract.handoverOn || today()) }, [contract.id, contract.handoverOn])
   useEffect(() => {
-    if (readingType === 'Electricity' && readingFor('Electricity') && !readingFor('Water')) setReadingType('Water')
-    if (readingType === 'Water' && readingFor('Water') && !readingFor('Electricity')) setReadingType('Electricity')
-  }, [readings, period.year, period.month, readingType])
+    if (readingType === 'Electricity' && entryReadingFor('Electricity') && !entryReadingFor('Water')) setReadingType('Water')
+    if (readingType === 'Water' && entryReadingFor('Water') && !entryReadingFor('Electricity')) setReadingType('Electricity')
+  }, [entryPrerequisites, readingType])
+  useEffect(() => { setPreviousValue(''); setCurrentValue('') }, [readingPeriod.year, readingPeriod.month])
   useEffect(() => {
     if (!open) return
     const original = document.body.style.overflow
@@ -329,7 +373,11 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
       setSuccess(message); setRevision(value => value + 1)
       if (refreshContract) await onChanged?.()
       return result
-    } catch (cause) { setError(cause.message || 'Không thể hoàn tất thao tác.'); setRevision(value => value + 1); return null }
+    } catch (cause) {
+      setError(cause.message || 'Không thể hoàn tất thao tác.')
+      if (cause.status === 409) { setDepositAmount(''); setDiscountAmount(''); setOffset('0') }
+      setRevision(value => value + 1); return null
+    }
     finally { setBusy(false) }
   }
   function resetOneOffIntent() {
@@ -339,8 +387,25 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
   }
   async function saveReading(event) {
     event.preventDefault()
-    const result = await run(() => contractApi.addReading(propertyId, contract.id, { type: readingType, ...period, previousValue: Number(previousValue), currentValue: Number(currentValue) }), 'Đã lưu chỉ số.')
-    if (result) { setPreviousValue(''); setCurrentValue(''); setReadingType(readingType === 'Electricity' ? 'Water' : 'Electricity') }
+    if (busy || entryBlocked) return
+    setBusy(true); setError(''); setSuccess('')
+    try {
+      await contractApi.addReading(propertyId, contract.id, {
+        type: readingType, year: readingPeriod.year, month: readingPeriod.month,
+        previousValue: Number(openingValue ?? previousValue), currentValue: Number(currentValue),
+        expectedVersion: entryPrerequisites.value.version,
+      })
+      setSuccess(`Đã lưu chỉ số tháng ${readingPeriod.month}/${readingPeriod.year}.`)
+      setPreviousValue(''); setCurrentValue('')
+    } catch (cause) {
+      if (cause.status === 409) {
+        setPreviousValue(''); setCurrentValue('')
+        setError(`${cause.message || 'Dữ liệu đã thay đổi.'} Đã ngắt thao tác và tải lại dữ liệu mới nhất. Vui lòng kiểm tra lại trước khi lưu.`)
+      } else setError(cause.message || 'Không thể lưu chỉ số.')
+    } finally {
+      setRevision(value => value + 1)
+      setBusy(false)
+    }
   }
   async function saveMissingRate(event, type) {
     event.preventDefault()
@@ -366,16 +431,16 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
   async function saveDiscount(event) {
     event.preventDefault()
     const amount = Number(discountAmount)
-    if (!discountInvoice || !/^\d+(?:\.\d{1,2})?$/.test(discountAmount) || amount <= 0 || amount > discountLimit || !discountReason.trim()) {
-      setError('Nhập lý do và số tiền giảm lớn hơn 0, không vượt số còn phải thu.'); return
+    if (!discountInvoice || !/^\d+(?:\.\d{1,2})?$/.test(discountAmount) || amount <= 0 || !Number.isFinite(amount) || (!isAdditionalCharge && amount > discountLimit) || !discountReason.trim()) {
+      setError('Nhập lý do và số tiền hợp lệ lớn hơn 0. Giảm trừ không được vượt số còn phải thu.'); return
     }
     const reason = discountReason.trim()
     const saved = await run(async () => {
-      if (discountInvoice.status === 'Issued') return billingApi.addAdjustment(discountInvoice.id, { type: 'Discount', amount, reason, idempotencyKey: discountKey, limitToRemainingAmount: true })
+      if (discountInvoice.status === 'Issued') return billingApi.addAdjustment(discountInvoice.id, { type: adjustmentType, amount, reason, idempotencyKey: discountKey, limitToRemainingAmount: !isAdditionalCharge })
       const draft = await billingApi.invoice(discountInvoice.id)
       const original = draft.items.filter(row => editable.includes(row.type)).map(row => ({ id: row.id, type: row.type, description: row.description, quantity: row.quantity, unitPrice: row.unitPrice }))
-      return billingApi.saveDraftItems(discountInvoice.id, { items: [...original, { type: 'Discount', description: reason, quantity: 1, unitPrice: amount }] })
-    }, 'Đã lưu khoản giảm.', true)
+      return billingApi.saveDraftItems(discountInvoice.id, { items: [...original, { type: isAdditionalCharge ? 'Other' : 'Discount', description: reason, quantity: 1, unitPrice: amount }] })
+    }, isAdditionalCharge ? 'Đã lưu phụ thu.' : 'Đã lưu giảm trừ.', true)
     if (saved) { setDiscountAmount(''); setDiscountReason(''); setDiscountKey(crypto.randomUUID()); setOffset('0') }
   }
   async function createDraft() {
@@ -417,8 +482,21 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
   async function issueOneOff(invoiceId) {
     await run(() => billingApi.issue(invoiceId), 'Đã phát hành hóa đơn riêng.', true)
   }
+  async function applySettlementDeposit(event) {
+    event.preventDefault()
+    if (!depositInvoice || !depositAmountValid || !depositReason.trim()) {
+      setError('Số tiền cấn trừ phải lớn hơn 0, không vượt cọc đang giữ và số còn phải thu của hóa đơn.'); return
+    }
+    const saved = await run(() => contractApi.applyDeposit(propertyId, contract.id, {
+      invoiceId: depositInvoice.id, amount: Number(depositAmount), reason: depositReason.trim(), idempotencyKey: depositKey,
+    }), 'Đã cấn trừ cọc và cập nhật công nợ.', true)
+    if (saved) { setDepositAmount(''); setDepositKey(crypto.randomUUID()); setOffset('0') }
+  }
   async function issueAndOffset() {
     if (!monthly) return
+    if (!Number.isFinite(Number(offset)) || Number(offset) < 0 || Number(offset) > maxOffset) {
+      setError('Số cọc cấn trừ không được vượt cọc đang giữ hoặc số còn phải thu.'); return
+    }
     if (monthly.status === 'Draft') {
       if (!currentDetail?.reviewVersion) { setError('Hãy tải chi tiết hóa đơn trước khi phát hành.'); return }
       const issued = await run(() => billingApi.issue(monthly.id, currentDetail.reviewVersion), 'Đã phát hành hóa đơn cuối.', true)
@@ -509,6 +587,18 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
             <h3>Thông tin bàn giao</h3>
             <label>Ngày bàn giao<input type="date" min={contract.startDate} max={contract.endDate && contract.endDate < today() ? contract.endDate : today()} value={handoverOn} onChange={event => setHandoverOn(event.target.value)} /></label>
             <p>Kỳ hóa đơn cuối: {period.month}/{period.year}</p>
+            {previousPeriodsBlocked && <div className="ct-exit-rate-warning" role="alert">
+              {!prerequisites ? <p>Đang kiểm tra chỉ số các tháng trước…</p> : prerequisites.error
+                ? <p>{prerequisites.error}</p>
+                : <><p>Nhập kỳ cũ nhất tại biểu mẫu bên dưới. Khi đủ điện và nước, hệ thống chuyển sang kỳ tiếp theo.</p>
+                  <ul>{prerequisites.value.missingPeriods.map(row => <li key={`${row.year}-${row.month}`}>
+                    Tháng {row.month}/{row.year}: thiếu {row.missingTypes.map(type => type === 'Electricity' ? 'điện' : 'nước').join(' và ')}
+                  </li>)}</ul></>}
+              <div className="ct-exit-actions">
+
+                <button type="button" className="contract-button contract-button--ghost" onClick={() => setRevision(value => value + 1)}>Kiểm tra lại</button>
+              </div>
+            </div>}
             <div className="ct-exit-readings">{['Electricity', 'Water'].map(type => { const row = readingFor(type); return <p key={type}><strong>{type === 'Electricity' ? 'Điện' : 'Nước'}:</strong> {row ? [row.previousValue, ' → ', row.currentValue] : 'Chưa nhập'}</p> })}</div>
             <div className="ct-exit-rate-check" aria-live="polite"><strong>Đơn giá áp dụng ngày {periodStart}</strong>
               {rates ? ['Electricity', 'Water'].map(type => { const rate = rateFor(type); return <p key={type}><strong>{type === 'Electricity' ? 'Điện' : 'Nước'}:</strong> {rate ? `${money(rate.unitPrice)} / ${rate.unit} · hiệu lực ${rate.effectiveFrom} đến ${rate.effectiveTo || 'về sau'}` : 'Chưa có đơn giá có hiệu lực cho kỳ này'}</p> }) : <p>{rateError ? `Không tải được đơn giá: ${rateError}` : 'Đang kiểm tra đơn giá…'}</p>}
@@ -523,11 +613,14 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
               {(missingRates.length > 0 || rateError) && <div className="ct-exit-actions"><button type="button" className="contract-button contract-button--secondary" onClick={() => setRevision(value => value + 1)}>Kiểm tra lại đơn giá</button>{navigate && <button type="button" className="contract-button contract-button--ghost" onClick={() => { setOpen(false); navigate(`landlord/utilities/${propertyId}/inputs/${contract.roomId}`) }}>Đi đến giá và dịch vụ</button>}</div>}
               {(missingRates.length > 0 || rateError) && navigate && <p>Trong trang hóa đơn, mở tab “Giá, chỉ số và dịch vụ” để thêm giá của kỳ này.</p>}
             </div>
-            {(!readingFor('Electricity') || !readingFor('Water')) && <form className="ct-exit-form" onSubmit={saveReading}>
-              <label>Loại chỉ số<select value={readingType} onChange={event => setReadingType(event.target.value)}><option value="Electricity" disabled={Boolean(readingFor('Electricity'))}>Điện</option><option value="Water" disabled={Boolean(readingFor('Water'))}>Nước</option></select></label>
-              <label>Chỉ số đầu<input type="number" min="0" step="0.01" required value={previousValue} onChange={event => setPreviousValue(event.target.value)} /></label>
-              <label>Chỉ số cuối<input type="number" min={previousValue || '0'} step="0.01" required value={currentValue} onChange={event => setCurrentValue(event.target.value)} /></label>
-              <button className="contract-button contract-button--secondary" disabled={busy || Boolean(readingFor(readingType))}>Lưu chỉ số</button>
+            {(!entryReadingFor('Electricity') || !entryReadingFor('Water')) && <form className="ct-exit-form" onSubmit={saveReading}>
+              <strong>Nhập chỉ số tháng {readingPeriod.month}/{readingPeriod.year}</strong>
+              {entryPrerequisites?.error && <p role="alert">{entryPrerequisites.error}</p>}
+              <div className="ct-exit-readings">{['Electricity', 'Water'].map(type => { const row = entryReadingFor(type); return <p key={type}><strong>{type === 'Electricity' ? 'Điện' : 'Nước'}:</strong> {row ? `${row.previousValue} → ${row.currentValue}` : 'Chưa nhập'}</p> })}</div>
+              <label>Loại chỉ số<select value={readingType} onChange={event => setReadingType(event.target.value)}><option value="Electricity" disabled={Boolean(entryReadingFor('Electricity'))}>Điện</option><option value="Water" disabled={Boolean(entryReadingFor('Water'))}>Nước</option></select></label>
+              <label>Chỉ số đầu<input type="number" min="0" step="0.01" required readOnly={openingValue != null} value={openingValue ?? previousValue} onChange={event => setPreviousValue(event.target.value)} /></label>
+              <label>Chỉ số cuối<input type="number" min={openingValue ?? (previousValue || '0')} step="0.01" required value={currentValue} onChange={event => setCurrentValue(event.target.value)} /></label>
+              <button className="contract-button contract-button--secondary" disabled={busy || entryBlocked || Boolean(entryReadingFor(readingType))}>Lưu chỉ số</button>
             </form>}
             {!inCollect && <fieldset className="ct-exit-extra"><legend>Khoản thu thêm (nếu có)</legend>
               <label>Đưa vào<select value={extraMode} onChange={event => { setExtraMode(event.target.value); resetOneOffIntent(); if (event.target.value === 'separate' && extraType === 'Service') setExtraType('Other') }}><option value="monthly">Hóa đơn cuối tháng</option><option value="separate">Hóa đơn riêng</option></select></label>
@@ -537,7 +630,7 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
               {extraMode === 'separate' && <label>Hạn thanh toán<input type="date" value={oneOffDueDate} onChange={event => { setOneOffDueDate(event.target.value); resetOneOffIntent() }} /></label>}
               {extraMode === 'separate' && <p>Hóa đơn riêng được tạo nháp ở bước 2 và phát hành sau khi đối soát.</p>}
             </fieldset>}
-            <div className="ct-exit-actions">{pendingMoveOut ? <button type="button" className="contract-button contract-button--primary" disabled={busy || !readingFor('Electricity') || !readingFor('Water') || !extraValid} onClick={handover}>Xác nhận bàn giao và tiếp tục</button> : <button type="button" className="contract-button contract-button--primary" disabled={!readingFor('Electricity') || !readingFor('Water') || !extraValid} onClick={() => setStep(2)}>Tiếp tục</button>}</div>
+            <div className="ct-exit-actions">{pendingMoveOut ? <button type="button" className="contract-button contract-button--primary" disabled={busy || previousPeriodsBlocked || !readingFor('Electricity') || !readingFor('Water') || !extraValid} onClick={handover}>Xác nhận bàn giao và tiếp tục</button> : <button type="button" className="contract-button contract-button--primary" disabled={previousPeriodsBlocked || !readingFor('Electricity') || !readingFor('Water') || !extraValid} onClick={() => setStep(2)}>Tiếp tục</button>}</div>
           </div>}
           {overview && step === 2 && <div className="ct-exit-stage">
             <div className="ct-exit-columns">
@@ -581,6 +674,18 @@ export default function EarlyExitFlow({ propertyId, contract, navigate, onChange
             </div>
             {oneOffs.map(row => <div className="ct-exit-invoice-card" key={row.id}><strong>Hóa đơn riêng {row.code} · {row.status === 'Draft' ? 'Bản nháp' : 'Đã phát hành'}</strong><ul className="ct-exit-line-items">{oneOffDetails[row.id]?.items?.map(item => <li key={item.id}><span>{item.description}</span><strong>{money(item.amount)}</strong></li>)}</ul><p>Tổng: <strong>{money(row.effectiveTotal ?? row.baseTotal)}</strong> · Còn phải thu: <strong>{money(row.amountDue)}</strong></p>{row.status === 'Draft' && <button type="button" className="contract-button contract-button--secondary" disabled={busy} onClick={() => issueOneOff(row.id)}>Phát hành hóa đơn riêng</button>}</div>)}
             {oldUnpaid.length > 0 && <section className="ct-exit-old-invoices"><h3>Đối soát hóa đơn cũ còn nợ</h3>{oldUnpaid.map(row => <OldUnpaidInvoice key={row.id} invoice={row} detail={oldInvoiceDetails[row.id]} />)}</section>}
+            <form className="ct-exit-form" onSubmit={applySettlementDeposit}>
+              <h3>Cấn trừ tiền cọc</h3>
+              <p>Cọc đang giữ: <strong>{money(held)}</strong></p>
+              {depositInvoices.length > 0 ? <>
+                <label>Hóa đơn nhận cấn trừ<select value={depositInvoice?.id || ''} disabled={busy} onChange={event => { setDepositInvoiceId(event.target.value); setDepositAmount(''); setDepositKey(crypto.randomUUID()) }}>{depositInvoices.map(row => <option key={row.id} value={row.id}>{row.code} · còn {money(row.amountDue)}</option>)}</select></label>
+                <label>Số tiền cấn trừ<input type="number" min="0.01" max={depositLimit} step="0.01" required disabled={busy || held <= 0} value={depositAmount} onChange={event => { setDepositAmount(event.target.value); setDepositKey(crypto.randomUUID()) }} /></label>
+                <p>Tối đa được cấn trừ: <strong>{money(depositLimit)}</strong>. Cọc còn lại dự kiến: <strong>{money(Math.max(0, held - Number(depositAmount || 0)))}</strong></p>
+                {depositAmount && !depositAmountValid && <p className="ct-exit-rate-warning" role="alert">Số tiền phải lớn hơn 0 và không vượt {money(depositLimit)}.</p>}
+                <label>Lý do<input required maxLength="500" disabled={busy} value={depositReason} onChange={event => { setDepositReason(event.target.value); setDepositKey(crypto.randomUUID()) }} /></label>
+                <button className="contract-button contract-button--secondary" disabled={busy || !depositAmountValid || !depositReason.trim() || !allowed('ApplyDeposit')}>Cấn trừ cọc</button>
+              </> : <p>Phát hành hóa đơn còn công nợ để chọn cấn trừ tiền cọc.</p>}
+            </form>
             {discountForm}
             {settlementPreview}
             {allowed('RecordPayment') && paymentInvoice && Number(paymentInvoice.amountDue) > 0 && <form className="ct-exit-form" onSubmit={recordPayment}><h3>Ghi nhận thanh toán (có thể một phần)</h3>
